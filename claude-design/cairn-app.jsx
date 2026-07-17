@@ -11,7 +11,8 @@ const { PEOPLE, SPACES, ROOMS: SEED_ROOMS } = CAIRN;
 /* ----- initial tweakable defaults (persisted) ----- */
 const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "theme": "light",
-  "panelPlacement": "sidebar"
+  "panelPlacement": "sidebar",
+  "density": "comfortable"
 }/*EDITMODE-END*/;
 
 /* ----- initial agent tasks ----- */
@@ -33,6 +34,9 @@ const App = () => {
   React.useEffect(() => {
     document.documentElement.setAttribute("data-theme", t.theme);
   }, [t.theme]);
+  React.useEffect(() => {
+    document.documentElement.setAttribute("data-density", t.density);
+  }, [t.density]);
 
   /* navigation */
   const [activeSpace, setActiveSpace] = React.useState("sp_home");
@@ -64,6 +68,9 @@ const App = () => {
   const [showMembers, setShowMembers] = React.useState(false);
   const [showSettings, setShowSettings] = React.useState(false);
   const [showAudit, setShowAudit] = React.useState(false);
+  const [showAppSettings, setShowAppSettings] = React.useState(false);
+  const [spaceSettingsFor, setSpaceSettingsFor] = React.useState(null);
+  const [showPeerJoin, setShowPeerJoin] = React.useState(false);
   const [showCreateSpace, setShowCreateSpace] = React.useState(false);
   const [createChannelFor, setCreateChannelFor] = React.useState(null); /* spaceId | null */
   const [toast, setToast] = React.useState(null);
@@ -395,6 +402,61 @@ const App = () => {
 
   const onPollVote = (msgId, optionId) => onPollVoteIn(activeRoomId, msgId, optionId);
 
+  /* capability-bound inlay action → surface the disclosure, then post a pending approval */
+  const onCapabilityAction = (msgId, cap) => {
+    const id = "m_" + Math.random().toString(36).slice(2, 9);
+    setRoomsState(prev => ({
+      ...prev,
+      [activeRoomId]: {
+        ...prev[activeRoomId],
+        messages: [...prev[activeRoomId].messages, {
+          id, t: nowTime(), from: "a_garden",
+          inlay: {
+            kind: "approval",
+            title: "Garden agent requests approval",
+            capability: cap.capability,
+            scope: cap.scope,
+            requestedAt: nowTime(),
+            expiresAt: "+30 min",
+            state: "pending",
+          }
+        }]
+      }
+    }));
+    showToast(`Requested — ${cap.capability}`);
+  };
+
+  /* admit a peer household → add to active room + flip it cross-household */
+  const onAdmitPeer = (identity) => {
+    const memberId = "u_peer_" + Math.random().toString(36).slice(2, 6);
+    PEOPLE[memberId] = {
+      id: memberId, kind: identity.kind === "agent" ? "agent" : "human",
+      name: identity.name, initials: identity.name.slice(0, 2).toUpperCase(),
+      color: "oklch(0.58 0.10 210)", origin: identity.origin,
+    };
+    setRoomsState(prev => {
+      const room = prev[activeRoomId];
+      if (!room) return prev;
+      return {
+        ...prev,
+        [activeRoomId]: {
+          ...room,
+          xh: true,
+          members: room.members.includes(memberId) ? room.members : [...room.members, memberId],
+          messages: [...room.messages, {
+            id: "sys_" + Math.random().toString(36).slice(2, 7),
+            t: nowTime(), system: true, kind: "member-add",
+            actorId: "u_me", targetId: memberId,
+            note: `from the ${identity.origin} · now cross-household`,
+          }],
+        }
+      };
+    });
+    setShowPeerJoin(false);
+    setSpaceSettingsFor(null);
+    showToast(`${identity.name} admitted — room is now cross-household`);
+  };
+
   const onApproval = (msgId, decision) => {
     setRoomsState(prev => {
       const room = prev[activeRoomId];
@@ -662,6 +724,25 @@ const App = () => {
   /* Tweak handlers */
   const tweakKey = (key, val) => setTweak(key, val);
 
+  /* Stable inlay render-prop — memoized so message subtrees don't remount on every
+     app re-render (the task simulator ticks ~2.5s). Without this, stateful inlays
+     like the greenhouse card restart from scratch on a loop. */
+  const renderInlay = React.useCallback((p) => (
+    <InlayRenderer {...p}
+      onPollVote={onPollVote}
+      onApproval={onApproval}
+      onViewDetails={setDetailsMsgId}
+      onCallUpdate={onCallUpdate}
+      onCallEnd={onCallEnd}
+      onCallJoin={onCallJoin}
+      onSuggestionAdd={onSuggestionAdd}
+      onVideoUpdate={onVideoUpdate}
+      onVideoExpand={setVideoTheaterMsgId}
+      onCapabilityAction={onCapabilityAction}
+      onWidgetOpen={() => showToast("Widget would open in a sandboxed pop-out")}
+    />
+  ), [activeRoomId]);
+
   return (
     <>
       <div
@@ -678,6 +759,7 @@ const App = () => {
           mobile={isMobile}
           onSwitchView={setMobileView}
           onCreateSpace={() => setShowCreateSpace(true)}
+          onOpenSettings={() => setShowAppSettings(true)}
         />
         <RoomList
           space={activeSpace}
@@ -690,6 +772,7 @@ const App = () => {
           transportMode={transportMode}
           setTransportMode={setTransportMode}
           onCreateChannel={(spaceId) => setCreateChannelFor(spaceId)}
+          onOpenSpaceSettings={(spaceId) => setSpaceSettingsFor(spaceId)}
         />
 
         {activeRoom ? (
@@ -768,19 +851,7 @@ const App = () => {
                     onCancelEdit={onCancelEdit}
                     onDelete={onDelete}
                     onJumpTo={onJumpTo}
-                    InlayRenderer={(p) => (
-                      <InlayRenderer {...p}
-                        onPollVote={onPollVote}
-                        onApproval={onApproval}
-                        onViewDetails={setDetailsMsgId}
-                        onCallUpdate={onCallUpdate}
-                        onCallEnd={onCallEnd}
-                        onCallJoin={onCallJoin}
-                        onSuggestionAdd={onSuggestionAdd}
-                        onVideoUpdate={onVideoUpdate}
-                        onVideoExpand={setVideoTheaterMsgId}
-                      />
-                    )}
+                    InlayRenderer={renderInlay}
                   />
                 );
               })}
@@ -853,6 +924,32 @@ const App = () => {
         <window.AuditLogModal
           room={activeRoom}
           onClose={() => setShowAudit(false)}
+        />
+      )}
+
+      {showAppSettings && (
+        <window.SettingsModal
+          onClose={() => setShowAppSettings(false)}
+          theme={t.theme}
+          onTheme={(v) => tweakKey("theme", v)}
+          density={t.density}
+          onDensity={(v) => tweakKey("density", v)}
+        />
+      )}
+
+      {spaceSettingsFor && (
+        <window.SpaceSettingsModal
+          space={spaces.find(s => s.id === spaceSettingsFor)}
+          roomCount={rooms.filter(r => r.space === spaceSettingsFor).length}
+          onClose={() => setSpaceSettingsFor(null)}
+          onOpenJoin={() => setShowPeerJoin(true)}
+        />
+      )}
+
+      {showPeerJoin && (
+        <window.PeerJoinModal
+          onClose={() => setShowPeerJoin(false)}
+          onAdmit={onAdmitPeer}
         />
       )}
 

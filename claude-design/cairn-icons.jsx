@@ -58,6 +58,20 @@ const Icon = ({ name, size = 16, ...rest }) => {
     case "snapshot":return <svg {...props}><circle cx="8" cy="8" r="4.6"/><circle cx="8" cy="8" r="1.5" fill="currentColor" stroke="none"/></svg>;
     case "film":    return <svg {...props}><rect x="2.5" y="3" width="11" height="10" rx="1.2"/><path d="M5.5 3v10M10.5 3v10M2.5 6.3h3M2.5 9.7h3M10.5 6.3h3M10.5 9.7h3"/></svg>;
     case "sync":    return <svg {...props}><path d="M12.5 7a4.5 4.5 0 0 0-8-2.2M3.5 9a4.5 4.5 0 0 0 8 2.2"/><path d="M11.5 2.2V5h-2.7M4.5 13.8V11h2.7"/></svg>;
+    case "qr":      return <svg {...props}><rect x="2.5" y="2.5" width="4" height="4" rx="0.6"/><rect x="9.5" y="2.5" width="4" height="4" rx="0.6"/><rect x="2.5" y="9.5" width="4" height="4" rx="0.6"/><path d="M9.5 9.5h1.5v1.5M13.5 9.5v4M9.5 13.5h1.5"/></svg>;
+    case "key":     return <svg {...props}><circle cx="5" cy="5" r="2.6"/><path d="m6.9 6.9 5.1 5.1M10.5 9.5l1.5 1.5M12.5 7.5l1 1"/></svg>;
+    case "bell":    return <svg {...props}><path d="M4 11V7a4 4 0 0 1 8 0v4l1 1.5H3L4 11Z"/><path d="M6.5 13.5a1.6 1.6 0 0 0 3 0"/></svg>;
+    case "radio":   return <svg {...props}><circle cx="8" cy="8" r="1.4"/><path d="M5.2 5.2a4 4 0 0 0 0 5.6M10.8 5.2a4 4 0 0 1 0 5.6M3.4 3.4a6.5 6.5 0 0 0 0 9.2M12.6 3.4a6.5 6.5 0 0 1 0 9.2"/></svg>;
+    case "monitor": return <svg {...props}><rect x="2" y="3" width="12" height="8" rx="1.2"/><path d="M6 13.5h4M8 11v2.5"/></svg>;
+    case "link":    return <svg {...props}><path d="M6.5 9.5 9.5 6.5M7 4.5 8.2 3.3a2.4 2.4 0 0 1 3.4 3.4L10.4 7.9M9 11.5 7.8 12.7a2.4 2.4 0 0 1-3.4-3.4L5.6 8.1"/></svg>;
+    case "file":    return <svg {...props}><path d="M4 2.5h4.5L12 6v7.5H4V2.5Z"/><path d="M8.5 2.5V6H12"/><path d="M6 9h4M6 11h3"/></svg>;
+    case "image":   return <svg {...props}><rect x="2.5" y="3" width="11" height="10" rx="1.2"/><circle cx="5.8" cy="6.2" r="1.1"/><path d="m3 11.5 3-2.5 2.5 2 2-1.5 3 2.5"/></svg>;
+    case "video":   return <svg {...props}><rect x="2" y="4" width="8.5" height="8" rx="1.2"/><path d="m10.5 7 3.5-2v6l-3.5-2V7Z"/></svg>;
+    case "device":  return <svg {...props}><rect x="4" y="2.5" width="8" height="11" rx="1.4"/><path d="M6.8 11.5h2.4"/></svg>;
+    case "print":   return <svg {...props}><path d="M4.5 6V2.5h7V6"/><rect x="2.5" y="6" width="11" height="5" rx="1"/><path d="M4.5 9.5h7v4h-7z"/></svg>;
+    case "thread":  return <svg {...props}><path d="M2.5 4.5h11M2.5 8h7M2.5 11.5h5"/><circle cx="12" cy="11" r="2"/></svg>;
+    case "history": return <svg {...props}><path d="M2.6 8a5.4 5.4 0 1 0 1.6-3.8"/><path d="M2.4 3.2v2.4h2.4"/><path d="M8 5.4V8l1.8 1.1"/></svg>;
+    case "wifi":    return <svg {...props}><path d="M2.5 6.2a8 8 0 0 1 11 0M4.6 8.4a5 5 0 0 1 6.8 0M6.7 10.6a2 2 0 0 1 2.6 0"/><circle cx="8" cy="12.4" r=".6" fill="currentColor" stroke="none"/></svg>;
     default: return null;
   }
 };

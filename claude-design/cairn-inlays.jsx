@@ -200,7 +200,7 @@ const TaskCompleteCard = ({ inlay, fromId, onViewDetails }) => (
 );
 
 /* ============ Renderer dispatch (inline) ============ */
-const InlayRenderer = ({ inlay, msgId, fromId, onPollVote, onApproval, onViewDetails, onCallUpdate, onCallEnd, onCallJoin, onSuggestionAdd, onVideoUpdate, onVideoExpand }) => {
+const InlayRenderer = ({ inlay, msgId, fromId, onPollVote, onApproval, onViewDetails, onCallUpdate, onCallEnd, onCallJoin, onSuggestionAdd, onVideoUpdate, onVideoExpand, onCapabilityAction, onWidgetOpen }) => {
   switch (inlay.kind) {
     case "poll":      return <PollInlay inlay={inlay} onVote={(opt) => onPollVote(msgId, opt)} onViewDetails={() => onViewDetails(msgId)} />;
     case "approval":  return <ApprovalInlay inlay={inlay} fromId={fromId} onResolve={(s) => onApproval(msgId, s)} onViewDetails={() => onViewDetails(msgId)} />;
@@ -208,6 +208,8 @@ const InlayRenderer = ({ inlay, msgId, fromId, onPollVote, onApproval, onViewDet
     case "call":      return <window.CallInlay inlay={inlay} msgId={msgId} onUpdate={onCallUpdate} onEnd={onCallEnd} onJoin={onCallJoin} onViewDetails={() => onViewDetails(msgId)}/>;
     case "suggestion-list": return <SuggestionListInlay inlay={inlay} fromId={fromId} onAddToPoll={(sid) => onSuggestionAdd?.(msgId, sid)} onViewDetails={() => onViewDetails?.(msgId)}/>;
     case "video":     return <window.VideoInlay inlay={inlay} msgId={msgId} fromId={fromId} onUpdate={onVideoUpdate} onExpand={() => onVideoExpand?.(msgId)} onViewDetails={() => onViewDetails(msgId)}/>;
+    case "greenhouse": return <window.GreenhouseCard inlay={inlay} fromId={fromId} onViewDetails={() => onViewDetails?.(msgId)} onCapabilityAction={(cap) => onCapabilityAction?.(msgId, cap)}/>;
+    case "widget":    return <window.WidgetPlaceholder inlay={inlay} fromId={fromId} onOpen={() => onWidgetOpen?.(msgId)}/>;
     default:          return <div className="inlay"><div className="head"><div className="title-block"><div className="title">{inlay.kind}</div><div className="sub">inlay fallback</div></div></div></div>;
   }
 };

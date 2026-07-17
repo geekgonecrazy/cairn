@@ -16,7 +16,7 @@ const AgentTag = ({ id, showOp = true, size = "md" }) => {
 };
 
 /* ---- Space rail (left) ---- */
-const SpaceRail = ({ spaces, active, onPick, mobile, onSwitchView, onCreateSpace }) => (
+const SpaceRail = ({ spaces, active, onPick, mobile, onSwitchView, onCreateSpace, onOpenSettings }) => (
   <aside className="space-rail">
     <div className="logo" title="Cairn">
       <svg width="26" height="26" viewBox="0 0 26 26" fill="none">
@@ -43,12 +43,12 @@ const SpaceRail = ({ spaces, active, onPick, mobile, onSwitchView, onCreateSpace
     <button className="space add-space" title="Create space" onClick={onCreateSpace}>
       <Icon name="plus"/>
     </button>
-    <button className="me" title="Aaron · this device">AR</button>
+    <button className="me" title="Aaron · this device · Settings" onClick={onOpenSettings}>AR</button>
   </aside>
 );
 
 /* ---- Room list (left middle) ---- */
-const RoomList = ({ space, spaces, rooms, activeRoom, onPick, mobile, onSwitchView, transportMode, setTransportMode, onCreateChannel }) => {
+const RoomList = ({ space, spaces, rooms, activeRoom, onPick, mobile, onSwitchView, transportMode, setTransportMode, onCreateChannel, onOpenSpaceSettings }) => {
   const spaceMeta = spaces.find(s => s.id === space);
   const inSpace = rooms.filter(r => r.space === space);
   const channels = inSpace.filter(r => r.kind !== "dm");
@@ -82,6 +82,13 @@ const RoomList = ({ space, spaces, rooms, activeRoom, onPick, mobile, onSwitchVi
         <h2>{spaceMeta?.name}</h2>
         <div className="head-actions">
           <span className="meta">{inSpace.length} rooms</span>
+          <button
+            className="add-channel"
+            title={`Space settings — ${spaceMeta?.name}`}
+            onClick={() => onOpenSpaceSettings?.(space)}
+          >
+            <Icon name="settings" size={13}/>
+          </button>
           <button
             className="add-channel"
             title={`Create channel in ${spaceMeta?.name}`}
