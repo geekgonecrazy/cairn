@@ -33,6 +33,16 @@
       </button>
     </div>
   {/if}
+  {#if app.quotingTo}
+    <div class="reply-bar">
+      <Icon name="quote" size={13} />
+      <span class="rb-label">Quoting {app.quotingTo.author}</span>
+      <span class="rb-text">{app.quotingTo.body || '(message)'}</span>
+      <button class="rb-x" aria-label="Cancel quote" onclick={() => app.setQuoteTo(null)}>
+        <Icon name="x" size={13} />
+      </button>
+    </div>
+  {/if}
   <div class="composer">
     <textarea
       placeholder={`Message #${roomName}`}

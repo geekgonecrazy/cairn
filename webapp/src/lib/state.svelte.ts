@@ -10,6 +10,7 @@ import {
   buildReaction,
   buildEdit,
   buildDelete,
+  buildPresence,
   buildMemberAdd,
   buildRoomKeyRotate,
   applyKeyEvent,
@@ -32,6 +33,11 @@ export interface ReactionAgg {
   mine: boolean
 }
 
+export interface Quote {
+  text: string
+  author: string
+}
+
 export interface Msg {
   ev: Event
   idHex: string
@@ -44,6 +50,7 @@ export interface Msg {
   deleted: boolean
   replyTo?: string // idHex of the message this replies to
   replyPreview?: string
+  quote?: Quote // an embedded quotation snapshot
   reactions: ReactionAgg[]
   state: DeliveryState
 }
@@ -69,6 +76,15 @@ class AppState {
   messages = $state<Msg[]>([])
   connected = $state<boolean>(false)
   replyingTo = $state<Msg | null>(null)
+  quotingTo = $state<Msg | null>(null)
+  presenceSeen = $state<Record<string, number>>({}) // sender hex → last-seen ms
+
+  /** Members seen active within the presence window. */
+  online = $derived(
+    Object.entries(this.presenceSeen)
+      .filter(([, t]) => Date.now() - t < 90_000)
+      .map(([h]) => h),
+  )
 
   private myPubHex = ''
   private stopSSE: (() => void) | null = null
@@ -91,6 +107,8 @@ class AppState {
   async selectRoom(id: string) {
     this.currentRoomId = id
     this.replyingTo = null
+    this.quotingTo = null
+    this.presenceSeen = {}
     this.events = []
     this.byId.clear()
     this.decoded.clear()
@@ -103,6 +121,18 @@ class AppState {
 
     // 2. Reconcile with the server: pull what we lack, push what it lacks.
     await this.reconcile(id)
+
+    // 3. Announce presence (ephemeral — the server broadcasts, never stores it).
+    void this.announcePresence()
+  }
+
+  private async announcePresence() {
+    this.presenceSeen = { ...this.presenceSeen, [this.myPubHex]: Date.now() }
+    try {
+      await cairn.sendEvent({ event: await buildPresence(this.currentRoomId, 'online') })
+    } catch {
+      /* offline; presence is best-effort */
+    }
   }
 
   /** Bidirectional frontier sync (PROTOCOL.md §6): send our heads, apply the
@@ -112,6 +142,8 @@ class AppState {
       const res = await cairn.sync({ roomId: utf8(id), haveHeads: localHeads(this.events) })
       this.connected = true
       for (const ev of res.missing) await this.ingest(ev, false)
+
+      await this.backfillMissingParents()
 
       for (const ev of this.eventsServerLacks(res.heads)) {
         try {
@@ -124,6 +156,43 @@ class AppState {
       this.rebuild()
     } catch {
       this.connected = false
+    }
+  }
+
+  // Backfill any parent we reference but don't hold, by walking History back
+  // from it (PROTOCOL.md §6.4). Out-of-order / partial delivery is normal; this
+  // keeps the DAG whole so causal folds don't dangle. Bounded to avoid loops.
+  private async backfillMissingParents() {
+    const missing = () => {
+      const s = new Set<string>()
+      for (const ev of this.events) {
+        for (const p of ev.parents) {
+          const ph = hex(p)
+          if (!this.byId.has(ph)) s.add(ph)
+        }
+      }
+      return s
+    }
+    for (let round = 0; round < 20; round++) {
+      const want = missing()
+      if (want.size === 0) return
+      let fetched = 0
+      for (const idHex of want) {
+        const before = fromHex(idHex)
+        if (!before) continue
+        try {
+          const res = await cairn.history({ roomId: utf8(this.currentRoomId), before, limit: 100 })
+          for (const ev of res.events) {
+            if (!this.byId.has(hex(ev.eventId))) {
+              await this.ingest(ev, false)
+              fetched++
+            }
+          }
+        } catch {
+          /* server may not have this ancestor either */
+        }
+      }
+      if (fetched === 0) return // can't make progress
     }
   }
 
@@ -155,8 +224,13 @@ class AppState {
     const trimmed = text.trim()
     if (!trimmed) return
     const replyTo = this.replyingTo?.ev.eventId
+    const q = this.quotingTo
+    const quote = q
+      ? { text: q.body, author: q.ev.senderPub, sourceEvent: q.ev.eventId, ts: q.ts }
+      : undefined
     this.replyingTo = null
-    const ev = await buildChat(this.currentRoomId, { text: trimmed, replyTo }, localHeads(this.events))
+    this.quotingTo = null
+    const ev = await buildChat(this.currentRoomId, { text: trimmed, replyTo, quote }, localHeads(this.events))
     this.states.set(hex(ev.eventId), 'sending')
     await this.ingest(ev, false)
     this.rebuild()
@@ -195,6 +269,12 @@ class AppState {
 
   setReplyTo(m: Msg | null) {
     this.replyingTo = m
+    if (m) this.quotingTo = null
+  }
+
+  setQuoteTo(m: Msg | null) {
+    this.quotingTo = m
+    if (m) this.replyingTo = null
   }
 
   /** My member public key (hex) — share it with a device you want added. */
@@ -260,6 +340,17 @@ class AppState {
   /** Verify, decrypt, and record an event. rebuild=true folds immediately (live path). */
   private async ingest(ev: Event, rebuild = true) {
     if (roomIdOf(ev) !== this.currentRoomId) return
+
+    // Presence is ephemeral: update the live roster, never store it in the DAG.
+    if (ev.type === EventType.PRESENCE) {
+      if (!verifyEvent(ev)) return
+      const d = await openEvent(ev)
+      if (d?.kind === 'presence' && d.state === 'online') {
+        this.presenceSeen = { ...this.presenceSeen, [hex(ev.senderPub)]: Date.now() }
+      }
+      return
+    }
+
     const idHex = hex(ev.eventId)
 
     if (this.byId.has(idHex)) {
@@ -371,6 +462,12 @@ class AppState {
         replyPreview = rBody ? truncate(rBody, 80) : '(message)'
       }
 
+      // embedded quote snapshot
+      let quote: Quote | undefined
+      if (d?.kind === 'chat' && d.quote) {
+        quote = { text: d.quote.text, author: 'cairn:' + hex(d.quote.author).slice(0, 6) }
+      }
+
       msgs.push({
         ev,
         idHex,
@@ -383,6 +480,7 @@ class AppState {
         deleted: isDeleted,
         replyTo,
         replyPreview,
+        quote,
         reactions: [...agg.values()].sort((a, b) => a.emoji.localeCompare(b.emoji)),
         state: this.states.get(idHex) ?? 'delivered',
       })

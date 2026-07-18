@@ -29,6 +29,7 @@
     wifi: '<path d="M2 6.5a9 9 0 0 1 12 0M4.2 9a6 6 0 0 1 7.6 0M6.4 11.4a3 3 0 0 1 3.2 0"/><circle cx="8" cy="13" r=".6" fill="currentColor" stroke="none"/>',
     bell: '<path d="M4.5 7a3.5 3.5 0 0 1 7 0c0 3 1 4 1.5 4.5h-10C3.5 11 4.5 10 4.5 7Z"/><path d="M6.5 13a1.5 1.5 0 0 0 3 0"/>',
     key: '<circle cx="5.5" cy="10.5" r="3"/><path d="M7.6 8.4 13 3M11 5l1.5 1.5M9.5 6.5 11 8"/>',
+    quote: '<path d="M4 5H7v3l-1.5 3H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1ZM10 5h3v3l-1.5 3H10a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z"/>',
     sync: '<path d="M13 7a5 5 0 0 0-9-2.5M3 9a5 5 0 0 0 9 2.5"/><path d="M12.5 2.5v2.5H10M3.5 13.5V11H6"/>',
   }
 </script>

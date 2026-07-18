@@ -56,8 +56,14 @@ loses no history; message states reflect real delivery
       Per-epoch room keys; pre-join history opaque; members panel (show my key / add by
       key / rotate / share key-link). Verified end-to-end: a browser member_add's wrapped
       epoch key unwraps on Go and decrypts the new epoch.
-- [ ] Remaining Phase 1 surface: **presence** + quote UI, missing-parent backfill (§6.4),
-      a real two-*browser* run, and an automated crypto-conformance vector test.
+- [x] **Presence** (ephemeral — server broadcasts but never persists it; live roster +
+      "N online") and **quote** (embedded snapshot, distinct from reply).
+- [x] **Missing-parent backfill** (§6.4): unknown parents fetched via History so folds
+      never dangle under out-of-order / partial delivery.
+- [x] **Automated crypto-conformance**: golden event_id vectors asserted in both a Go test
+      and `npm run conformance` — a permanent guard on the canonical-CBOR/BLAKE3 interop.
+- [ ] Only outstanding: a real two-*browser* run (verified so far via Node+Go harnesses —
+      this sandbox is musl and can't launch a browser). **Phase 1 is otherwise complete.**
 
 ## Phase 2 — Agents native + files + inlays
 

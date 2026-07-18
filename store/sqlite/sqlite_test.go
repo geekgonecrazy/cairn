@@ -141,6 +141,28 @@ func TestMissing_SyncDiff(t *testing.T) {
 	}
 }
 
+func TestHistory_WalksAncestors(t *testing.T) {
+	// Backfill (PROTOCOL §6.4) relies on History(before=X) returning X and its
+	// ancestors, newest-first.
+	s := newTestStore(t)
+	kp, _ := identity.GenerateKey()
+	e1 := mkEvent(t, kp, "r", 1, nil, "1")
+	e2 := mkEvent(t, kp, "r", 2, [][]byte{e1.EventId}, "2")
+	e3 := mkEvent(t, kp, "r", 3, [][]byte{e2.EventId}, "3")
+	for _, e := range []*cairnv1.Event{e1, e2, e3} {
+		s.PutEvent(e)
+	}
+
+	got, err := s.History([]byte("r"), e2.EventId, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Walking back from e2 yields e2 then e1 (not e3, which is a descendant).
+	if len(got) != 2 || string(got[0].EventId) != string(e2.EventId) || string(got[1].EventId) != string(e1.EventId) {
+		t.Fatalf("History(before=e2) = %d events, want [e2,e1]", len(got))
+	}
+}
+
 func TestIdentityLog_ResolverRoundTrip(t *testing.T) {
 	s := newTestStore(t)
 	root, _ := identity.GenerateKey()

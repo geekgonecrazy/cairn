@@ -205,9 +205,17 @@ export function importRoomKeyFromHash() {
 
 // ---- build / open / verify ----
 
+export interface QuoteSnapshot {
+  text: string
+  author: Uint8Array
+  sourceEvent: Uint8Array
+  ts: number
+}
+
 export interface ChatBody {
   text: string
   replyTo?: Uint8Array
+  quote?: QuoteSnapshot
 }
 
 // sealAndSign is the shared build path for every event type: encode the payload
@@ -234,7 +242,21 @@ async function sealAndSign(
 
 /** Build a signed, room-encrypted CHAT event. parents should be the local heads. */
 export function buildChat(roomIdStr: string, body: ChatBody, parents: Uint8Array[]): Promise<Event> {
-  return sealAndSign(roomIdStr, EventType.CHAT, prune({ text: body.text, reply_to: body.replyTo }), parents)
+  const quote = body.quote
+    ? { text: body.quote.text, author: body.quote.author, source_event: body.quote.sourceEvent, ts: BigInt(body.quote.ts) }
+    : undefined
+  return sealAndSign(
+    roomIdStr,
+    EventType.CHAT,
+    prune({ text: body.text, reply_to: body.replyTo, quote }),
+    parents,
+  )
+}
+
+/** Emit ephemeral presence (online/away). Not part of the DAG (parents empty);
+ *  the server broadcasts it without persisting. */
+export function buildPresence(roomIdStr: string, state: 'online' | 'away'): Promise<Event> {
+  return sealAndSign(roomIdStr, EventType.PRESENCE, { state }, [])
 }
 
 /** REACTION carries the sender's COMPLETE current emoji set for a target (CRDT). */
@@ -269,10 +291,11 @@ export function buildDelete(
 
 // Decoded payloads, discriminated by event type.
 export type Decoded =
-  | { kind: 'chat'; text: string; replyTo?: Uint8Array }
+  | { kind: 'chat'; text: string; replyTo?: Uint8Array; quote?: QuoteSnapshot }
   | { kind: 'reaction'; target: Uint8Array; emoji: string[] }
   | { kind: 'edit'; target: Uint8Array; text: string }
   | { kind: 'delete'; target: Uint8Array; by: string }
+  | { kind: 'presence'; state: string }
   | { kind: 'system'; text: string }
   | { kind: 'other' }
 
@@ -290,10 +313,22 @@ export async function openEvent(ev: Event): Promise<Decoded | null> {
   try {
     const obj = cborDecode(await open(ev)) as Record<string, unknown>
     switch (ev.type) {
-      case EventType.CHAT:
-        return typeof obj.text === 'string'
-          ? { kind: 'chat', text: obj.text, replyTo: obj.reply_to as Uint8Array | undefined }
-          : null
+      case EventType.CHAT: {
+        if (typeof obj.text !== 'string') return null
+        let quote: QuoteSnapshot | undefined
+        const q = obj.quote as Record<string, unknown> | undefined
+        if (q && typeof q.text === 'string') {
+          quote = {
+            text: q.text,
+            author: q.author as Uint8Array,
+            sourceEvent: q.source_event as Uint8Array,
+            ts: Number(q.ts ?? 0),
+          }
+        }
+        return { kind: 'chat', text: obj.text, replyTo: obj.reply_to as Uint8Array | undefined, quote }
+      }
+      case EventType.PRESENCE:
+        return { kind: 'presence', state: String(obj.state ?? 'online') }
       case EventType.REACTION:
         return { kind: 'reaction', target: obj.target as Uint8Array, emoji: (obj.emoji as string[]) ?? [] }
       case EventType.EDIT:

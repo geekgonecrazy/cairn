@@ -49,6 +49,13 @@
       </div>
     {/if}
 
+    {#if msg.quote}
+      <blockquote class="quote">
+        <span class="q-author">{msg.quote.author}</span>
+        <span class="q-text">{msg.quote.text}</span>
+      </blockquote>
+    {/if}
+
     <div class="head">
       <span class="author">{msg.author}</span>
       <span class="time">{time}</span>
@@ -100,6 +107,9 @@
       <button class="act" title="Reply" aria-label="Reply" onclick={() => app.setReplyTo(msg)}>
         <Icon name="reply" size={15} />
       </button>
+      <button class="act" title="Quote" aria-label="Quote" onclick={() => app.setQuoteTo(msg)}>
+        <Icon name="quote" size={15} />
+      </button>
       {#if msg.mine}
         <button class="act" title="Edit" aria-label="Edit" onclick={startEdit}>
           <Icon name="settings" size={15} />
@@ -149,6 +159,18 @@
     white-space: nowrap;
     max-width: 60ch;
   }
+  .quote {
+    margin: 2px 0 4px;
+    padding: 4px 10px;
+    border-left: 2px solid var(--border-2);
+    background: color-mix(in oklab, var(--surface-2) 50%, transparent);
+    border-radius: 0 var(--r-2) var(--r-2) 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .quote .q-author { font-size: 11.5px; font-weight: 600; color: var(--text-3); }
+  .quote .q-text { font-size: 13px; color: var(--text-2); line-height: 1.4; }
   .head { display: flex; align-items: baseline; gap: 8px; }
   .author { font-weight: 600; font-size: 13.5px; color: var(--text); }
   .msg.mine .author { color: var(--accent); }

@@ -17,7 +17,12 @@
       <span class="rg"><Icon name={glyph.icon} size={16} /></span>
       <div>
         <h1>{room?.name ?? app.currentRoomId}</h1>
-        <div class="sub">{room?.sub ?? 'room'}</div>
+        <div class="sub">
+          {room?.sub ?? 'room'}
+          {#if app.online.length > 0}
+            · <span class="online"><span class="odot"></span>{app.online.length} online</span>
+          {/if}
+        </div>
       </div>
     </div>
     <div class="actions">
@@ -75,6 +80,8 @@
   .rg { color: var(--text-3); display: grid; place-items: center; }
   .title h1 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
   .sub { font-size: 12px; color: var(--text-3); margin-top: 1px; }
+  .online { display: inline-flex; align-items: center; gap: 4px; color: var(--pos); }
+  .odot { width: 6px; height: 6px; border-radius: 50%; background: var(--pos); }
   .actions { display: flex; gap: 4px; }
   .icon-btn {
     width: 32px;
