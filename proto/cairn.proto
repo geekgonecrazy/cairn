@@ -1,0 +1,164 @@
+syntax = "proto3";
+
+package cairn.v1;
+
+option go_package = "github.com/geekgonecrazy/cairn/proto/cairnv1;cairnv1";
+
+// Cairn wire schema.
+//
+// The `Event` is the lingua franca — the SAME bytes travel over LAN, Meshtastic
+// (LoRa), BLE, and iroh. The *envelope* is protobuf; the *payload* is CBOR
+// encrypted under the room key and is opaque to the router. Payload schemas,
+// signing/hashing, the DAG, sync, and room-key handling are all specified in
+// PROTOCOL.md — this file is only the routable/typed surface.
+
+// ---------------------------------------------------------------------------
+// Event envelope
+// ---------------------------------------------------------------------------
+
+message Event {
+  // BLAKE3-256 of the canonical signed content (see PROTOCOL.md §Event). The
+  // content address of this event; also its identity for parents/reply/react.
+  bytes event_id = 1;
+
+  // Ed25519 public key of the *device* or *session* key that signed this event.
+  // Verified back to a member root → household root via the identity log.
+  bytes sender_pub = 2;
+
+  bytes room_id = 3;
+
+  // Sender wall-clock, unix milliseconds. Advisory only — ordering is the
+  // causal DAG (`parents`) with a deterministic tiebreak, never `ts`.
+  int64 ts = 4;
+
+  // event_ids the sender had already seen when it created this event (the
+  // causal heads). This is the SYNC structure — not the semantic `reply_to`.
+  repeated bytes parents = 5;
+
+  EventType type = 6;
+
+  // CBOR, encrypted under the room key. Framed as:
+  //   uvarint(key_epoch) || nonce(12) || AES-256-GCM(ciphertext||tag)
+  // AAD = sender_pub || room_id || ts(le64) || type. key_epoch 0 = not
+  // room-encrypted (identity/room-state events carry their own scheme).
+  bytes payload = 7;
+
+  // Ed25519 by `sender_pub` over `event_id` (which is itself the BLAKE3 of the
+  // canonical content). For passkey-signed authority events this is the
+  // WebAuthn signature envelope instead — see PROTOCOL.md §Identity.
+  bytes sig = 8;
+
+  // NOT signed, NOT hashed, NOT stored as canonical: the transport this copy
+  // arrived on (populated by the receiver for reachability learning).
+  string arrived_via = 15;
+}
+
+enum EventType {
+  EVENT_TYPE_UNSPECIFIED = 0;
+
+  // Chat
+  CHAT     = 1;
+  FILE_REF = 2;
+  PRESENCE = 3;
+  REACTION = 4;
+  EDIT     = 5;
+  DELETE   = 6;
+
+  // Agent
+  TASK_REQUEST = 10;
+  TASK_UPDATE  = 11;
+  NOTIFY       = 12;
+  COMMAND      = 13;
+
+  // Authority
+  APPROVAL_REQUEST  = 20;
+  APPROVAL_GRANT    = 21;
+  APPROVAL_DENY     = 22;
+  CREDENTIAL_MINTED = 23;
+
+  // Inlay UI
+  INLAY        = 30;
+  INLAY_UPDATE = 31;
+  INLAY_UNPIN  = 32;
+  INTERACTION  = 33;
+
+  // Call (signaling only; live WebRTC lives in the video component)
+  SIGNALING_OFFER  = 40;
+  SIGNALING_ANSWER = 41;
+  SIGNALING_ICE    = 42;
+  CALL_RING        = 43;
+  CALL_BYE         = 44;
+
+  // Room state
+  MEMBER_ADD      = 50;
+  MEMBER_REMOVE   = 51;
+  ROOM_KEY_ROTATE = 52;
+  SPACE_CREATE    = 53;
+  SPACE_UPDATE    = 54;
+
+  // Identity (live in the household identity log; fetched by hash)
+  IDENTITY_ATTESTATION = 60;
+  DEVICE_DELEGATION    = 61;
+  DEVICE_REVOKE        = 62;
+}
+
+// Per-message transport override the sending client may attach out-of-band
+// (not part of the signed event). See PROTOCOL.md §Transport.
+enum TransportHint {
+  TRANSPORT_HINT_UNSPECIFIED = 0; // = "any"
+  TRANSPORT_HINT_LAN  = 1;
+  TRANSPORT_HINT_MESH = 2;
+  TRANSPORT_HINT_BLE  = 3;
+  TRANSPORT_HINT_ALL  = 4;
+}
+
+// ---------------------------------------------------------------------------
+// Unary API messages
+//
+// Binding is open (ConnectRPC vs. Gin REST over these types) — see decisions.md.
+// The realtime `Subscribe` is NOT here: it is a plain HTTP SSE stream of Events
+// (user preference), documented in PROTOCOL.md §API.
+// ---------------------------------------------------------------------------
+
+message SendEventRequest {
+  Event event = 1;
+  TransportHint hint = 2; // optional per-message override
+}
+message SendEventResponse {
+  bytes event_id = 1;
+}
+
+// Frontier sync: the client sends the heads it has for a room; the server
+// returns the subgraph the client is missing, plus its own heads so the client
+// can compute what to push back. This is the per-peer delivery cursor.
+message SyncRequest {
+  bytes room_id = 1;
+  repeated bytes have_heads = 2;
+}
+message SyncResponse {
+  repeated Event missing = 1; // events the client lacked, best-effort causal order
+  repeated bytes heads   = 2; // server's current heads for the room
+}
+
+// Backfill older history by walking parents from a known event.
+message HistoryRequest {
+  bytes room_id = 1;
+  bytes before  = 2; // event_id to walk back from (empty = from heads)
+  uint32 limit  = 3;
+}
+message HistoryResponse {
+  repeated Event events = 1;
+}
+
+// Fetch an identity-log object (attestation / delegation / revoke) by hash the
+// first time a client meets an unknown sender.
+message GetIdentityObjectRequest { bytes hash = 1; }
+message GetIdentityObjectResponse { bytes cbor = 1; } // CBOR object; schema in PROTOCOL.md
+
+service CairnService {
+  rpc SendEvent(SendEventRequest) returns (SendEventResponse);
+  rpc Sync(SyncRequest) returns (SyncResponse);
+  rpc History(HistoryRequest) returns (HistoryResponse);
+  rpc GetIdentityObject(GetIdentityObjectRequest) returns (GetIdentityObjectResponse);
+  // Realtime push is SSE (see PROTOCOL.md §API), not a proto stream.
+}

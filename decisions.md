@@ -17,6 +17,9 @@ Companion to [`plan.md`](./plan.md) (the build plan) and the design mockup in
   for the mobile app. (See `plan.md` §1 for how these compose.)
 - **Sources of truth:** the `claude-design/` mockup is the UI source of truth (React files are a
   *picture, not a blueprint*); the vision repo at `/root/code/vision` is the architecture source.
+- **Realtime transport = SSE.** User preference; matches `flockledger/controllers/sse.go`. The
+  realtime `Subscribe` is a plain HTTP SSE stream of `Event`s; unary calls (send / sync / history) are
+  request/response. (Resolves the earlier SSE-vs-WebSocket item.)
 - **Code structure follows `geekgonecrazy/rfd-tool` + `fidetechsolutions/flockledger`.** Flat
   top-level Go packages by concern, **no `internal/`**; `store` interface + `store/sqlite` impl;
   a `core` package wired via `core.Setup()` with unexported package-level state; `config.Load` +
@@ -39,8 +42,9 @@ Companion to [`plan.md`](./plan.md) (the build plan) and the design mockup in
 
 ## Open — questioned / proposed, NOT yet decided
 
-- **RPC library:** ConnectRPC (my proposal) vs. the vision's literal "gRPC + grpc-web gateway." Not
-  decided.
+- **Unary API binding:** open — ConnectRPC (typed Go+TS from the proto) vs. plain Gin REST over the
+  proto message types (matches the reference repos). The `Event` is proto-encoded on the wire either
+  way; this is only the request/response binding.
 - **SQLite driver:** `modernc.org/sqlite` (pure-Go, no cgo) is my recommendation for clean
   mobile cross-compile. Not decided.
 - **Wails3 topology:** does the native app embed the full Go `core` as an on-device node, or act as a
