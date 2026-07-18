@@ -169,6 +169,7 @@ func (CairnController) ListRooms(
 			Name:        sp.Name,
 			AdmitKind:   sp.AdmitKind,
 			AdmitOrigin: sp.AdmitOrigin,
+			Owner:       sp.Owner,
 		})
 	}
 	return connect.NewResponse(out), nil

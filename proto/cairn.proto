@@ -215,6 +215,7 @@ message SpaceInfo {
   string name = 2;
   string admit_kind = 3;   // e.g. "human" or "human,agent"
   string admit_origin = 4; // "own" | "any" | comma-joined root pubkeys (hex)
+  bytes owner = 5;         // member root that created the space — its sole authority
 }
 // Rooms visible to member_pub: every room it was admitted to (joined), plus the
 // discoverable rooms of every space it is a member of (unjoined). Visibility is

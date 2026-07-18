@@ -55,17 +55,34 @@ func (s *Store) ListRooms() ([]*models.Room, error) {
 }
 
 func (s *Store) PutSpace(sp *models.Space) error {
+	// owner is set once at SPACE_CREATE and never overwritten by a later update —
+	// COALESCE keeps the original creator if a SPACE_UPDATE carries none.
 	_, err := s.db.Exec(
-		`INSERT INTO spaces(space_id,name,admit_kind,admit_origin,policy) VALUES(?,?,?,?,?)
+		`INSERT INTO spaces(space_id,name,admit_kind,admit_origin,policy,owner) VALUES(?,?,?,?,?,?)
 		 ON CONFLICT(space_id) DO UPDATE SET name=excluded.name, admit_kind=excluded.admit_kind,
-		   admit_origin=excluded.admit_origin, policy=excluded.policy`,
-		sp.SpaceID, sp.Name, sp.AdmitKind, sp.AdmitOrigin, sp.Policy,
+		   admit_origin=excluded.admit_origin, policy=excluded.policy,
+		   owner=COALESCE(spaces.owner, excluded.owner)`,
+		sp.SpaceID, sp.Name, sp.AdmitKind, sp.AdmitOrigin, sp.Policy, sp.Owner,
 	)
 	return err
 }
 
+func (s *Store) GetSpace(spaceID []byte) (*models.Space, error) {
+	var sp models.Space
+	err := s.db.QueryRow(
+		`SELECT space_id,name,admit_kind,admit_origin,policy,owner FROM spaces WHERE space_id=?`, spaceID,
+	).Scan(&sp.SpaceID, &sp.Name, &sp.AdmitKind, &sp.AdmitOrigin, &sp.Policy, &sp.Owner)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &sp, nil
+}
+
 func (s *Store) ListSpaces() ([]*models.Space, error) {
-	rows, err := s.db.Query(`SELECT space_id,name,admit_kind,admit_origin,policy FROM spaces ORDER BY name`)
+	rows, err := s.db.Query(`SELECT space_id,name,admit_kind,admit_origin,policy,owner FROM spaces ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +90,7 @@ func (s *Store) ListSpaces() ([]*models.Space, error) {
 	var out []*models.Space
 	for rows.Next() {
 		var sp models.Space
-		if err := rows.Scan(&sp.SpaceID, &sp.Name, &sp.AdmitKind, &sp.AdmitOrigin, &sp.Policy); err != nil {
+		if err := rows.Scan(&sp.SpaceID, &sp.Name, &sp.AdmitKind, &sp.AdmitOrigin, &sp.Policy, &sp.Owner); err != nil {
 			return nil, err
 		}
 		out = append(out, &sp)
@@ -109,20 +126,36 @@ func (s *Store) ListMembers(roomID []byte) ([]*models.Member, error) {
 	return out, rows.Err()
 }
 
+// PutSpaceMember records an admit last-writer-wins by ts: the `WHERE excluded.ts
+// >= space_members.ts` guard drops a stale add that arrives after a later remove.
 func (s *Store) PutSpaceMember(m *models.SpaceMember) error {
 	_, err := s.db.Exec(
-		`INSERT INTO space_members(space_id,member_pub,role,added_event) VALUES(?,?,?,?)
-		 ON CONFLICT(space_id,member_pub) DO UPDATE SET role=excluded.role, added_event=excluded.added_event`,
-		m.SpaceID, m.MemberPub, m.Role, m.AddedEvent,
+		`INSERT INTO space_members(space_id,member_pub,role,added_event,ts,removed) VALUES(?,?,?,?,?,0)
+		 ON CONFLICT(space_id,member_pub) DO UPDATE SET role=excluded.role,
+		   added_event=excluded.added_event, ts=excluded.ts, removed=0
+		   WHERE excluded.ts >= space_members.ts`,
+		m.SpaceID, m.MemberPub, m.Role, m.AddedEvent, m.Ts,
 	)
 	return err
 }
 
-// ListSpaceMembers returns every member root admitted to a space (the space
-// roster).
+// RemoveSpaceMember writes a revocation TOMBSTONE (removed=1), last-writer-wins by
+// ts, so a stale add can't resurrect it. The row is kept, not deleted, so the
+// ordering stays deterministic across sync.
+func (s *Store) RemoveSpaceMember(spaceID, memberPub []byte, ts int64) error {
+	_, err := s.db.Exec(
+		`INSERT INTO space_members(space_id,member_pub,role,added_event,ts,removed) VALUES(?,?,'',NULL,?,1)
+		 ON CONFLICT(space_id,member_pub) DO UPDATE SET ts=excluded.ts, removed=1
+		   WHERE excluded.ts >= space_members.ts`,
+		spaceID, memberPub, ts,
+	)
+	return err
+}
+
+// ListSpaceMembers returns the live roster (tombstones excluded).
 func (s *Store) ListSpaceMembers(spaceID []byte) ([]*models.SpaceMember, error) {
 	rows, err := s.db.Query(
-		`SELECT space_id,member_pub,role,added_event FROM space_members WHERE space_id=?`, spaceID,
+		`SELECT space_id,member_pub,role,added_event,ts FROM space_members WHERE space_id=? AND removed=0`, spaceID,
 	)
 	if err != nil {
 		return nil, err
@@ -131,7 +164,7 @@ func (s *Store) ListSpaceMembers(spaceID []byte) ([]*models.SpaceMember, error) 
 	var out []*models.SpaceMember
 	for rows.Next() {
 		var m models.SpaceMember
-		if err := rows.Scan(&m.SpaceID, &m.MemberPub, &m.Role, &m.AddedEvent); err != nil {
+		if err := rows.Scan(&m.SpaceID, &m.MemberPub, &m.Role, &m.AddedEvent, &m.Ts); err != nil {
 			return nil, err
 		}
 		out = append(out, &m)
@@ -139,12 +172,11 @@ func (s *Store) ListSpaceMembers(spaceID []byte) ([]*models.SpaceMember, error) 
 	return out, rows.Err()
 }
 
-// SpaceMembershipsFor returns every space a member root belongs to — the entry
-// point for discovery: ListRooms uses it to decide which spaces' rooms a caller
-// may see.
+// SpaceMembershipsFor returns every space a member root currently belongs to —
+// the entry point for discovery. Tombstones excluded.
 func (s *Store) SpaceMembershipsFor(memberPub []byte) ([]*models.SpaceMember, error) {
 	rows, err := s.db.Query(
-		`SELECT space_id,member_pub,role,added_event FROM space_members WHERE member_pub=?`, memberPub,
+		`SELECT space_id,member_pub,role,added_event,ts FROM space_members WHERE member_pub=? AND removed=0`, memberPub,
 	)
 	if err != nil {
 		return nil, err
@@ -153,7 +185,7 @@ func (s *Store) SpaceMembershipsFor(memberPub []byte) ([]*models.SpaceMember, er
 	var out []*models.SpaceMember
 	for rows.Next() {
 		var m models.SpaceMember
-		if err := rows.Scan(&m.SpaceID, &m.MemberPub, &m.Role, &m.AddedEvent); err != nil {
+		if err := rows.Scan(&m.SpaceID, &m.MemberPub, &m.Role, &m.AddedEvent, &m.Ts); err != nil {
 			return nil, err
 		}
 		out = append(out, &m)
@@ -163,11 +195,6 @@ func (s *Store) SpaceMembershipsFor(memberPub []byte) ([]*models.SpaceMember, er
 
 func (s *Store) DeleteMember(roomID, memberPub []byte) error {
 	_, err := s.db.Exec(`DELETE FROM members WHERE room_id=? AND member_pub=?`, roomID, memberPub)
-	return err
-}
-
-func (s *Store) DeleteSpaceMember(spaceID, memberPub []byte) error {
-	_, err := s.db.Exec(`DELETE FROM space_members WHERE space_id=? AND member_pub=?`, spaceID, memberPub)
 	return err
 }
 

@@ -26,6 +26,10 @@ type Space struct {
 	AdmitKind   string `json:"admit_kind"`   // e.g. "human" or "human,agent"
 	AdmitOrigin string `json:"admit_origin"` // "own" | "any" | comma-joined root pubkeys (hex)
 	Policy      []byte `json:"policy,omitempty"`
+	// Owner is the member root that created the space (resolved from the
+	// SPACE_CREATE signer). The space's authority: only the owner may add/remove
+	// space members or update the space. Its membership changes cascade to rooms.
+	Owner []byte `json:"owner,omitempty"`
 }
 
 // Member is a member root's presence in a room, with the role the admit act gave
@@ -47,6 +51,11 @@ type SpaceMember struct {
 	MemberPub  []byte `json:"member_pub"`
 	Role       string `json:"role"` // e.g. "admin" | "member"
 	AddedEvent []byte `json:"added_event,omitempty"`
+	// Ts is the timestamp of the add/remove that last set this row — the folder
+	// applies last-writer-wins by Ts, so a stale add can't resurrect a later
+	// remove. Removed marks a tombstone (revoked; excluded from the live roster).
+	Ts      int64 `json:"ts"`
+	Removed bool  `json:"removed,omitempty"`
 }
 
 // JoinRequest is a discoverer asking to be admitted to a room they can see but

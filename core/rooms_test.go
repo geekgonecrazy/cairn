@@ -137,6 +137,26 @@ func fold(t *testing.T, kp identity.KeyPair, target string, typ cairnv1.EventTyp
 	}
 }
 
+// foldAs folds an event signed by member m's DEVICE key (m's chain installed), at
+// the given ts. Space-authority events (space_create/space_member_*/space_update)
+// only pass when signed by the space owner, so these must be signed by a real
+// member whose chain resolves — a bare keypair's owner can't be resolved.
+func foldAs(t *testing.T, m *testMember, target string, ts int64, typ cairnv1.EventType, p roomStatePayload) {
+	t.Helper()
+	body, err := cbor.Marshal(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := append([]byte{0x00}, body...)
+	ev, err := event.Build(m.device.Pub, m.device.Priv, []byte(target), ts, nil, typ, payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := applyRoomState(ev); err != nil {
+		t.Fatalf("foldAs %v: %v", typ, err)
+	}
+}
+
 func names(rooms []VisibleRoom) map[string]bool {
 	m := map[string]bool{}
 	for _, r := range rooms {
@@ -160,28 +180,32 @@ func joinedByName(rooms []VisibleRoom, name string) (joined, present bool) {
 func TestVisibleRoomsTwoTiers(t *testing.T) {
 	setTestStore(t)
 
-	alice, _ := identity.GenerateKey() // founder + room member everywhere
+	hh := newHousehold(t)
+	alice := hh.member(t, "Alice") // founder + owner + room member everywhere
+	alice.install(t)
 	bob, _ := identity.GenerateKey()   // space member only — a pure discoverer
 	carol, _ := identity.GenerateKey() // room member of general, NOT a space member
 	dave, _ := identity.GenerateKey()  // stranger
 
 	const space = "hh"
-	fold(t, alice, space, cairnv1.EventType_SPACE_CREATE, roomStatePayload{SpaceName: "Household"})
-	fold(t, alice, space, cairnv1.EventType_SPACE_MEMBER_ADD, roomStatePayload{MemberPub: alice.Pub, Role: "admin"})
-	fold(t, alice, space, cairnv1.EventType_SPACE_MEMBER_ADD, roomStatePayload{MemberPub: bob.Pub, Role: "member"})
+	ts := int64(0)
+	next := func() int64 { ts++; return ts }
+	foldAs(t, alice, space, next(), cairnv1.EventType_SPACE_CREATE, roomStatePayload{SpaceName: "Household"})
+	foldAs(t, alice, space, next(), cairnv1.EventType_SPACE_MEMBER_ADD, roomStatePayload{MemberPub: alice.member.Pub, Role: "admin"})
+	foldAs(t, alice, space, next(), cairnv1.EventType_SPACE_MEMBER_ADD, roomStatePayload{MemberPub: bob.Pub, Role: "member"})
 
-	fold(t, alice, "general", cairnv1.EventType_ROOM_CREATE, roomStatePayload{Name: "general", SpaceID: []byte(space), Visibility: "discoverable"})
-	fold(t, alice, "secret", cairnv1.EventType_ROOM_CREATE, roomStatePayload{Name: "secret", SpaceID: []byte(space), Visibility: "hidden"})
+	foldAs(t, alice, "general", next(), cairnv1.EventType_ROOM_CREATE, roomStatePayload{Name: "general", SpaceID: []byte(space), Visibility: "discoverable"})
+	foldAs(t, alice, "secret", next(), cairnv1.EventType_ROOM_CREATE, roomStatePayload{Name: "secret", SpaceID: []byte(space), Visibility: "hidden"})
 	// A spaceless room: reachable only by direct membership, never by discovery.
-	fold(t, alice, "orphan", cairnv1.EventType_ROOM_CREATE, roomStatePayload{Name: "orphan", Visibility: "discoverable"})
+	foldAs(t, alice, "orphan", next(), cairnv1.EventType_ROOM_CREATE, roomStatePayload{Name: "orphan", Visibility: "discoverable"})
 
 	for _, room := range []string{"general", "secret", "orphan"} {
-		fold(t, alice, room, cairnv1.EventType_MEMBER_ADD, roomStatePayload{MemberPub: alice.Pub, Role: "admin"})
+		foldAs(t, alice, room, next(), cairnv1.EventType_MEMBER_ADD, roomStatePayload{MemberPub: alice.member.Pub, Role: "admin"})
 	}
-	fold(t, alice, "general", cairnv1.EventType_MEMBER_ADD, roomStatePayload{MemberPub: carol.Pub, Role: "member"})
+	foldAs(t, alice, "general", next(), cairnv1.EventType_MEMBER_ADD, roomStatePayload{MemberPub: carol.Pub, Role: "member"})
 
 	// Alice: admitted to all three, joined everywhere.
-	rooms, spaces, err := VisibleRooms(alice.Pub)
+	rooms, spaces, err := VisibleRooms(alice.member.Pub)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,15 +280,19 @@ func TestRoomVisibilityDefault(t *testing.T) {
 // VisibleRooms then no longer reports them as joined.
 func TestMemberRemove(t *testing.T) {
 	setTestStore(t)
-	admin, _ := identity.GenerateKey()
+	hh := newHousehold(t)
+	admin := hh.member(t, "Admin")
+	admin.install(t)
 	other, _ := identity.GenerateKey()
 
 	const space = "sp-hh"
-	fold(t, admin, space, cairnv1.EventType_SPACE_CREATE, roomStatePayload{SpaceName: "H"})
-	fold(t, admin, space, cairnv1.EventType_SPACE_MEMBER_ADD, roomStatePayload{MemberPub: other.Pub, Role: "member"})
-	fold(t, admin, "general", cairnv1.EventType_ROOM_CREATE, roomStatePayload{Name: "general", SpaceID: []byte(space), Visibility: "discoverable"})
-	fold(t, admin, "general", cairnv1.EventType_MEMBER_ADD, roomStatePayload{MemberPub: admin.Pub, Role: "admin"})
-	fold(t, admin, "general", cairnv1.EventType_MEMBER_ADD, roomStatePayload{MemberPub: other.Pub, Role: "member"})
+	ts := int64(0)
+	next := func() int64 { ts++; return ts }
+	foldAs(t, admin, space, next(), cairnv1.EventType_SPACE_CREATE, roomStatePayload{SpaceName: "H"})
+	foldAs(t, admin, space, next(), cairnv1.EventType_SPACE_MEMBER_ADD, roomStatePayload{MemberPub: other.Pub, Role: "member"})
+	foldAs(t, admin, "general", next(), cairnv1.EventType_ROOM_CREATE, roomStatePayload{Name: "general", SpaceID: []byte(space), Visibility: "discoverable"})
+	foldAs(t, admin, "general", next(), cairnv1.EventType_MEMBER_ADD, roomStatePayload{MemberPub: admin.member.Pub, Role: "admin"})
+	foldAs(t, admin, "general", next(), cairnv1.EventType_MEMBER_ADD, roomStatePayload{MemberPub: other.Pub, Role: "member"})
 
 	// `other` is joined.
 	rooms, _, _ := VisibleRooms(other.Pub)
@@ -272,51 +300,77 @@ func TestMemberRemove(t *testing.T) {
 		t.Fatal("other should be joined before removal")
 	}
 
-	// Remove them.
-	fold(t, admin, "general", cairnv1.EventType_MEMBER_REMOVE, roomStatePayload{MemberPub: other.Pub})
+	// Remove them from the channel.
+	foldAs(t, admin, "general", next(), cairnv1.EventType_MEMBER_REMOVE, roomStatePayload{MemberPub: other.Pub})
 	if ms, _ := st.ListMembers([]byte("general")); len(ms) != 1 {
 		t.Fatalf("roster should have 1 member after remove, got %d", len(ms))
 	}
-	// They still SEE the room (space member + discoverable) but no longer joined.
+	// They still SEE the room (still a space member + discoverable) but no longer joined.
 	rooms, _, _ = VisibleRooms(other.Pub)
 	if j, present := joinedByName(rooms, "general"); !present || j {
 		t.Fatalf("after removal, general should be discoverable-not-joined, got joined=%v present=%v", j, present)
 	}
 	// The admin is untouched.
-	arooms, _, _ := VisibleRooms(admin.Pub)
+	arooms, _, _ := VisibleRooms(admin.member.Pub)
 	if j, _ := joinedByName(arooms, "general"); !j {
 		t.Fatal("admin should still be joined")
 	}
 }
 
-// TestSpaceUpdateAndMemberRemove: SPACE_UPDATE renames a space (and rewrites its
-// admit policy), and SPACE_MEMBER_REMOVE revokes a discovery grant.
-func TestSpaceUpdateAndMemberRemove(t *testing.T) {
+// TestSpaceAuthorityAndLWW: only the space OWNER may add/remove/update; a non-owner
+// event is ignored at the fold; and space membership is last-writer-wins by ts.
+func TestSpaceAuthorityAndLWW(t *testing.T) {
 	setTestStore(t)
-	alice, _ := identity.GenerateKey()
+	hh := newHousehold(t)
+	owner := hh.member(t, "Owner")
+	imposter := hh.member(t, "Imposter") // same household, but NOT the space owner
+	owner.install(t)
+	imposter.install(t)
 	member, _ := identity.GenerateKey()
 
 	const space = "sp-1"
-	fold(t, alice, space, cairnv1.EventType_SPACE_CREATE, roomStatePayload{SpaceName: "Family", AdmitKind: "human,agent", AdmitOrigin: "own"})
-	fold(t, alice, space, cairnv1.EventType_SPACE_MEMBER_ADD, roomStatePayload{MemberPub: member.Pub, Role: "member"})
+	ts := int64(0)
+	next := func() int64 { ts++; return ts }
+	foldAs(t, owner, space, next(), cairnv1.EventType_SPACE_CREATE, roomStatePayload{SpaceName: "Family", AdmitKind: "human,agent", AdmitOrigin: "own"})
 
-	// Rename + tighten policy.
-	fold(t, alice, space, cairnv1.EventType_SPACE_UPDATE, roomStatePayload{SpaceName: "Familia", AdmitKind: "human", AdmitOrigin: "any"})
-	spaces, err := st.ListSpaces()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(spaces) != 1 || spaces[0].Name != "Familia" || spaces[0].AdmitKind != "human" || spaces[0].AdmitOrigin != "any" {
-		t.Fatalf("space_update did not rewrite name/policy: %+v", spaces)
+	// Owner is recorded from the SPACE_CREATE signer.
+	sp, _ := st.GetSpace([]byte(space))
+	if sp == nil || string(sp.Owner) != string(owner.member.Pub) {
+		t.Fatalf("space owner not recorded as the creator: %+v", sp)
 	}
 
-	// Member is on the roster, then removed.
-	if ms, _ := st.ListSpaceMembers([]byte(space)); len(ms) != 1 {
-		t.Fatalf("expected 1 space member before remove, got %d", len(ms))
-	}
-	fold(t, alice, space, cairnv1.EventType_SPACE_MEMBER_REMOVE, roomStatePayload{MemberPub: member.Pub})
+	// A non-owner add is IGNORED at the fold.
+	foldAs(t, imposter, space, next(), cairnv1.EventType_SPACE_MEMBER_ADD, roomStatePayload{MemberPub: member.Pub, Role: "member"})
 	if ms, _ := st.ListSpaceMembers([]byte(space)); len(ms) != 0 {
-		t.Fatalf("space_member_remove should empty the roster, got %d", len(ms))
+		t.Fatalf("a non-owner add must be ignored, got %d members", len(ms))
+	}
+	// A non-owner update is ignored too.
+	foldAs(t, imposter, space, next(), cairnv1.EventType_SPACE_UPDATE, roomStatePayload{SpaceName: "Hijacked"})
+	if sp, _ := st.GetSpace([]byte(space)); sp.Name != "Family" {
+		t.Fatalf("a non-owner update must be ignored, name is now %q", sp.Name)
+	}
+
+	// The owner adds the member (at ts=T), then removes them (at ts=T+1).
+	addTs := next()
+	foldAs(t, owner, space, addTs, cairnv1.EventType_SPACE_MEMBER_ADD, roomStatePayload{MemberPub: member.Pub, Role: "member"})
+	if ms, _ := st.ListSpaceMembers([]byte(space)); len(ms) != 1 {
+		t.Fatalf("owner add should land, got %d", len(ms))
+	}
+	rmTs := next()
+	foldAs(t, owner, space, rmTs, cairnv1.EventType_SPACE_MEMBER_REMOVE, roomStatePayload{MemberPub: member.Pub})
+	if ms, _ := st.ListSpaceMembers([]byte(space)); len(ms) != 0 {
+		t.Fatalf("owner remove should empty the roster, got %d", len(ms))
+	}
+
+	// LWW: a STALE add (ts before the remove) must NOT resurrect them.
+	foldAs(t, owner, space, addTs, cairnv1.EventType_SPACE_MEMBER_ADD, roomStatePayload{MemberPub: member.Pub, Role: "member"})
+	if ms, _ := st.ListSpaceMembers([]byte(space)); len(ms) != 0 {
+		t.Fatalf("a stale add (older ts) must not resurrect a later remove, got %d", len(ms))
+	}
+	// A FRESH add (ts after the remove) re-admits them.
+	foldAs(t, owner, space, next(), cairnv1.EventType_SPACE_MEMBER_ADD, roomStatePayload{MemberPub: member.Pub, Role: "member"})
+	if ms, _ := st.ListSpaceMembers([]byte(space)); len(ms) != 1 {
+		t.Fatalf("a fresh add (newer ts) should re-admit, got %d", len(ms))
 	}
 }
 

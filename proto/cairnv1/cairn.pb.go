@@ -979,6 +979,7 @@ type SpaceInfo struct {
 	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	AdmitKind     string                 `protobuf:"bytes,3,opt,name=admit_kind,json=admitKind,proto3" json:"admit_kind,omitempty"`       // e.g. "human" or "human,agent"
 	AdmitOrigin   string                 `protobuf:"bytes,4,opt,name=admit_origin,json=admitOrigin,proto3" json:"admit_origin,omitempty"` // "own" | "any" | comma-joined root pubkeys (hex)
+	Owner         []byte                 `protobuf:"bytes,5,opt,name=owner,proto3" json:"owner,omitempty"`                                // member root that created the space — its sole authority
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1039,6 +1040,13 @@ func (x *SpaceInfo) GetAdmitOrigin() string {
 		return x.AdmitOrigin
 	}
 	return ""
+}
+
+func (x *SpaceInfo) GetOwner() []byte {
+	if x != nil {
+		return x.Owner
+	}
+	return nil
 }
 
 // Rooms visible to member_pub: every room it was admitted to (joined), plus the
@@ -1447,13 +1455,14 @@ const file_cairn_proto_rawDesc = "" +
 	"\n" +
 	"visibility\x18\x06 \x01(\tR\n" +
 	"visibility\x12)\n" +
-	"\x10pending_requests\x18\a \x01(\x05R\x0fpendingRequests\"|\n" +
+	"\x10pending_requests\x18\a \x01(\x05R\x0fpendingRequests\"\x92\x01\n" +
 	"\tSpaceInfo\x12\x19\n" +
 	"\bspace_id\x18\x01 \x01(\fR\aspaceId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1d\n" +
 	"\n" +
 	"admit_kind\x18\x03 \x01(\tR\tadmitKind\x12!\n" +
-	"\fadmit_origin\x18\x04 \x01(\tR\vadmitOrigin\"1\n" +
+	"\fadmit_origin\x18\x04 \x01(\tR\vadmitOrigin\x12\x14\n" +
+	"\x05owner\x18\x05 \x01(\fR\x05owner\"1\n" +
 	"\x10ListRoomsRequest\x12\x1d\n" +
 	"\n" +
 	"member_pub\x18\x01 \x01(\fR\tmemberPub\"j\n" +

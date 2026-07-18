@@ -43,19 +43,20 @@ type Store interface {
 	GetRoom(roomID []byte) (*models.Room, error)
 	ListRooms() ([]*models.Room, error)
 	PutSpace(*models.Space) error
+	GetSpace(spaceID []byte) (*models.Space, error)
 	ListSpaces() ([]*models.Space, error)
 	PutMember(*models.Member) error
 	ListMembers(roomID []byte) ([]*models.Member, error)
 	// DeleteMember removes a member root from a room (folded from MEMBER_REMOVE).
 	DeleteMember(roomID, memberPub []byte) error
-	// Space membership — the discovery tier (no key). SpaceMembershipsFor is the
-	// pubkey-keyed entry point ListRooms uses to decide which spaces' rooms a
-	// caller may see.
+	// Space membership — the space roster (the authority a channel roster must
+	// stay within). SpaceMembershipsFor is the pubkey-keyed entry point ListRooms
+	// uses to decide which spaces' rooms a caller may see. Folded last-writer-wins.
 	PutSpaceMember(*models.SpaceMember) error
 	ListSpaceMembers(spaceID []byte) ([]*models.SpaceMember, error)
 	SpaceMembershipsFor(memberPub []byte) ([]*models.SpaceMember, error)
-	// DeleteSpaceMember revokes a space membership (folded from SPACE_MEMBER_REMOVE).
-	DeleteSpaceMember(spaceID, memberPub []byte) error
+	// RemoveSpaceMember writes a revocation tombstone (folded from SPACE_MEMBER_REMOVE).
+	RemoveSpaceMember(spaceID, memberPub []byte, ts int64) error
 	// Join requests — a discoverer's ask to be admitted to a room they can see.
 	PutJoinRequest(*models.JoinRequest) error
 	ListJoinRequests(roomID []byte) ([]*models.JoinRequest, error)

@@ -74,16 +74,19 @@ CREATE TABLE IF NOT EXISTS rooms (
 );
 CREATE TABLE IF NOT EXISTS spaces (
   space_id BLOB PRIMARY KEY, name TEXT,
-  admit_kind TEXT, admit_origin TEXT, policy BLOB
+  admit_kind TEXT, admit_origin TEXT, policy BLOB, owner BLOB
 );
 CREATE TABLE IF NOT EXISTS members (
   room_id BLOB, member_pub BLOB, role TEXT, added_event BLOB,
   PRIMARY KEY (room_id, member_pub)
 );
--- Space membership is the discovery tier: no key, just the right to see a
--- space's discoverable rooms. Keyed on the member root like room membership.
+-- Space membership is the discovery tier AND the authority: a space's roster is
+-- the umbrella its channel rosters must stay within. Folded last-writer-wins by
+-- ts (a stale add can't resurrect a later remove); removed=1 is a revocation
+-- tombstone kept so ordering stays deterministic.
 CREATE TABLE IF NOT EXISTS space_members (
   space_id BLOB, member_pub BLOB, role TEXT, added_event BLOB,
+  ts INTEGER DEFAULT 0, removed INTEGER DEFAULT 0,
   PRIMARY KEY (space_id, member_pub)
 );
 -- Pending asks from discoverers who can see a room but hold no key. Folded from

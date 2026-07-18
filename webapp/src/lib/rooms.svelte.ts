@@ -39,6 +39,9 @@ export interface Space {
   /** Admit policy (recorded; enforcement is a separate milestone). */
   admitKind: string
   admitOrigin: string
+  /** Hex of the member root that created the space — its sole authority (only the
+   *  owner may add/remove space members or rename it). '' if unknown. */
+  owner: string
 }
 
 const dec = new TextDecoder()
@@ -94,6 +97,7 @@ class RoomStore {
         label: glyphFor(s.name),
         admitKind: s.admitKind || 'human,agent',
         admitOrigin: s.admitOrigin || 'own',
+        owner: s.owner.length ? hex(s.owner) : '',
       }))
       this.error = ''
     } catch (e) {

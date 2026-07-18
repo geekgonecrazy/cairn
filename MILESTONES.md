@@ -305,9 +305,24 @@ join; the recovery flow is gated and unskippable.
       closing the space-remove live gap). `core/rooms_test.go` covers the fold + the `joined` flip.
       > **Honest limits:** it does **not** claw back pre-removal history the member already holds
       > (keys can't be un-shared), and the system does not yet **reject** an old-epoch post a removed
-      > member could still craft with a key they retain, nor is removal admin-gated — the same
-      > authorization-not-enforced class as the chain gate's deferred tightening. Forward-secrecy
-      > enforcement (accept only the latest epoch from current members) is a separate item.
+      > member could still craft with a key they retain. Forward-secrecy enforcement (accept only the
+      > latest epoch from current members) is a separate item.
+- [x] **Space is the authority; channels enforce it.** Made space membership first-class and
+      owner-controlled, with removal cascading into channels. The space **owner** (the `SPACE_CREATE`
+      signer's member root, recorded at fold) is the sole authority: only they may add/remove space
+      members or `SPACE_UPDATE`, **enforced at the fold** (a non-owner change is dropped) and shown
+      owner-only in the UI. Space membership folds **last-writer-wins with a revocation tombstone**
+      (a stale add can't resurrect a later remove). A channel roster must stay within its space
+      roster (channel-add gated on space membership). **Cascade:** since only key-holders can rotate,
+      the owner declares `SPACE_MEMBER_REMOVE` and channel members enforce it — each client, **on
+      sync, reconciles every channel it holds a key to toward the space roster** (rotate to the
+      members who stay + `MEMBER_REMOVE` for anyone no longer a space member). State-based, so it
+      fires the next time any capable member syncs, even one offline during the revocation
+      (`reconcileAllSpaces` on init). Rationale + honest properties in `decisions.md`;
+      `core/rooms_test.go` (`TestSpaceAuthorityAndLWW`) pins owner-only + LWW.
+      > **Honest limits:** eventual/online-triggered (a channel with no online members stays open
+      > until one returns); creator-only (no promoting other admins yet); the client trusts the
+      > owner-enforced server roster rather than re-verifying it.
 
 **Not yet — the rest of Phase 4:**
 

@@ -5,11 +5,20 @@
   import { ui } from '../ui.svelte'
   import { roomStore } from '../rooms.svelte'
   import { directory } from '../directory.svelte'
+  import { identity } from '../identity.svelte'
   import { fingerprint } from '../identity'
+  import { hex } from '../api'
 
   // Settings always target the ACTIVE space (the one the sidebar is showing).
   const space = $derived(roomStore.spaces.find((s) => s.id === app.activeSpaceId))
   const channelCount = $derived(roomStore.inSpace(app.activeSpaceId).length)
+
+  // Only the space OWNER may change anything — rename, membership, policy. Others
+  // get a read-only view. (The carrier enforces this at the fold too; this just
+  // avoids offering controls that would be silently ignored.)
+  const isOwner = $derived(
+    !!space && !!identity.current && space.owner === hex(identity.current.memberPub),
+  )
 
   // Editable copies, seeded from the space's current state.
   let name = $state('')
@@ -98,9 +107,16 @@
     </div>
 
     <div class="m-body">
+      {#if !isOwner}
+        <p class="hint note owner-note">
+          <Icon name="info" size={12} /> Only the space's creator can change its members or settings.
+          You're viewing this read-only.
+        </p>
+      {/if}
+
       <div class="field">
         <label for="space-rename">Space name</label>
-        <input id="space-rename" bind:value={name} maxlength="40" spellcheck="false" />
+        <input id="space-rename" bind:value={name} maxlength="40" spellcheck="false" disabled={!isOwner} />
       </div>
 
       <div class="field">
@@ -120,7 +136,7 @@
               </span>
               <span class="right">
                 <code class="fpr">{fingerprint(m.pub)}</code>
-                {#if !m.mine}
+                {#if isOwner && !m.mine}
                   <button class="rm" title="Remove from space" aria-label="Remove from space" disabled={busy} onclick={() => removeMember(m.pub)}>
                     <Icon name="x" size={13} />
                   </button>
@@ -131,17 +147,23 @@
             <li class="none">No members folded yet.</li>
           {/each}
         </ul>
-        <div class="keyrow">
-          <input placeholder="add a member by 64-hex member key" bind:value={peerKey} spellcheck="false" />
-          <button class="btn sm primary" disabled={busy || !peerKey.trim()} onclick={addMember}>Add</button>
-        </div>
-        <p class="hint">Space membership is discovery only — it lets them see this space's channels, not read any. Removing revokes that; it does not remove them from channels they were added to.</p>
+        {#if isOwner}
+          <div class="keyrow">
+            <input placeholder="add a member by 64-hex member key" bind:value={peerKey} spellcheck="false" />
+            <button class="btn sm primary" disabled={busy || !peerKey.trim()} onclick={addMember}>Add</button>
+          </div>
+        {/if}
+        <p class="hint">
+          The space roster is the umbrella: a channel member must be a space member. Removing someone
+          here revokes their membership, and as channel members come online their channels drain them
+          automatically (rotating keys). It can't take back messages they already hold.
+        </p>
       </div>
 
       <div class="field">
         <span class="label-txt">Admit policy</span>
         <label class="toggle">
-          <input type="checkbox" bind:checked={allowAgents} />
+          <input type="checkbox" bind:checked={allowAgents} disabled={!isOwner} />
           <span>
             Allow agents in this space
             <small>When off, only <b>human</b>-kind identities may join its channels.</small>
@@ -149,11 +171,11 @@
         </label>
         <div class="origins">
           <label class="rx" data-selected={origin === 'own'}>
-            <input type="radio" name="origin" checked={origin === 'own'} onchange={() => (origin = 'own')} />
+            <input type="radio" name="origin" checked={origin === 'own'} disabled={!isOwner} onchange={() => (origin = 'own')} />
             <span><b>Own household only</b><small>The default — nobody outside your root of trust.</small></span>
           </label>
           <label class="rx" data-selected={origin === 'any'}>
-            <input type="radio" name="origin" checked={origin === 'any'} onchange={() => (origin = 'any')} />
+            <input type="radio" name="origin" checked={origin === 'any'} disabled={!isOwner} onchange={() => (origin = 'any')} />
             <span><b>Any peer household</b><small>Anyone running the stack, after review.</small></span>
           </label>
         </div>
@@ -169,7 +191,7 @@
     <div class="m-foot">
       <span class="grow"></span>
       <button class="btn" onclick={() => ui.closeSpaceSettings()}>Close</button>
-      <button class="btn primary" disabled={busy || name.trim().length < 2} onclick={save}>
+      <button class="btn primary" disabled={!isOwner || busy || name.trim().length < 2} onclick={save}>
         {saved ? 'Saved' : 'Save settings'}
       </button>
     </div>

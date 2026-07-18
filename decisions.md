@@ -89,6 +89,41 @@ Closes the open question carried in `plan.md` §5 and `PROTOCOL.md` §298. Imple
   error. That is BIP-39's plausible-deniability property; the UI must make the resulting
   "nobody recognizes you" state legible rather than looking like a bug.
 
+### Space is the authority; channels enforce it — decided 2026-07-18 (Phase 4)
+
+Supersedes the "two independent membership tiers" framing from the two-tier note below.
+Space membership and channel membership were independent, which made removal confusing: you
+could remove someone from a channel and the space stayed, or revoke space discovery without
+touching channel access. The resolution makes the space the single authority per its rooms.
+
+- **Space membership is first-class, revocable, and owner-controlled.** The space **owner** is the
+  member root that signed `SPACE_CREATE` (recorded at fold time via `memberRootOf`). Only the owner
+  may add/remove space members or `SPACE_UPDATE` the space — enforced **at the fold** (a change from
+  a non-owner is dropped, not just hidden), and re-checked by the client. Membership folds
+  **last-writer-wins by ts** with a revocation **tombstone**, so a stale/out-of-order `SPACE_MEMBER_ADD`
+  can't resurrect a later remove.
+- **A channel roster must stay within its space roster.** Adding to a channel requires the target
+  already be a space member (client-gated). The space roster is the umbrella; channel rosters are
+  subsets.
+- **Revocation cascades from space to channels — but E2EE means the owner can't do it alone.** Room
+  keys live with channel members, not the space owner, so the owner declares the revocation
+  (`SPACE_MEMBER_REMOVE`) and **channel members enforce it**: each client, on sync, reconciles every
+  channel it holds a key to toward its space roster — anyone in the channel who is no longer a space
+  member is removed (one key rotation to the members who stay, then `MEMBER_REMOVE`). This is
+  **state-based, not event-based**: it converges from the current rosters regardless of what events a
+  client saw or in what order, so it fires the next time *any* capable member syncs — including one
+  that was offline the whole time (`reconcileAllSpaces` on init).
+- **Honest properties.** Eventual and online-triggered: a channel isn't drained until an online
+  member of *that* channel reconciles — inevitable, but not instant, and impossible for a channel
+  with no online members until one returns (only a key-holder can rotate). Concurrent enactors cost a
+  few redundant epochs (roster-check converges them). No clawback of history the removed member
+  already holds — keys can't be un-shared. `core/rooms_test.go` (`TestSpaceAuthorityAndLWW`) pins
+  owner-only enforcement + last-writer-wins; the cascade reconcile is client-side.
+- **Deferred:** the owner can't yet promote other admins (creator-only); full client re-verification
+  of the space roster's authority (today the client trusts the owner-enforced server fold); and
+  rejecting an old-epoch post a removed member could still craft with a retained key (forward-secrecy
+  enforcement).
+
 ### Chain gate: default-deny + founding-window adoption — decided 2026-07-18 (Phase 4)
 
 Closes the ⚠️ item flagged at the Phase-4 identity slice: `core/events.go` verified sender chains

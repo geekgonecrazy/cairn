@@ -116,6 +116,37 @@ function laterThan(a: Event, b: Event): boolean {
   return hex(a.eventId) > hex(b.eventId)
 }
 
+type RosterEntry = { pubHex: string; pub: Uint8Array; role: string; mine: boolean }
+
+/**
+ * Fold MEMBER_ADD / MEMBER_REMOVE into a room roster, applied in timestamp order
+ * (event-id tiebreak) so add → remove → re-add converges regardless of sync
+ * order. Pure over an events array so the cascade can fold a non-active room.
+ */
+function foldRoster(events: Event[], myMemberHex: string): RosterEntry[] {
+  const byKey = new Map<string, RosterEntry>()
+  const evs = events
+    .filter((e) => e.type === EventType.MEMBER_ADD || e.type === EventType.MEMBER_REMOVE)
+    .sort((a, b) => Number(a.ts - b.ts) || (hex(a.eventId) < hex(b.eventId) ? -1 : 1))
+  for (const ev of evs) {
+    try {
+      // Room-state events are epoch 0: a single 0x00 frame byte, then CBOR.
+      const obj = cborDecode(ev.payload.subarray(1)) as { member_pub?: Uint8Array; role?: string }
+      const pub = obj.member_pub
+      if (!pub || pub.length !== 32) continue
+      const pubHex = hex(pub)
+      if (ev.type === EventType.MEMBER_REMOVE) {
+        byKey.delete(pubHex)
+        continue
+      }
+      byKey.set(pubHex, { pubHex, pub, role: obj.role || 'member', mine: pubHex === myMemberHex })
+    } catch {
+      /* not a foldable membership event */
+    }
+  }
+  return [...byKey.values()]
+}
+
 class AppState {
   // No room until one is loaded — a household starts empty and 'general' was a
   // fixture that manufactured membership nobody had established.
@@ -189,6 +220,9 @@ class AppState {
   private async openFirstRoom() {
     await roomStore.refresh()
     this.ensureActiveSpace()
+    // Coming online: drain any channel of anyone the space owner revoked while we
+    // were away (state-based, so it doesn't depend on catching the event live).
+    void this.reconcileAllSpaces()
     const first = roomStore.rooms[0]
     if (first) await this.selectRoom(first.id)
   }
@@ -244,6 +278,9 @@ class AppState {
     if (ev.type === EventType.MEMBER_REMOVE || ev.type === EventType.SPACE_MEMBER_REMOVE) {
       await roomStore.refresh()
       this.refreshKeyState()
+      // A space revocation cascades: if we hold keys to channels in that space,
+      // drain whoever the owner just removed. roomIdOf(a space event) is its id.
+      if (ev.type === EventType.SPACE_MEMBER_REMOVE) void this.reconcileSpace(roomIdOf(ev))
       return
     }
 
@@ -587,32 +624,10 @@ class AppState {
     return this.foldMembers().map((m) => m.pub)
   }
 
-  /** Fold member_add / member_remove into the current roster. Applied in
-   *  timestamp order (event-id tiebreak) so an add → remove → re-add sequence
-   *  converges deterministically regardless of sync arrival order. */
-  private foldMembers(): { pubHex: string; pub: Uint8Array; role: string; mine: boolean }[] {
-    const byKey = new Map<string, { pubHex: string; pub: Uint8Array; role: string; mine: boolean }>()
+  /** Fold the current room's events into its roster. */
+  private foldMembers(): RosterEntry[] {
     const myMember = identity.current ? hex(identity.current.memberPub) : ''
-    const evs = this.events
-      .filter((e) => e.type === EventType.MEMBER_ADD || e.type === EventType.MEMBER_REMOVE)
-      .sort((a, b) => Number(a.ts - b.ts) || (hex(a.eventId) < hex(b.eventId) ? -1 : 1))
-    for (const ev of evs) {
-      try {
-        // Room-state events are epoch 0: a single 0x00 frame byte, then CBOR.
-        const obj = cborDecode(ev.payload.subarray(1)) as { member_pub?: Uint8Array; role?: string }
-        const pub = obj.member_pub
-        if (!pub || pub.length !== 32) continue
-        const pubHex = hex(pub)
-        if (ev.type === EventType.MEMBER_REMOVE) {
-          byKey.delete(pubHex)
-          continue
-        }
-        byKey.set(pubHex, { pubHex, pub, role: obj.role || 'member', mine: pubHex === myMember })
-      } catch {
-        /* not a foldable membership event */
-      }
-    }
-    return [...byKey.values()]
+    return foldRoster(this.events, myMember)
   }
 
   /**
@@ -703,8 +718,9 @@ class AppState {
    * Names resolve the same way a room roster's do — shown only for a chain that
    * verifies to our own household. Returns key stubs until then.
    */
-  async spaceMembers(): Promise<{ pubHex: string; pub: Uint8Array; role: string; mine: boolean }[]> {
-    const spaceId = this.activeSpaceId
+  async spaceMembers(
+    spaceId = this.activeSpaceId,
+  ): Promise<{ pubHex: string; pub: Uint8Array; role: string; mine: boolean }[]> {
     if (!spaceId) return []
     const myMember = identity.current ? hex(identity.current.memberPub) : ''
     const res = await cairn.listSpaceMembers({ spaceId: utf8(spaceId) })
@@ -713,6 +729,72 @@ class AppState {
       if (pubHex !== myMember) directory.resolveMember(m.memberPub)
       return { pubHex, pub: m.memberPub, role: m.role || 'member', mine: pubHex === myMember }
     })
+  }
+
+  // ---- space→channel cascade (reconcile channel rosters toward the space) ----
+
+  /**
+   * Enforce the invariant "a channel roster ⊆ its space roster" for ONE channel
+   * we hold the key to: anyone in the channel who is no longer a space member is
+   * removed (one key rotation to the members who stay, then a MEMBER_REMOVE each).
+   * This is how a space revocation reaches E2EE channel keys — only a key-holder
+   * can rotate, so whichever channel member is online enacts it. Idempotent:
+   * re-run finds nothing once the roster converges; concurrent enactors cost at
+   * most a few extra epochs. Operates on a freshly-synced copy, so it works for a
+   * channel that isn't the active one.
+   */
+  private async drainRoom(roomId: string, spaceId: string) {
+    const me = identity.current
+    if (!me || !haveRoomKey(roomId)) return // only a key-holder can rotate
+    let events: Event[]
+    try {
+      const res = await cairn.sync({ roomId: utf8(roomId), haveHeads: [] })
+      events = res.missing
+    } catch {
+      return // offline; try again on the next sync
+    }
+    const roster = foldRoster(events, hex(me.memberPub))
+    const spaceSet = new Set((await this.spaceMembers(spaceId)).map((m) => m.pubHex))
+    const toRemove = roster.filter((m) => !m.mine && !spaceSet.has(m.pubHex))
+    if (!toRemove.length) return
+
+    const removeSet = new Set(toRemove.map((m) => m.pubHex))
+    const remaining = roster.filter((m) => !removeSet.has(m.pubHex)).map((m) => m.pub)
+    const heads = localHeads(events)
+    // One new epoch, wrapped only to those who stay — the removed can't read it.
+    await this.deliver(await buildRoomKeyRotate(roomId, remaining, heads))
+    for (const m of toRemove) {
+      await this.deliver(await buildMemberRemove(roomId, m.pub, heads))
+    }
+    await roomStore.refresh()
+  }
+
+  /** Reconcile every channel we hold a key to in a space against its roster. */
+  private async reconcileSpace(spaceId: string) {
+    for (const r of roomStore.rooms) {
+      if (r.spaceId === spaceId && r.joined && haveRoomKey(r.id)) {
+        await this.drainRoom(r.id, spaceId)
+      }
+    }
+  }
+
+  /**
+   * On coming online, reconcile all of our channels toward their space rosters —
+   * state-based, so it catches any space revocation that happened while we were
+   * away, no matter what we did or didn't see live. Best-effort and non-blocking.
+   */
+  async reconcileAllSpaces() {
+    const spaces = new Set<string>()
+    for (const r of roomStore.rooms) {
+      if (r.spaceId && r.joined && haveRoomKey(r.id)) spaces.add(r.spaceId)
+    }
+    for (const spaceId of spaces) {
+      try {
+        await this.reconcileSpace(spaceId)
+      } catch {
+        /* best-effort */
+      }
+    }
   }
 
   /**
@@ -730,10 +812,19 @@ class AppState {
     await this.deliver(ev)
   }
 
-  /** Add a member by their MEMBER ROOT pubkey hex: mint a new epoch, wrap to all. */
+  /** Add a member by their MEMBER ROOT pubkey hex: mint a new epoch, wrap to all.
+   *  A channel roster must stay within its space roster, so the target must first
+   *  be a member of the room's space (only the space owner can put them there). */
   async addMember(pubHex: string, shareHistory = false) {
     const pub = fromHex(pubHex.trim())
     if (!pub || pub.length !== 32) throw new Error('member key must be 64 hex chars')
+    const room = roomStore.find(this.currentRoomId)
+    if (room?.spaceId) {
+      const roster = await this.spaceMembers(room.spaceId)
+      if (!roster.some((m) => m.pubHex === hex(pub))) {
+        throw new Error('add them to the space first — a channel member must be a member of its space')
+      }
+    }
     const ev = await buildMemberAdd(
       this.currentRoomId,
       pub,

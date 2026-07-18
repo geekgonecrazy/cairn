@@ -15,6 +15,7 @@ package core
 import (
 	"bytes"
 	"fmt"
+	"log"
 
 	"github.com/fxamacker/cbor/v2"
 
@@ -69,10 +70,25 @@ func applyRoomState(ev *cairnv1.Event) error {
 	st := Store()
 
 	switch ev.Type {
-	case cairnv1.EventType_SPACE_CREATE, cairnv1.EventType_SPACE_UPDATE:
-		// Both name the space in room_id and carry its full state; an update is a
-		// PutSpace with the new name/policy. The modal always sends the complete
-		// policy, so this overwrites rather than merges.
+	case cairnv1.EventType_SPACE_CREATE:
+		// The creator becomes the space OWNER — its sole authority. Resolved from
+		// the signer's member root (the chain is present: the gate verified it
+		// before this fold).
+		return st.PutSpace(&models.Space{
+			SpaceID:     ev.RoomId,
+			Name:        p.SpaceName,
+			AdmitKind:   p.AdmitKind,
+			AdmitOrigin: p.AdmitOrigin,
+			Owner:       memberRootOf(ev.SenderPub),
+		})
+
+	case cairnv1.EventType_SPACE_UPDATE:
+		// Only the owner may rename/re-policy a space. PutSpace passes no owner, so
+		// COALESCE preserves the original creator.
+		if !spaceChangeAuthorized(ev.RoomId, ev.SenderPub) {
+			log.Printf("core: ignoring space_update on %x from non-owner", ev.RoomId)
+			return nil
+		}
 		return st.PutSpace(&models.Space{
 			SpaceID:     ev.RoomId,
 			Name:        p.SpaceName,
@@ -121,10 +137,14 @@ func applyRoomState(ev *cairnv1.Event) error {
 		return st.DeleteMember(ev.RoomId, p.MemberPub)
 
 	case cairnv1.EventType_SPACE_MEMBER_ADD:
-		// A space_member_add names the space in room_id, exactly as space_create
-		// does. It grants discovery only — no key rides it.
+		// A space_member_add names the space in room_id. Only the owner may admit,
+		// and it folds last-writer-wins by ts so a stale add can't beat a remove.
 		if len(p.MemberPub) != 32 {
 			return fmt.Errorf("core: space_member_add without a valid member_pub")
+		}
+		if !spaceChangeAuthorized(ev.RoomId, ev.SenderPub) {
+			log.Printf("core: ignoring space_member_add on %x from non-owner", ev.RoomId)
+			return nil
 		}
 		role := p.Role
 		if role == "" {
@@ -135,6 +155,7 @@ func applyRoomState(ev *cairnv1.Event) error {
 			MemberPub:  p.MemberPub,
 			Role:       role,
 			AddedEvent: ev.EventId,
+			Ts:         ev.Ts,
 		})
 
 	case cairnv1.EventType_ROOM_JOIN_REQUEST:
@@ -150,14 +171,46 @@ func applyRoomState(ev *cairnv1.Event) error {
 		})
 
 	case cairnv1.EventType_SPACE_MEMBER_REMOVE:
-		// Revokes the discovery grant: drop the member from the space roster. Their
-		// individual room memberships are untouched — those are removed per-room.
+		// Only the owner may revoke. Writes a tombstone (last-writer-wins by ts).
+		// This is the AUTHORITY; channel members reconcile their rooms toward the
+		// space roster on sync, so the removal cascades into channels — but that
+		// enforcement is client-side (only key-holders can rotate a room key).
 		if len(p.MemberPub) != 32 {
 			return fmt.Errorf("core: space_member_remove without a valid member_pub")
 		}
-		return st.DeleteSpaceMember(ev.RoomId, p.MemberPub)
+		if !spaceChangeAuthorized(ev.RoomId, ev.SenderPub) {
+			log.Printf("core: ignoring space_member_remove on %x from non-owner", ev.RoomId)
+			return nil
+		}
+		return st.RemoveSpaceMember(ev.RoomId, p.MemberPub, ev.Ts)
 	}
 	return nil
+}
+
+// memberRootOf resolves an event sender (a session or device key) up to its
+// member root via the identity log. Empty if the chain isn't present.
+func memberRootOf(senderPub []byte) []byte {
+	devicePub := senderPub
+	if sd, ok := st.SessionDelegation(senderPub); ok {
+		devicePub = sd.DevicePub
+	}
+	if dd, ok := st.DeviceDelegation(devicePub); ok {
+		return dd.MemberPub
+	}
+	return nil
+}
+
+// spaceChangeAuthorized reports whether senderPub belongs to the space's owner —
+// the only member who may add/remove space members or update the space. An
+// unknown owner (space not folded yet) or an unresolvable sender is NOT
+// authorized, so a forged change from a non-owner is dropped at the fold.
+func spaceChangeAuthorized(spaceID, senderPub []byte) bool {
+	sp, err := st.GetSpace(spaceID)
+	if err != nil || sp == nil || len(sp.Owner) == 0 {
+		return false
+	}
+	mr := memberRootOf(senderPub)
+	return len(mr) > 0 && bytes.Equal(sp.Owner, mr)
 }
 
 // VisibleRoom is a room a member can see, tagged with whether they actually hold
