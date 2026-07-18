@@ -26,7 +26,7 @@
   </header>
 
   <div class="room-body">
-    {#if app.events.length === 0}
+    {#if app.messages.length === 0}
       <div class="empty">
         <div class="empty-mark"><Icon name={glyph.icon} size={22} /></div>
         <h2>#{room?.name ?? app.currentRoomId}</h2>
@@ -34,11 +34,11 @@
           This is the start of a verified, end-to-end-encrypted room. Messages are signed
           events in a per-room DAG — they converge across devices with no central authority.
         </p>
-        <p class="muted">No events yet. Sending arrives in Phase 1.</p>
+        <p class="muted">Say something — it's signed and sealed before it leaves this tab.</p>
       </div>
     {:else}
-      {#each app.events as ev (ev.eventId)}
-        <MessageRow {ev} />
+      {#each app.messages as msg (msg.idHex)}
+        <MessageRow {msg} />
       {/each}
     {/if}
   </div>

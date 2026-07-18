@@ -1,13 +1,25 @@
 <script lang="ts">
   import Icon from '../Icon.svelte'
+  import { app } from '../state.svelte'
 
   let { roomName }: { roomName: string } = $props()
   let text = $state('')
 
-  // Sending is Phase 1: it needs a client-side session key (WebCrypto Ed25519)
-  // to sign the event before SendEvent. Phase 0 renders the composer faithfully
-  // but keeps send disabled with an honest label rather than faking it.
-  const canSend = false
+  const canSend = $derived(text.trim().length > 0)
+
+  async function send() {
+    if (!canSend) return
+    const t = text
+    text = ''
+    await app.sendChat(t)
+  }
+
+  function onKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      void send()
+    }
+  }
 </script>
 
 <div class="composer-wrap">
@@ -15,14 +27,15 @@
     <textarea
       placeholder={`Message #${roomName}`}
       bind:value={text}
+      onkeydown={onKeydown}
       rows="1"
     ></textarea>
     <div class="row">
       <button class="icon-btn" title="Attach" aria-label="Attach"><Icon name="attach" /></button>
       <button class="icon-btn" title="Emoji" aria-label="Emoji"><Icon name="smileplus" /></button>
       <span class="spacer"></span>
-      <span class="hint"><span class="hint-dot"></span>sending — phase 1</span>
-      <button class="send" disabled={!canSend}>
+      <span class="hint"><span class="hint-dot" class:on={app.connected}></span>e2ee</span>
+      <button class="send" disabled={!canSend} onclick={send}>
         <Icon name="send" size={14} /> Send
       </button>
     </div>
@@ -82,7 +95,8 @@
     color: var(--text-3);
     padding: 0 6px;
   }
-  .hint-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--busy); }
+  .hint-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-4); }
+  .hint-dot.on { background: var(--pos); }
   .send {
     height: 28px;
     padding: 0 12px;

@@ -32,12 +32,23 @@ the Svelte shell renders an empty room with the design system.
 loses no history; message states reflect real delivery
 (`sending → sent → queued (no route) → delivered (path unknown)`).
 
-- Per-room key + AES-256-GCM payloads; `member_*`; `room_key_rotate`; pre-join history
-  opaque (state the rule in UI).
-- LAN transport; local-first write; incremental sync (frontier diff) over the wire.
-- Composer, message list with honest states, reactions, reply, quote, edit, delete
-  (tombstone), presence. Local DAG cache in OPFS/IDB + session key.
-- Route (accept, no UI): `signaling_*`, `call_ring`, `call_bye`.
+- [x] Per-room key + AES-256-GCM payloads (`room` pkg): framing `uvarint(epoch)||nonce||ct`,
+      AAD-bound; payload CBOR schemas (chat/reaction/edit/delete/presence). Tested.
+- [x] **Client-side crypto with proven Go↔TS interop**: minimal deterministic CBOR + BLAKE3
+      + Ed25519 producing byte-identical `event_id`s; a TS-built encrypted event verifies
+      *and* decrypts on the Go server (cross-language conformance demonstrated).
+- [x] Local-first write + incremental sync (frontier diff) over the wire (Connect + SSE).
+- [x] Composer sends real signed+encrypted chat; message list decrypts; **honest delivery
+      states** (`sending → sent → delivered`, `queued` on no route).
+- [x] **Exit demonstrated (protocol level):** two distinct identities + shared room key
+      converge a verified E2EE history through cairnd; **server restart loses no history**;
+      every event verifies and decrypts after restart; causal DAG links replies (heads=1).
+- [x] Route (accept, no UI): `signaling_*`, `call_ring`, `call_bye` — `SubmitEvent` accepts
+      and fans out any event type; no type gating.
+- [ ] Remaining Phase 1 surface: `member_add`/`room_key_rotate` (real multi-device key
+      handoff via HPKE — currently a per-room key shared same-origin / by `#rk=` link),
+      reactions/reply/quote/edit/delete/presence **UI**, local DAG cache in OPFS/IDB,
+      two-*browser* (not two-tab) run, and an automated crypto-conformance vector test.
 
 ## Phase 2 — Agents native + files + inlays
 

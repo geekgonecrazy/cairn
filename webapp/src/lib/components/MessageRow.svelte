@@ -1,50 +1,31 @@
 <script lang="ts">
-  import type { Event } from '../../gen/cairn_pb'
-  import { EventType } from '../../gen/cairn_pb'
   import { hex } from '../api'
+  import type { Msg } from '../state.svelte'
 
-  let { ev }: { ev: Event } = $props()
+  let { msg }: { msg: Msg } = $props()
 
-  // Short, stable author label from the sender pubkey (no identity resolution
-  // in Phase 0). Real display names come from the household attestation later.
+  const ev = $derived(msg.ev)
+  // Short, stable author label from the sender pubkey (no identity resolution in
+  // Phase 0/1). Real display names come from the household attestation later.
   const author = $derived('cairn:' + hex(ev.senderPub).slice(0, 6))
   const initial = $derived(hex(ev.senderPub).slice(0, 1).toUpperCase())
   const time = $derived(
     new Date(Number(ev.ts)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
   )
-
-  // Phase 0 payloads may be plaintext (room-key encryption lands in Phase 1). Try
-  // UTF-8; if it isn't clean text, be honest that the body is opaque.
-  const body = $derived(decodeBody(ev))
-  const opaque = $derived(body === null)
-
-  function decodeBody(e: Event): string | null {
-    if (e.type !== EventType.CHAT) return null
-    try {
-      const s = new TextDecoder('utf-8', { fatal: true }).decode(e.payload)
-      // Reject control-char soup — encrypted bytes decode to it.
-      for (let i = 0; i < s.length; i++) {
-        const c = s.charCodeAt(i)
-        if ((c < 0x20 && c !== 0x09 && c !== 0x0a && c !== 0x0d) || c === 0x7f) return null
-      }
-      return s
-    } catch {
-      return null
-    }
-  }
 </script>
 
-<div class="msg">
-  <div class="avatar">{initial}</div>
+<div class="msg" class:mine={msg.mine}>
+  <div class="avatar" class:agent={false}>{initial}</div>
   <div class="body">
     <div class="head">
       <span class="author">{author}</span>
       <span class="time">{time}</span>
+      {#if msg.mine}<span class="state">{msg.state}</span>{/if}
     </div>
-    {#if opaque}
-      <div class="text opaque">🔒 encrypted payload · type {ev.type} · {hex(ev.eventId).slice(0, 10)}</div>
+    {#if msg.body !== null}
+      <div class="text">{msg.body}</div>
     {:else}
-      <div class="text">{body}</div>
+      <div class="text opaque">🔒 encrypted · type {ev.type} · {hex(ev.eventId).slice(0, 10)}</div>
     {/if}
   </div>
 </div>
@@ -72,7 +53,14 @@
   }
   .head { display: flex; align-items: baseline; gap: 8px; }
   .author { font-weight: 600; font-size: 13.5px; color: var(--text); }
+  .msg.mine .author { color: var(--accent); }
   .time { font-family: var(--font-mono); font-size: 11px; font-weight: 500; color: var(--text-3); }
+  .state {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--text-3);
+    text-transform: lowercase;
+  }
   .text { font-size: 14px; line-height: 1.5; color: var(--text); text-wrap: pretty; }
   .text.opaque { font-family: var(--font-mono); font-size: 12px; color: var(--text-3); }
 </style>
