@@ -45,10 +45,15 @@ loses no history; message states reflect real delivery
       every event verifies and decrypts after restart; causal DAG links replies (heads=1).
 - [x] Route (accept, no UI): `signaling_*`, `call_ring`, `call_bye` — `SubmitEvent` accepts
       and fans out any event type; no type gating.
+- [x] Message interactions: reactions (CRDT, latest-per-sender), reply, edit, delete
+      (tombstone) — built client-side, folded deterministically over the DAG, verified
+      interop with Go for each type.
+- [x] Local DAG cache in IndexedDB (offline-first render) + **bidirectional frontier sync**
+      (pull the server's missing subgraph AND push what it lacks — the dual walk, §6).
 - [ ] Remaining Phase 1 surface: `member_add`/`room_key_rotate` (real multi-device key
       handoff via HPKE — currently a per-room key shared same-origin / by `#rk=` link),
-      reactions/reply/quote/edit/delete/presence **UI**, local DAG cache in OPFS/IDB,
-      two-*browser* (not two-tab) run, and an automated crypto-conformance vector test.
+      **presence** + quote UI, missing-parent backfill (§6.4), two-*browser* (not two-tab)
+      run, and an automated crypto-conformance vector test.
 
 ## Phase 2 — Agents native + files + inlays
 

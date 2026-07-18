@@ -16,6 +16,7 @@ import {
   sessionPub,
   type Decoded,
 } from './crypto'
+import { cachePut, cacheLoad } from './idb'
 import { EventType, type Event } from '../gen/cairn_pb'
 
 export type DeliveryState = 'sending' | 'sent' | 'delivered' | 'queued'
@@ -90,14 +91,57 @@ class AppState {
     this.decoded.clear()
     this.states.clear()
     this.messages = []
+
+    // 1. Render the local cache instantly (offline-first).
+    for (const ev of await cacheLoad(id)) await this.ingest(ev, false)
+    this.rebuild()
+
+    // 2. Reconcile with the server: pull what we lack, push what it lacks.
+    await this.reconcile(id)
+  }
+
+  /** Bidirectional frontier sync (PROTOCOL.md §6): send our heads, apply the
+   *  server's missing subgraph, then push any events the server doesn't have. */
+  private async reconcile(id: string) {
     try {
-      const res = await cairn.sync({ roomId: utf8(id) })
+      const res = await cairn.sync({ roomId: utf8(id), haveHeads: localHeads(this.events) })
       this.connected = true
       for (const ev of res.missing) await this.ingest(ev, false)
+
+      for (const ev of this.eventsServerLacks(res.heads)) {
+        try {
+          await cairn.sendEvent({ event: ev })
+          if (this.states.get(hex(ev.eventId)) === 'sending') this.states.set(hex(ev.eventId), 'sent')
+        } catch {
+          /* still no route; stays queued */
+        }
+      }
       this.rebuild()
     } catch {
       this.connected = false
     }
+  }
+
+  // Events the server lacks — the dual of the server's Missing walk: from our
+  // heads, walk parents down, stopping whenever we reach an event the server has
+  // (its heads). Everything above that frontier is what the server is missing.
+  // (Gaps below a shared head need missing-parent backfill, PROTOCOL.md §6.4 —
+  // a later hardening; normal causal-order sends never produce them.)
+  private eventsServerLacks(serverHeads: Uint8Array[]): Event[] {
+    const stop = new Set(serverHeads.map((h) => hex(h)))
+    const seen = new Set<string>()
+    const out: Event[] = []
+    const stack = localHeads(this.events).map((h) => hex(h))
+    while (stack.length) {
+      const id = stack.pop()!
+      if (seen.has(id) || stop.has(id)) continue
+      seen.add(id)
+      const e = this.byId.get(id)
+      if (!e) continue
+      out.push(e)
+      for (const p of e.parents) stack.push(hex(p))
+    }
+    return out
   }
 
   // ---- actions ----
@@ -179,6 +223,7 @@ class AppState {
     this.events.push(ev)
     this.byId.set(idHex, ev)
     this.decoded.set(idHex, await openEvent(ev))
+    void cachePut(idHex, this.currentRoomId, ev) // local-first: persist for offline
     if (rebuild) this.rebuild()
   }
 
