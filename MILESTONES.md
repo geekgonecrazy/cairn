@@ -67,9 +67,27 @@ loses no history; message states reflect real delivery
 
 ## Phase 2 — Agents native + files + inlays
 
-**Exit:** agent `approval_request` → human approve → broker mints a credential
-(end-to-end); a novel declared inlay renders from primitives and degrades to its text
-line; files send/receive with honest retrieval states.
+**Exit:** a capability request is delivered, rendered with its capability visible, and
+signed **in the UI** into a portable grant (minting belongs to the *external* broker —
+a Capsule workload in the agents system, see `decisions.md`); a novel declared inlay
+renders from primitives and degrades to its text line; files send/receive with honest
+retrieval states.
+
+- [x] **In-UI capability approval.** `approval/` portable artifacts signed over their own
+      canonical CBOR — a grant verifies standalone outside Cairn, with no room key.
+      Request-bound + agent-bound. `ApprovalInlay` shows capability and scope always
+      (no silent authorisation) and signs with your key in-page. Verified: agent request
+      (Go) → grant signed via the browser path (TS) → verified by an external-broker
+      stand-in (Go). Tests cover tampered capability, cross-agent replay, forged sig.
+- [x] **Inlay engine.** ONE role renderer interpreting declarations as data (per
+      `inlay.md`; per-card components are an anti-pattern). Full vocabulary: `record`,
+      `list`, `group`, `inlay_ref` + `text`, `number`, `progress_fraction`, `status_enum`,
+      `timestamp`, `image_cid`, `series`, `action_ref`, `input`, `select`. Content-addressed
+      declarations (`decl_cid` = BLAKE3 of det-CBOR), standard library pre-allowlisted,
+      **per-room default-deny allowlist**, mandatory text fallback, widget placeholder
+      (never inline), capability-bound actions render their capability. A **novel**
+      greenhouse declaration renders from primitives alone — proven by `npm run inlay-check`.
+- [ ] Files: `file_ref` envelope + blob backend + honest retrieval states.
 
 ## Phase 3 — Meshtastic transport + **THE DEMONSTRATION**
 

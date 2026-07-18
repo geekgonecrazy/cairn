@@ -12,6 +12,7 @@ import {
   buildDelete,
   buildPresence,
   buildApprovalEvent,
+  buildInlay,
   buildMemberAdd,
   buildRoomKeyRotate,
   applyKeyEvent,
@@ -36,6 +37,8 @@ import {
   encodeDeny,
   type Request as ApprovalRequest,
 } from './approval'
+import { SAMPLES } from './inlay/samples'
+import type { InlayInstance } from './inlay/types'
 import { EventType, type Event } from '../gen/cairn_pb'
 
 export type DeliveryState = 'sending' | 'sent' | 'delivered' | 'queued'
@@ -71,6 +74,7 @@ export interface Msg {
   author: string
   ts: number
   approval?: ApprovalView // set when this row is an approval request
+  inlay?: InlayInstance // set when this row is a declared inlay
   body: string // current (possibly edited) text; '' when deleted
   opaque: boolean // couldn't decrypt
   edited: boolean
@@ -252,9 +256,25 @@ class AppState {
 
   // ---- actions ----
 
+  /** Post a declared inlay (dev affordance: `/inlay <name>` in the composer). */
+  async postInlay(name: string) {
+    const sample = SAMPLES[name]
+    if (!sample) return
+    const ev = await buildInlay(this.currentRoomId, sample, localHeads(this.events))
+    await this.ingest(ev, false)
+    this.rebuild()
+    await this.deliver(ev)
+  }
+
   async sendChat(text: string) {
     const trimmed = text.trim()
     if (!trimmed) return
+
+    // `/inlay <name>` posts a declared inlay instead of a chat message.
+    if (trimmed.startsWith('/inlay')) {
+      await this.postInlay(trimmed.split(/\s+/)[1] ?? 'greenhouse')
+      return
+    }
     const replyTo = this.replyingTo?.ev.eventId
     const q = this.quotingTo
     const quote = q
@@ -514,6 +534,26 @@ class AppState {
     for (const ev of this.events) {
       const idHex = hex(ev.eventId)
       const d = this.decoded.get(idHex)
+      // A declared inlay renders through the role renderer (or degrades to its
+      // mandatory text line).
+      if (d?.kind === 'inlay') {
+        msgs.push({
+          ev,
+          idHex,
+          mine: hex(ev.senderPub) === this.myPubHex,
+          author: 'cairn:' + hex(ev.senderPub).slice(0, 6),
+          ts: Number(ev.ts),
+          body: d.instance.text,
+          opaque: false,
+          edited: false,
+          deleted: false,
+          reactions: [],
+          state: this.states.get(idHex) ?? 'delivered',
+          inlay: d.instance,
+        })
+        continue
+      }
+
       // An approval request renders as its own inlay row, folded with whatever
       // resolved it.
       if (d?.kind === 'approval_request') {

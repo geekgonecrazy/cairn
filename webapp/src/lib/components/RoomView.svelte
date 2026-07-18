@@ -2,6 +2,7 @@
   import Icon from '../Icon.svelte'
   import MessageRow from './MessageRow.svelte'
   import ApprovalInlay from './ApprovalInlay.svelte'
+  import InlayCard from '../inlay/InlayCard.svelte'
   import Composer from './Composer.svelte'
   import MembersModal from './MembersModal.svelte'
   import { app } from '../state.svelte'
@@ -54,6 +55,8 @@
       {#each app.messages as msg (msg.idHex)}
         {#if msg.approval}
           <ApprovalInlay {msg} />
+        {:else if msg.inlay}
+          <InlayCard instance={msg.inlay} room={app.currentRoomId} />
         {:else}
           <MessageRow {msg} />
         {/if}

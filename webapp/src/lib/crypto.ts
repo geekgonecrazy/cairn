@@ -14,6 +14,7 @@ import { ed25519 } from '@noble/curves/ed25519.js'
 import { create } from '@bufbuild/protobuf'
 import { CipherSuite, DhkemX25519HkdfSha256, HkdfSha256, Aes256Gcm } from '@hpke/core'
 import { encode as cborEncode, decode as cborDecode, type CborValue } from './cbor'
+import type { InlayInstance } from './inlay/types'
 import { EventSchema, EventType, type Event } from '../gen/cairn_pb'
 
 // ---- byte utils ----
@@ -282,6 +283,25 @@ export function buildPresence(roomIdStr: string, state: 'online' | 'away'): Prom
   return sealAndSign(roomIdStr, EventType.PRESENCE, { state }, [])
 }
 
+/** Post a declared inlay: a decl_cid + bindings + the MANDATORY text fallback. */
+export function buildInlay(
+  roomIdStr: string,
+  instance: { decl_cid: string; surface?: string; bindings?: unknown; text: string },
+  parents: Uint8Array[],
+): Promise<Event> {
+  return sealAndSign(
+    roomIdStr,
+    EventType.INLAY,
+    prune({
+      decl_cid: instance.decl_cid,
+      surface: instance.surface ?? 'timeline',
+      bindings: instance.bindings as CborValue,
+      text: instance.text,
+    }),
+    parents,
+  )
+}
+
 /** Carry a pre-signed portable approval artifact as an event payload. The room
  *  encrypts it for DELIVERY; the artifact's own signature is what the external
  *  broker verifies, so it survives leaving the room. */
@@ -331,6 +351,7 @@ export type Decoded =
   | { kind: 'edit'; target: Uint8Array; text: string }
   | { kind: 'delete'; target: Uint8Array; by: string }
   | { kind: 'presence'; state: string }
+  | { kind: 'inlay'; instance: InlayInstance }
   | { kind: 'system'; text: string }
   // Approval artifacts travel as raw CBOR payloads; the caller decodes them via
   // the approval module (kept out of here to avoid a circular import).
@@ -385,6 +406,19 @@ export async function openEvent(ev: Event): Promise<Decoded | null> {
       }
       case EventType.PRESENCE:
         return { kind: 'presence', state: String(obj.state ?? 'online') }
+      case EventType.INLAY:
+        // text is mandatory — without it there is nothing to degrade to.
+        return typeof obj.text === 'string'
+          ? {
+              kind: 'inlay',
+              instance: {
+                decl_cid: String(obj.decl_cid ?? ''),
+                surface: obj.surface === 'room_panel' ? 'room_panel' : 'timeline',
+                bindings: obj.bindings as Record<string, unknown> | undefined,
+                text: obj.text,
+              },
+            }
+          : null
       case EventType.REACTION:
         return { kind: 'reaction', target: obj.target as Uint8Array, emoji: (obj.emoji as string[]) ?? [] }
       case EventType.EDIT:

@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
     "gen": "buf generate",
-    "conformance": "tsx scripts/conformance.ts"
+    "conformance": "tsx scripts/conformance.ts",
+    "inlay-check": "tsx scripts/inlay-check.ts"
   },
   "devDependencies": {
     "@bufbuild/protoc-gen-es": "^2.12.1",
