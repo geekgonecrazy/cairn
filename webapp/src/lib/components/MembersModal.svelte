@@ -2,9 +2,15 @@
   import Icon from '../Icon.svelte'
   import { app } from '../state.svelte'
   import { directory } from '../directory.svelte'
+  import { identity } from '../identity.svelte'
   import { fingerprint } from '../identity'
+  import { hex } from '../api'
 
   let { onclose }: { onclose: () => void } = $props()
+
+  // Never list yourself as someone to admit — you can't admit your own request.
+  const myHex = $derived(identity.current ? hex(identity.current.memberPub) : '')
+  const requests = $derived(app.joinRequests.filter((r) => r.pubHex !== myHex))
 
   let peerKey = $state('')
   // Off by default: pre-join opacity is the protocol's rule, and disclosing the
@@ -103,13 +109,13 @@
         </ul>
       </div>
 
-      {#if app.joinRequests.length > 0}
+      {#if requests.length > 0}
         <div class="field">
           <label for="requests">
-            Wants to join <span class="count">{app.joinRequests.length}</span>
+            Wants to join <span class="count">{requests.length}</span>
           </label>
           <ul id="requests" class="roster">
-            {#each app.joinRequests as r (r.pubHex)}
+            {#each requests as r (r.pubHex)}
               <li>
                 <span class="who">
                   {#if directory.memberName(r.pubHex)}

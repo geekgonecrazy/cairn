@@ -24,6 +24,8 @@
   const discoverable = $derived(!!room && !room.joined)
   const myHex = $derived(identity.current ? hex(identity.current.memberPub) : '')
   const alreadyRequested = $derived(app.joinRequests.some((r) => r.pubHex === myHex))
+  // Requests to ADMIT never include yourself — you can't admit your own request.
+  const pendingToAdmit = $derived(app.joinRequests.filter((r) => r.pubHex !== myHex))
   let requesting = $state(false)
   let showMembers = $state(false)
 
@@ -58,19 +60,25 @@
     </div>
     {#if app.currentRoomId}
       <div class="actions">
-        <button
-          class="icon-btn"
-          title={app.joinRequests.length > 0 ? `Members & keys — ${app.joinRequests.length} waiting to join` : 'Members & keys'}
-          aria-label="Members and keys"
-          onclick={() => (showMembers = true)}
-        >
-          <Icon name="users" />
-          {#if app.joinRequests.length > 0}
-            <span class="req-dot" aria-hidden="true">{app.joinRequests.length}</span>
-          {/if}
-        </button>
-        <button class="icon-btn" title="Info" aria-label="Info"><Icon name="info" /></button>
-        <button class="icon-btn" title="More" aria-label="More"><Icon name="kebab" /></button>
+        <!-- Member management is only meaningful once you're actually in the room:
+             a discoverer who only requested to join holds no key and can't add,
+             rotate, or admit. Showing them the roster + admit UI (including their
+             OWN pending request) is the confusing state we're avoiding. -->
+        {#if canPost}
+          <button
+            class="icon-btn"
+            title={pendingToAdmit.length > 0 ? `Members & keys — ${pendingToAdmit.length} waiting to join` : 'Members & keys'}
+            aria-label="Members and keys"
+            onclick={() => (showMembers = true)}
+          >
+            <Icon name="users" />
+            {#if pendingToAdmit.length > 0}
+              <span class="req-dot" aria-hidden="true">{pendingToAdmit.length}</span>
+            {/if}
+          </button>
+          <button class="icon-btn" title="Info" aria-label="Info"><Icon name="info" /></button>
+          <button class="icon-btn" title="More" aria-label="More"><Icon name="kebab" /></button>
+        {/if}
       </div>
     {/if}
   </header>
