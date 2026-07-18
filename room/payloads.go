@@ -35,11 +35,12 @@ type Reaction struct {
 	Emoji  []string `cbor:"emoji"`
 }
 
-// Edit supersedes the content of an author's own earlier message. Payload is the
-// superseding content (a re-encoded Chat plaintext). Author-only.
+// Edit supersedes an author's own earlier message. For chat the superseding
+// content is just the new text; author-only (sender resolves to the target's
+// member root). Original event_id is permanent; edit history is append-only.
 type Edit struct {
-	Target  []byte `cbor:"target"`
-	Payload []byte `cbor:"payload"`
+	Target []byte `cbor:"target"`
+	Text   string `cbor:"text"`
 }
 
 // Delete withdraws a message (author or admin). Not cryptographic erasure — the

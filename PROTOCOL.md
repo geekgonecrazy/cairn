@@ -110,8 +110,9 @@ fit a ~200 B LoRa frame). Fields are CBOR map keys.
 - `presence` `{ state: "online"|"away", via? }` (ephemeral; not folded into history views)
 - `reaction` `{ target: event_id, emoji: [..] }` — sender's **complete current set**; latest per
   `(sender_root, target)` wins (CRDT).
-- `edit` `{ target: event_id, payload: <superseding content> }` — **author-only** (sender resolves to
-  the target's *member root*). Original `event_id` is permanent; edit history is free (append-only).
+- `edit` `{ target: event_id, text }` — **author-only** (sender resolves to the target's *member
+  root*). Original `event_id` is permanent; edit history is free (append-only). *(Dev-phase: for chat
+  the superseding content is just the new `text`; a general `payload` form can return later.)*
 - `delete` `{ target: event_id, by: "author"|"admin" }` — author **or** room admin; renders as
   withdrawal. Not cryptographic erasure — say so in UI.
 

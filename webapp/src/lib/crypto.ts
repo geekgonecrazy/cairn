@@ -181,47 +181,100 @@ export interface ChatBody {
   replyTo?: Uint8Array
 }
 
-/** Build a signed, room-encrypted CHAT event. parents should be the local heads. */
-export async function buildChat(
+// sealAndSign is the shared build path for every event type: encode the payload
+// map, room-encrypt it, hash the canonical content, and sign.
+async function sealAndSign(
   roomIdStr: string,
-  body: ChatBody,
+  type: number,
+  payloadMap: { [k: string]: CborValue },
   parents: Uint8Array[],
 ): Promise<Event> {
   const senderPub = sessionPub()
   const roomId = utf8(roomIdStr)
   const ts = BigInt(Date.now())
-  const type = EventType.CHAT
 
-  const plaintext = cborEncode(prune({ text: body.text, reply_to: body.replyTo }))
+  const plaintext = cborEncode(payloadMap)
   const payload = await seal(roomIdStr, senderPub, roomId, ts, type, plaintext)
 
   const sorted = [...parents].sort(cmpBytes)
   const eventId = computeId(senderPub, roomId, ts, sorted, type, payload)
   const sig = ed25519.sign(eventId, sessionSecret())
 
-  return create(EventSchema, {
-    eventId,
-    senderPub,
-    roomId,
-    ts,
-    parents: sorted,
-    type,
-    payload,
-    sig,
-  })
+  return create(EventSchema, { eventId, senderPub, roomId, ts, parents: sorted, type, payload, sig })
+}
+
+/** Build a signed, room-encrypted CHAT event. parents should be the local heads. */
+export function buildChat(roomIdStr: string, body: ChatBody, parents: Uint8Array[]): Promise<Event> {
+  return sealAndSign(roomIdStr, EventType.CHAT, prune({ text: body.text, reply_to: body.replyTo }), parents)
+}
+
+/** REACTION carries the sender's COMPLETE current emoji set for a target (CRDT). */
+export function buildReaction(
+  roomIdStr: string,
+  target: Uint8Array,
+  emoji: string[],
+  parents: Uint8Array[],
+): Promise<Event> {
+  return sealAndSign(roomIdStr, EventType.REACTION, { target, emoji }, parents)
+}
+
+/** EDIT supersedes the author's own message text. */
+export function buildEdit(
+  roomIdStr: string,
+  target: Uint8Array,
+  text: string,
+  parents: Uint8Array[],
+): Promise<Event> {
+  return sealAndSign(roomIdStr, EventType.EDIT, { target, text }, parents)
+}
+
+/** DELETE withdraws a message (renders as a tombstone; not cryptographic erasure). */
+export function buildDelete(
+  roomIdStr: string,
+  target: Uint8Array,
+  by: 'author' | 'admin',
+  parents: Uint8Array[],
+): Promise<Event> {
+  return sealAndSign(roomIdStr, EventType.DELETE, { target, by }, parents)
+}
+
+// Decoded payloads, discriminated by event type.
+export type Decoded =
+  | { kind: 'chat'; text: string; replyTo?: Uint8Array }
+  | { kind: 'reaction'; target: Uint8Array; emoji: string[] }
+  | { kind: 'edit'; target: Uint8Array; text: string }
+  | { kind: 'delete'; target: Uint8Array; by: string }
+  | { kind: 'other' }
+
+/** Decrypt + decode any supported event payload, or null if undecryptable. */
+export async function openEvent(ev: Event): Promise<Decoded | null> {
+  try {
+    const obj = cborDecode(await open(ev)) as Record<string, unknown>
+    switch (ev.type) {
+      case EventType.CHAT:
+        return typeof obj.text === 'string'
+          ? { kind: 'chat', text: obj.text, replyTo: obj.reply_to as Uint8Array | undefined }
+          : null
+      case EventType.REACTION:
+        return { kind: 'reaction', target: obj.target as Uint8Array, emoji: (obj.emoji as string[]) ?? [] }
+      case EventType.EDIT:
+        return typeof obj.text === 'string'
+          ? { kind: 'edit', target: obj.target as Uint8Array, text: obj.text }
+          : null
+      case EventType.DELETE:
+        return { kind: 'delete', target: obj.target as Uint8Array, by: String(obj.by ?? 'author') }
+      default:
+        return { kind: 'other' }
+    }
+  } catch {
+    return null
+  }
 }
 
 /** Decrypt a CHAT event's body, or null if it isn't a decryptable chat. */
 export async function openChat(ev: Event): Promise<ChatBody | null> {
-  if (ev.type !== EventType.CHAT) return null
-  try {
-    const pt = await open(ev)
-    const obj = cborDecode(pt) as { text?: string; reply_to?: Uint8Array }
-    if (typeof obj.text !== 'string') return null
-    return { text: obj.text, replyTo: obj.reply_to }
-  } catch {
-    return null
-  }
+  const d = await openEvent(ev)
+  return d?.kind === 'chat' ? { text: d.text, replyTo: d.replyTo } : null
 }
 
 /** Structural + signature integrity check (mirrors Go event.Verify). */

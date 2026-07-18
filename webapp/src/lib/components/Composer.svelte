@@ -23,6 +23,16 @@
 </script>
 
 <div class="composer-wrap">
+  {#if app.replyingTo}
+    <div class="reply-bar">
+      <Icon name="reply" size={13} />
+      <span class="rb-label">Replying to {app.replyingTo.author}</span>
+      <span class="rb-text">{app.replyingTo.body || '(message)'}</span>
+      <button class="rb-x" aria-label="Cancel reply" onclick={() => app.setReplyTo(null)}>
+        <Icon name="x" size={13} />
+      </button>
+    </div>
+  {/if}
   <div class="composer">
     <textarea
       placeholder={`Message #${roomName}`}
@@ -49,6 +59,37 @@
     background: var(--surface);
     border-top: 1px solid var(--border);
   }
+  .reply-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    margin-bottom: 6px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-left: 2px solid var(--accent);
+    border-radius: var(--r-2);
+    font-size: 12.5px;
+    color: var(--text-2);
+  }
+  .reply-bar .rb-label { font-weight: 600; color: var(--text); white-space: nowrap; }
+  .reply-bar .rb-text {
+    color: var(--text-3);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+  }
+  .reply-bar .rb-x {
+    border: none;
+    background: transparent;
+    color: var(--text-3);
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    padding: 2px;
+  }
+  .reply-bar .rb-x:hover { color: var(--text); }
   .composer {
     border: 1px solid var(--border);
     border-radius: var(--r-3);
