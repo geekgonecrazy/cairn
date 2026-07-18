@@ -66,10 +66,23 @@ export function hashCapability(c: Capability): Uint8Array {
   return blake3(cborEncode(capabilityMap(c)))
 }
 
+/**
+ * Artifact type tags — part of each artifact's SIGNED bytes. MUST match
+ * approval/approval.go's Type* constants.
+ *
+ * A grant verifies STANDALONE, outside Cairn, with no event envelope to say
+ * what it is. Tagging inside the signature is what stops a broker reading a
+ * deny as a grant and minting on a refusal.
+ */
+export const TYPE_REQUEST = 'approval_request'
+export const TYPE_GRANT = 'approval_grant'
+export const TYPE_DENY = 'approval_deny'
+
 // Signing bytes: the artifact with `sig` set to null (Go marshals a nil []byte
 // as CBOR null, so we must too or the signature won't verify cross-impl).
 function grantMap(g: Omit<Grant, 'sig'>, sig: CborValue): { [k: string]: CborValue } {
   return {
+    type: TYPE_GRANT,
     request_id: g.request_id,
     capability_hash: g.capability_hash,
     agent_pub: g.agent_pub,
@@ -82,6 +95,7 @@ function grantMap(g: Omit<Grant, 'sig'>, sig: CborValue): { [k: string]: CborVal
 
 function denyMap(d: Omit<Deny, 'sig'>, sig: CborValue): { [k: string]: CborValue } {
   const m: { [k: string]: CborValue } = {
+    type: TYPE_DENY,
     request_id: d.request_id,
     approver_pub: d.approver_pub,
     issued_at: d.issued_at,

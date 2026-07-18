@@ -1,19 +1,40 @@
 <script lang="ts">
   import Icon from '../Icon.svelte'
-  import { SPACES } from '../data'
+  import { roomStore } from '../rooms.svelte'
+  import { identity } from '../identity.svelte'
+  import { ui } from '../ui.svelte'
 
-  let activeSpace = $state(SPACES[0].id)
+  // Only REAL spaces. A member who has not been added to any room is in no
+  // space and must see none — inventing a placeholder from their own display
+  // name made every newcomer look like they had founded their own household,
+  // which is the same fiction the deleted data.ts fixture told.
+  const spaces = $derived(roomStore.spaces)
+
+  // Derived, not $state: spaces load asynchronously, so capturing spaces[0] at
+  // init would pin an empty household's placeholder forever (and crash when
+  // there are none).
+  const activeSpace = $derived(spaces[0]?.id ?? '')
+
+  const me = $derived(identity.current)
+  const initials = $derived(
+    me
+      ? me.displayName
+          .split(/\s+/)
+          .slice(0, 2)
+          .map((w) => w[0]?.toUpperCase() ?? '')
+          .join('') || '?'
+      : '?',
+  )
 </script>
 
 <nav class="space-rail" aria-label="Spaces">
   <div class="logo" title="Cairn"><Icon name="house" size={18} /></div>
 
-  {#each SPACES as s (s.id)}
+  {#each spaces as s (s.id)}
     <button
       class="space"
       aria-current={activeSpace === s.id}
       title={s.name}
-      onclick={() => (activeSpace = s.id)}
     >
       {s.label}
     </button>
@@ -26,7 +47,14 @@
   <div class="grow"></div>
 
   <button class="icon-rail" title="Settings" aria-label="Settings"><Icon name="settings" /></button>
-  <div class="me" title="You">Y</div>
+  <button
+    class="me"
+    title={me ? `${me.displayName} · ${me.deviceLabel} · Identity & devices` : 'Identity & devices'}
+    aria-label="Identity and devices"
+    onclick={() => ui.openIdentity()}
+  >
+    {initials}
+  </button>
 </nav>
 
 <style>
@@ -87,6 +115,7 @@
     cursor: pointer;
   }
   .icon-rail:hover { color: var(--text); background: var(--surface-3); }
+  /* Now a button (opens identity & devices), so reset UA button styling. */
   .me {
     width: 32px;
     height: 32px;
@@ -96,6 +125,20 @@
     color: #fff;
     font-weight: 600;
     font-size: 12px;
+    font-family: inherit;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
     background: linear-gradient(135deg, oklch(0.62 0.1 35), oklch(0.55 0.13 25));
+  }
+  .me:hover {
+    filter: brightness(1.12);
+  }
+  .me:focus-visible {
+    outline: 2px solid var(--accent, #2563eb);
+    outline-offset: 2px;
+  }
+  @media (pointer: coarse) {
+    .me { width: 40px; height: 40px; }
   }
 </style>

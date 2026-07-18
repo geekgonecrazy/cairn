@@ -7,34 +7,47 @@
   import Composer from './Composer.svelte'
   import MembersModal from './MembersModal.svelte'
   import { app } from '../state.svelte'
-  import { findRoom, roomGlyph } from '../data'
+  import { ui } from '../ui.svelte'
+  import { roomStore } from '../rooms.svelte'
 
-  const room = $derived(findRoom(app.currentRoomId))
-  const glyph = $derived(room ? roomGlyph(room.kind) : { icon: 'hash' })
+
+  const room = $derived(roomStore.find(app.currentRoomId))
+  const glyph = { icon: 'hash' }
+  // No key means no membership. Say so instead of encrypting into the void.
+  // Reads app.hasRoomKey (reactive) rather than localStorage directly, so a key
+  // arriving via member_add re-enables the composer without a reload.
+  const canPost = $derived(app.hasRoomKey)
   let showMembers = $state(false)
 </script>
 
 <section class="room">
   <header class="room-header">
     <div class="title">
-      <span class="rg"><Icon name={glyph.icon} size={16} /></span>
-      <div>
-        <h1>{room?.name ?? app.currentRoomId}</h1>
-        <div class="sub">
-          {room?.sub ?? 'room'}
-          {#if app.online.length > 0}
-            · <span class="online"><span class="odot"></span>{app.online.length} online</span>
-          {/if}
-        </div>
-      </div>
-    </div>
-    <div class="actions">
-      <button class="icon-btn" title="Members & keys" aria-label="Members and keys" onclick={() => (showMembers = true)}>
-        <Icon name="users" />
+      <button class="icon-btn menu-btn" aria-label="Open navigation" onclick={() => ui.openNav()}>
+        <Icon name="menu" />
       </button>
-      <button class="icon-btn" title="Info" aria-label="Info"><Icon name="info" /></button>
-      <button class="icon-btn" title="More" aria-label="More"><Icon name="kebab" /></button>
+      {#if app.currentRoomId}
+        <span class="rg"><Icon name={glyph.icon} size={16} /></span>
+        <div>
+          <h1>{room?.name ?? app.currentRoomId}</h1>
+          <div class="sub">
+            room
+            {#if app.online.length > 0}
+              · <span class="online"><span class="odot"></span>{app.online.length} online</span>
+            {/if}
+          </div>
+        </div>
+      {/if}
     </div>
+    {#if app.currentRoomId}
+      <div class="actions">
+        <button class="icon-btn" title="Members & keys" aria-label="Members and keys" onclick={() => (showMembers = true)}>
+          <Icon name="users" />
+        </button>
+        <button class="icon-btn" title="Info" aria-label="Info"><Icon name="info" /></button>
+        <button class="icon-btn" title="More" aria-label="More"><Icon name="kebab" /></button>
+      </div>
+    {/if}
   </header>
 
   {#if showMembers}
@@ -42,7 +55,27 @@
   {/if}
 
   <div class="room-body">
-    {#if app.messages.length === 0}
+    {#if !app.currentRoomId}
+      <div class="empty">
+        <div class="empty-mark"><Icon name="hash" size={22} /></div>
+        <h2>No room selected</h2>
+        <p>
+          Create a room from the sidebar to start talking. Rooms aren't handed to you —
+          each one exists because someone created it and added the people in it.
+        </p>
+      </div>
+    {:else if !canPost}
+      <!-- Honest states: we hold no key for this room, so we are not a member.
+           Never silently mint one — that is what produced phantom rooms. -->
+      <div class="empty">
+        <div class="empty-mark"><Icon name="lock" size={22} /></div>
+        <h2>You're not a member of this room</h2>
+        <p>
+          You don't hold a key for it, so its messages stay unreadable and you can't post.
+          Someone already in the room has to add your member key.
+        </p>
+      </div>
+    {:else if app.messages.length === 0}
       <div class="empty">
         <div class="empty-mark"><Icon name={glyph.icon} size={22} /></div>
         <h2>#{room?.name ?? app.currentRoomId}</h2>
@@ -67,7 +100,9 @@
     {/if}
   </div>
 
-  <Composer roomName={room?.name ?? app.currentRoomId} />
+  {#if canPost}
+    <Composer roomName={room?.name ?? app.currentRoomId} />
+  {/if}
 </section>
 
 <style>
@@ -106,6 +141,20 @@
     cursor: pointer;
   }
   .icon-btn:hover { background: var(--surface-2); color: var(--text); border-color: var(--border); }
+
+  /* The drawer toggle only exists below the breakpoint, where the rail and
+     room list are no longer on screen. */
+  .menu-btn { display: none; }
+  @media (max-width: 900px) {
+    .menu-btn { display: grid; margin-right: 2px; }
+    /* 32px is under the 44px touch-target floor; widen on pointer:coarse only
+       so desktop density is unchanged. */
+    .icon-btn { width: 40px; height: 40px; }
+    .room-header { padding: 10px 12px; }
+  }
+  @media (pointer: coarse) {
+    .icon-btn { min-width: 44px; min-height: 44px; }
+  }
   .room-body {
     flex: 1 1 auto;
     overflow-y: auto;
@@ -114,6 +163,14 @@
     flex-direction: column;
     gap: 2px;
     min-height: 0;
+  }
+  /* Children must keep their natural height. As flex items they default to
+     flex-shrink: 1, so once the timeline overflows they get COMPRESSED instead
+     of scrolled — and .inlay's overflow:hidden then clips the squeezed content.
+     Chat rows are short enough to hide it; tall inlay cards lost whole rows
+     (a poll's percentage, an approval's capability/scope labels). */
+  .room-body > :global(*) {
+    flex: 0 0 auto;
   }
   .empty { margin: auto; max-width: 440px; text-align: center; padding: 40px 24px; }
   .empty-mark {

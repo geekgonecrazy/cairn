@@ -42,6 +42,14 @@ const (
 	// CairnServiceGetIdentityObjectProcedure is the fully-qualified name of the CairnService's
 	// GetIdentityObject RPC.
 	CairnServiceGetIdentityObjectProcedure = "/cairn.v1.CairnService/GetIdentityObject"
+	// CairnServicePutIdentityObjectProcedure is the fully-qualified name of the CairnService's
+	// PutIdentityObject RPC.
+	CairnServicePutIdentityObjectProcedure = "/cairn.v1.CairnService/PutIdentityObject"
+	// CairnServiceResolveSenderProcedure is the fully-qualified name of the CairnService's
+	// ResolveSender RPC.
+	CairnServiceResolveSenderProcedure = "/cairn.v1.CairnService/ResolveSender"
+	// CairnServiceListRoomsProcedure is the fully-qualified name of the CairnService's ListRooms RPC.
+	CairnServiceListRoomsProcedure = "/cairn.v1.CairnService/ListRooms"
 )
 
 // CairnServiceClient is a client for the cairn.v1.CairnService service.
@@ -50,6 +58,9 @@ type CairnServiceClient interface {
 	Sync(context.Context, *connect.Request[cairnv1.SyncRequest]) (*connect.Response[cairnv1.SyncResponse], error)
 	History(context.Context, *connect.Request[cairnv1.HistoryRequest]) (*connect.Response[cairnv1.HistoryResponse], error)
 	GetIdentityObject(context.Context, *connect.Request[cairnv1.GetIdentityObjectRequest]) (*connect.Response[cairnv1.GetIdentityObjectResponse], error)
+	PutIdentityObject(context.Context, *connect.Request[cairnv1.PutIdentityObjectRequest]) (*connect.Response[cairnv1.PutIdentityObjectResponse], error)
+	ResolveSender(context.Context, *connect.Request[cairnv1.ResolveSenderRequest]) (*connect.Response[cairnv1.ResolveSenderResponse], error)
+	ListRooms(context.Context, *connect.Request[cairnv1.ListRoomsRequest]) (*connect.Response[cairnv1.ListRoomsResponse], error)
 }
 
 // NewCairnServiceClient constructs a client for the cairn.v1.CairnService service. By default, it
@@ -87,6 +98,24 @@ func NewCairnServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(cairnServiceMethods.ByName("GetIdentityObject")),
 			connect.WithClientOptions(opts...),
 		),
+		putIdentityObject: connect.NewClient[cairnv1.PutIdentityObjectRequest, cairnv1.PutIdentityObjectResponse](
+			httpClient,
+			baseURL+CairnServicePutIdentityObjectProcedure,
+			connect.WithSchema(cairnServiceMethods.ByName("PutIdentityObject")),
+			connect.WithClientOptions(opts...),
+		),
+		resolveSender: connect.NewClient[cairnv1.ResolveSenderRequest, cairnv1.ResolveSenderResponse](
+			httpClient,
+			baseURL+CairnServiceResolveSenderProcedure,
+			connect.WithSchema(cairnServiceMethods.ByName("ResolveSender")),
+			connect.WithClientOptions(opts...),
+		),
+		listRooms: connect.NewClient[cairnv1.ListRoomsRequest, cairnv1.ListRoomsResponse](
+			httpClient,
+			baseURL+CairnServiceListRoomsProcedure,
+			connect.WithSchema(cairnServiceMethods.ByName("ListRooms")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -96,6 +125,9 @@ type cairnServiceClient struct {
 	sync              *connect.Client[cairnv1.SyncRequest, cairnv1.SyncResponse]
 	history           *connect.Client[cairnv1.HistoryRequest, cairnv1.HistoryResponse]
 	getIdentityObject *connect.Client[cairnv1.GetIdentityObjectRequest, cairnv1.GetIdentityObjectResponse]
+	putIdentityObject *connect.Client[cairnv1.PutIdentityObjectRequest, cairnv1.PutIdentityObjectResponse]
+	resolveSender     *connect.Client[cairnv1.ResolveSenderRequest, cairnv1.ResolveSenderResponse]
+	listRooms         *connect.Client[cairnv1.ListRoomsRequest, cairnv1.ListRoomsResponse]
 }
 
 // SendEvent calls cairn.v1.CairnService.SendEvent.
@@ -118,12 +150,30 @@ func (c *cairnServiceClient) GetIdentityObject(ctx context.Context, req *connect
 	return c.getIdentityObject.CallUnary(ctx, req)
 }
 
+// PutIdentityObject calls cairn.v1.CairnService.PutIdentityObject.
+func (c *cairnServiceClient) PutIdentityObject(ctx context.Context, req *connect.Request[cairnv1.PutIdentityObjectRequest]) (*connect.Response[cairnv1.PutIdentityObjectResponse], error) {
+	return c.putIdentityObject.CallUnary(ctx, req)
+}
+
+// ResolveSender calls cairn.v1.CairnService.ResolveSender.
+func (c *cairnServiceClient) ResolveSender(ctx context.Context, req *connect.Request[cairnv1.ResolveSenderRequest]) (*connect.Response[cairnv1.ResolveSenderResponse], error) {
+	return c.resolveSender.CallUnary(ctx, req)
+}
+
+// ListRooms calls cairn.v1.CairnService.ListRooms.
+func (c *cairnServiceClient) ListRooms(ctx context.Context, req *connect.Request[cairnv1.ListRoomsRequest]) (*connect.Response[cairnv1.ListRoomsResponse], error) {
+	return c.listRooms.CallUnary(ctx, req)
+}
+
 // CairnServiceHandler is an implementation of the cairn.v1.CairnService service.
 type CairnServiceHandler interface {
 	SendEvent(context.Context, *connect.Request[cairnv1.SendEventRequest]) (*connect.Response[cairnv1.SendEventResponse], error)
 	Sync(context.Context, *connect.Request[cairnv1.SyncRequest]) (*connect.Response[cairnv1.SyncResponse], error)
 	History(context.Context, *connect.Request[cairnv1.HistoryRequest]) (*connect.Response[cairnv1.HistoryResponse], error)
 	GetIdentityObject(context.Context, *connect.Request[cairnv1.GetIdentityObjectRequest]) (*connect.Response[cairnv1.GetIdentityObjectResponse], error)
+	PutIdentityObject(context.Context, *connect.Request[cairnv1.PutIdentityObjectRequest]) (*connect.Response[cairnv1.PutIdentityObjectResponse], error)
+	ResolveSender(context.Context, *connect.Request[cairnv1.ResolveSenderRequest]) (*connect.Response[cairnv1.ResolveSenderResponse], error)
+	ListRooms(context.Context, *connect.Request[cairnv1.ListRoomsRequest]) (*connect.Response[cairnv1.ListRoomsResponse], error)
 }
 
 // NewCairnServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -157,6 +207,24 @@ func NewCairnServiceHandler(svc CairnServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(cairnServiceMethods.ByName("GetIdentityObject")),
 		connect.WithHandlerOptions(opts...),
 	)
+	cairnServicePutIdentityObjectHandler := connect.NewUnaryHandler(
+		CairnServicePutIdentityObjectProcedure,
+		svc.PutIdentityObject,
+		connect.WithSchema(cairnServiceMethods.ByName("PutIdentityObject")),
+		connect.WithHandlerOptions(opts...),
+	)
+	cairnServiceResolveSenderHandler := connect.NewUnaryHandler(
+		CairnServiceResolveSenderProcedure,
+		svc.ResolveSender,
+		connect.WithSchema(cairnServiceMethods.ByName("ResolveSender")),
+		connect.WithHandlerOptions(opts...),
+	)
+	cairnServiceListRoomsHandler := connect.NewUnaryHandler(
+		CairnServiceListRoomsProcedure,
+		svc.ListRooms,
+		connect.WithSchema(cairnServiceMethods.ByName("ListRooms")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/cairn.v1.CairnService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case CairnServiceSendEventProcedure:
@@ -167,6 +235,12 @@ func NewCairnServiceHandler(svc CairnServiceHandler, opts ...connect.HandlerOpti
 			cairnServiceHistoryHandler.ServeHTTP(w, r)
 		case CairnServiceGetIdentityObjectProcedure:
 			cairnServiceGetIdentityObjectHandler.ServeHTTP(w, r)
+		case CairnServicePutIdentityObjectProcedure:
+			cairnServicePutIdentityObjectHandler.ServeHTTP(w, r)
+		case CairnServiceResolveSenderProcedure:
+			cairnServiceResolveSenderHandler.ServeHTTP(w, r)
+		case CairnServiceListRoomsProcedure:
+			cairnServiceListRoomsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -190,4 +264,16 @@ func (UnimplementedCairnServiceHandler) History(context.Context, *connect.Reques
 
 func (UnimplementedCairnServiceHandler) GetIdentityObject(context.Context, *connect.Request[cairnv1.GetIdentityObjectRequest]) (*connect.Response[cairnv1.GetIdentityObjectResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cairn.v1.CairnService.GetIdentityObject is not implemented"))
+}
+
+func (UnimplementedCairnServiceHandler) PutIdentityObject(context.Context, *connect.Request[cairnv1.PutIdentityObjectRequest]) (*connect.Response[cairnv1.PutIdentityObjectResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cairn.v1.CairnService.PutIdentityObject is not implemented"))
+}
+
+func (UnimplementedCairnServiceHandler) ResolveSender(context.Context, *connect.Request[cairnv1.ResolveSenderRequest]) (*connect.Response[cairnv1.ResolveSenderResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cairn.v1.CairnService.ResolveSender is not implemented"))
+}
+
+func (UnimplementedCairnServiceHandler) ListRooms(context.Context, *connect.Request[cairnv1.ListRoomsRequest]) (*connect.Response[cairnv1.ListRoomsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cairn.v1.CairnService.ListRooms is not implemented"))
 }

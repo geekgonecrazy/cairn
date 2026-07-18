@@ -65,6 +65,92 @@ Companion to [`plan.md`](./plan.md) (the build plan) and the design mockup in
   speaking MQTT). Guardrails if ever adopted: per-host / additive only (never a global bus), never the
   source of truth or trust path, short / interest-based retention.
 
+### Household-root bootstrap & recovery shape — decided 2026-07-18 (Phase 4)
+
+Closes the open question carried in `plan.md` §5 and `PROTOCOL.md` §298. Implemented in
+`identity/household.go`.
+
+- The household root is an **offline-only apex**. It signs exactly one object type —
+  `IdentityAttestation`, binding a member root to the household — and nothing else.
+- It is **derived deterministically from a 24-word BIP-39 mnemonic** and **never persisted**.
+  Operations that need it re-derive it from the words, use it, and drop it. No device stores the
+  root private key, so no device theft compromises the household.
+- The root pubkey **is** the household id and the value that belongs in `trustedRoots`.
+- **Recovery = re-derive the root from the words, then re-attest a fresh member root.** Not
+  "restore a backup". The household id is unchanged, so peers' existing `trustedRoots` keep
+  working. Losing every device still loses the per-room message keys — pre-join history stays
+  opaque per §3 — which is a deliberate consequence, not a gap.
+- BIP-39 seed → **HKDF-SHA-512 domain separation** (`cairn/household-root/v1`) → Ed25519 seed, so
+  the same words can later derive further independent keys without either being able to forge the
+  other.
+- BIP-39 via `github.com/tyler-smith/go-bip39` rather than hand-rolled, per the "established
+  primitives only, no inventing" rule.
+- **Consequence to accept:** a wrong BIP-39 passphrase yields a *different household*, not an
+  error. That is BIP-39's plausible-deniability property; the UI must make the resulting
+  "nobody recognizes you" state legible rather than looking like a bug.
+
+### Typed identity-log objects and approval artifacts — decided 2026-07-18
+
+Every identity-log object (`identity/`) and portable approval artifact (`approval/`) now carries
+a **`type` field inside its signed bytes**.
+
+**Why.** Both sets of CBOR objects previously had no type tag, and the structs share field names
+— a `SessionDelegation` partially decodes as a `DeviceDelegation`, a `Deny` as a `Grant`. The
+carrier discriminated by trying each shape and keeping whichever *verified*. That worked only
+because canonically re-encoding a decoded struct produces different bytes when field sets
+differ — a property of the current layout, not a guarantee. One added field could make a
+signature transfer between types.
+
+**What it buys:**
+
+- **Deterministic parsing.** Read the tag, dispatch. No speculative decoding, no load-bearing
+  attempt ordering, no O(n) verify attempts as object types grow (Phase 5 adds WebAuthn
+  envelopes).
+- **Domain separation.** The tag is inside the signature, so cross-type confusion requires
+  forging Ed25519 rather than finding a canonical-encoding collision.
+
+**Rules:** `Sign` stamps the canonical tag; `signingBytes` FORCES it (so nobody signs an object
+wearing another type's tag); verification checks the stored tag **before** the signature, so a
+mislabelled object is rejected on the tag. Untagged objects — anything predating this change —
+no longer verify.
+
+**Highest-stakes case:** an `approval.Grant` is designed to verify *standalone, outside Cairn,
+with no room key and no event envelope* (Phase 2 exit). A broker holding a bare blob has no
+context to tell a grant from a deny. `approval/type_test.go` pins that a signed **Deny** can
+never verify as a **Grant** — otherwise a broker could mint a credential on a refusal.
+
+**Cost, accepted:** a wire-format break. All golden conformance vectors regenerated on both
+sides. Done now precisely because dev-phase policy allows it (no migrations, wipe the DB); after
+the real-users switch this would be a versioned migration over every stored identity object and
+every previously-issued portable grant.
+
+Kept `identity/verify_test.go`'s cross-type matrix afterwards as a regression net — it now
+guards a structural property rather than an incidental one.
+
+### CBOR floats — fixed 2026-07-18 (was silent data corruption)
+
+The browser's CBOR encoder did `BigInt(Math.trunc(v))`: **every non-integer was silently
+truncated to an integer**, and the decoder threw outright on major-type-7 floats.
+
+Consequences, both live before this was found:
+
+- Every inlay payload the browser sent had its fractions destroyed. A poll `share: 0.333`
+  encoded as `0`; every `progress_fraction` was `0`; sensor readings truncated. They rendered
+  as zeros rather than errors, so nothing looked broken — the `progress_fraction` role was
+  meaningless on the wire since Phase 2.
+- Any payload authored by a Go client containing a fraction was **undecodable**, so the whole
+  event silently failed to render.
+
+Now: shortest-form IEEE-754 encoding (f16 → f32 → f64) matching Go's `cbor.CoreDetEncOptions`
+(`ShortestFloat16`), and decoding for all three widths. Asserted against Go golden vectors
+(`0.66 → fb3fe51eb851eb851f`, `24.6 → fb403899999999999a`, nested map byte-identical).
+
+**Known limit:** JS cannot distinguish `640.0` from `640`, so a whole number always encodes as
+a CBOR int here while Go's `float64(640)` emits a float. Values round-trip correctly; only the
+byte form differs. Safe because inlay *bindings* are never hashed — `decl_cid` covers the
+DECLARATION, whose numbers are integers. Do not rely on byte-identical encoding of
+whole-number floats across the two implementations.
+
 ---
 
 ## ⚠️ Deviations — where the build knowingly differs from `plan.md` / the vision

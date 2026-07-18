@@ -116,6 +116,128 @@ Phase-1 crypto test vectors still pass unchanged.
 **Exit:** pair a new device by QR; revoke a device; a Space admit-policy is enforced on
 join; the recovery flow is gated and unskippable.
 
+### Identity vertical slice — done 2026-07-18
+
+- [x] **Household-root shape decided** (offline-only apex, BIP-39 24-word derived, never
+      persisted; recovery = re-derive + re-attest). Closes the `plan.md` §5 open question.
+      Rationale in `decisions.md`.
+- [x] `identity/household.go` — BIP-39 mnemonic, HKDF-SHA-512 domain separation
+      (`cairn/household-root/v1`), `Bootstrap`, `ProvisionMember`.
+- [x] `identity/pairing.go` — versioned QR payload, fingerprints, `ApprovePairing`,
+      `RevokeDevice`. Room keys are deliberately NOT in the pairing payload.
+- [x] `identity/log.go` — identity log as a **set**, not a chain: order-independent
+      convergence, **revocation wins**, revoked keys can never be re-paired.
+- [x] **Go↔browser identity conformance**: household derivation, attestation signing bytes,
+      and pairing wire format asserted against the same golden vectors in
+      `identity/conformance_test.go` and `webapp/scripts/identity-conformance.ts`.
+- [x] `webapp`: persistent identity vault (member root + device key in `localStorage`,
+      session key still per-tab), gated onboarding (create → show 24 words → confirm three
+      back), recovery flow, identity & devices surface with QR pairing and revoke.
+- [x] **Member provisioning — a household is founded ONCE, everyone else joins.** Onboarding
+      leads with *Join a household*; founding is behind a "nobody has set ours up yet"
+      confirmation. Newcomer mints a member key → join code → an existing member re-enters the
+      household words to attest it → newcomer imports the signed attestation. No secret moves
+      in either direction.
+      > **Trust bootstrap:** an attestation's `origin` is SELF-DECLARED, so a forged invite
+      > from another household verifies its own signature perfectly. A newcomer has no trusted
+      > root yet, so this cannot be settled cryptographically — the join screen shows the
+      > invite's household fingerprint for out-of-band human comparison, exactly as device
+      > pairing does. Do not "simplify" this away.
+- [x] Session key delegated by the device key (session → device → member → household), and
+      scoped to the device key so setup replaces a pre-identity throwaway key rather than
+      silently carrying it forward.
+- [x] **Responsive shell** (prerequisite): drawer nav under 900px, touch targets, `100dvh`.
+      Verified at 390×844 and 1440×900 with zero horizontal overflow.
+
+- [x] **Identity log persists and syncs.** New RPCs `PutIdentityObject` (carrier verifies each
+      object's signature before storing) and `ResolveSender` (returns the whole chain for a
+      sender key in one round trip). Clients re-verify every object locally — the server carries
+      and serves, it never vouches.
+      > **Protocol gap closed:** `GetIdentityObject` is keyed by HASH, but a client meeting an
+      > unknown sender holds only a PUBKEY and no way to learn the hash, so hash-only lookup
+      > could not bootstrap. `ResolveSender` is the pubkey-keyed entry point.
+      >
+      > **Type discrimination:** identity-log CBOR carries no type tag, so the carrier tries
+      > each shape and keeps the one that VERIFIES — decoding alone is ambiguous because the
+      > structs share field names. `identity/verify_test.go` pins that no object ever verifies
+      > as another type; if that breaks, a session key could be filed as a device key.
+- [x] **Sender directory**: names resolve from attested identity, verified in the browser.
+      A name is shown ONLY for a chain that verifies AND terminates at our own household —
+      `unknown` and `untrusted` both stay key stubs, because rendering a stranger's
+      self-chosen display name is exactly how impersonation would work. Revoked devices render
+      as `Name (revoked device)` rather than silently vanishing.
+
+- [x] **Revocation propagates.** Revoking publishes the signed `DeviceRevoke` to the carrier;
+      other members resolving that key get the revoke and render `Name (revoked device)`.
+      A publish failure is surfaced explicitly with a retry — a revoke that silently failed to
+      publish leaves everyone else trusting a key its owner believes is dead, which is worse
+      than an error.
+
+- [x] **Real rooms and spaces.** Deleted the Phase-0 `data.ts` fixture, which hardcoded a
+      Household space and four channels. That fixture manufactured membership nobody had
+      established: every client rendered "general" and silently minted a key for it, so two
+      people in the "same" room held different keys and could not read each other.
+      Rooms now come from signed `ROOM_CREATE` (enum 55) / `SPACE_CREATE` events folded into
+      the `rooms`/`spaces`/`members` tables, served by `ListRooms` filtered to rooms a signed
+      `MEMBER_ADD` admitted you to. An empty household shows an EMPTY sidebar.
+      > **`ensureCurrentKey` is gone.** It minted a room key for any room you opened — the
+      > phantom-membership engine. Replaced by `currentKey` (nullable) + `NoRoomKeyError`.
+      > A key arrives exactly two ways: you created the room, or a member wrapped one to you.
+- [x] **Room keys wrap to MEMBER ROOTS, not session keys.** `myKey()` returns the member root.
+      Access now survives reloads and follows a member to new devices; previously an added
+      member silently lost access when their tab closed.
+- [x] **Device reset.** Erases identity, room keys, epochs, paired devices, session key AND the
+      IndexedDB DAG cache — the cache must go too, or a "wiped" client re-uploads its history
+      on reconnect. Confirmation states the three consequences (no words = household lost;
+      past messages stay unreadable after rejoining; it revokes nothing).
+
+- [x] **Live membership updates.** `ingest()` filtered every event by the room you're currently
+      viewing, so a newcomer with no room open dropped their own `member_add` and sat on an
+      empty screen until they happened to reload — the invite looked like it had silently
+      failed. Membership events for other rooms are now handled before the room filter.
+      > The room test masked this by reloading the joiner right before asserting. A test that
+      > reloads before checking cannot see a missing live update.
+- [x] **Optional history sharing on invite.** `member_add` takes `share_history`; when set it
+      HPKE-wraps the OLDER epoch keys to the newcomer, and records `history_shared` in the
+      signed payload so every member can see the backlog was disclosed. Default OFF —
+      pre-join opacity stays the rule. The UI states that it cannot be undone: removing the
+      member later does not take back what they can already decrypt.
+
+- [x] **Room roster.** "Members & keys" has been named that since Phase 1 but never listed
+      anyone — it held only your key, add-by-key and rotate. It now shows every member with
+      their attested name, role and fingerprint. `ResolveSender` gained a member-root fallback:
+      it only walked UP from a device/session key, but a roster stores member roots, which
+      never sign events, so there was no chain to walk and names stayed key stubs.
+- [x] **Removed the `#rk=` room-key link.** A Phase-1 shortcut from when rooms were the
+      `data.ts` fixture: it installs a room KEY but cannot confer MEMBERSHIP, and the sidebar
+      is now driven by signed `member_add`. A link can never work here — only an existing
+      member can sign someone in. It was also a soft hazard (any URL could plant a room key).
+- [x] **`cmd/agent`** — a headless Go participant proving the protocol is client-agnostic:
+      creates a space/room, admits a human by member root, posts chat, declared inlays and a
+      capability request, and (`-watch`) verifies the returned grant or deny STANDALONE —
+      signature, expiry, and binding to the exact capability and agent. Keys default to
+      `$TMPDIR/cairn-agent`, never `$HOME`: it stores a private key and plaintext room keys.
+
+**Not yet — the rest of Phase 4:**
+
+- [ ] **⚠️ Enforce the chain gate.** `core/events.go` only checks sender chains when
+      `trustedRoots` is non-empty; the dev default is empty, so a revoked device can still
+      post. Revocation is currently *advisory* — clients label it, the server accepts it.
+      Closing this means teaching `cairnd` the household root (config today; a bootstrap
+      handshake would be better) and deciding what happens to a node that trusts no root.
+- [ ] Camera QR capture (`getUserMedia`); today pairing is copy/paste of the same payload.
+- [ ] Space settings + admit-policy (kind + origin); peer-household join with
+      origin-fingerprint review; notifications settings.
+- [ ] Parent-sets-up-kid provisioning flow (`claude-design/cairn-settings.jsx` §B).
+- [ ] Space naming — every space is hardcoded `"Household"` since the id became
+      household-derived. It should be nameable at founding or in space settings.
+- [ ] A newcomer sees no rooms and cannot discover that any exist, so they cannot ask to be
+      added to something they can't see. Protocol-correct, but a likely onboarding complaint.
+- [ ] `approval_deny` carries a `reason` field that the UI never collects — a refusal reaches
+      the agent and the audit log as a bare no.
+- [ ] `cmd/agent` is not idempotent: re-running for an existing room mints a fresh key at the
+      same epoch, colliding with the key members already hold.
+
 ## Phase 5 — Native wrapper (Wails3) + BLE + passkeys
 
 **Exit:** native iOS app (simulator) with durable storage + passkey pairing; BLE

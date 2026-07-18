@@ -21,6 +21,7 @@
     check: '<path d="m3.5 8.5 3 3 6-6.5"/>',
     check2: '<path d="m3 8.5 2.5 2.5L10 6"/><path d="m7 11 1 1L13 7"/>',
     kebab: '<circle cx="8" cy="3.5" r=".9" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r=".9" fill="currentColor" stroke="none"/><circle cx="8" cy="12.5" r=".9" fill="currentColor" stroke="none"/>',
+    menu: '<path d="M2.5 4h11M2.5 8h11M2.5 12h11"/>',
     spark: '<path d="M8 2v3M8 11v3M2 8h3M11 8h3M3.5 3.5l2 2M10.5 10.5l2 2M3.5 12.5l2-2M10.5 5.5l2-2"/>',
     bolt: '<path d="m9 2-5 7h3l-1 5 5-7H8l1-5Z"/>',
     mesh: '<circle cx="8" cy="3" r="1.5"/><circle cx="3.5" cy="12" r="1.5"/><circle cx="12.5" cy="12" r="1.5"/><path d="M8 4.5 4 10.5M8 4.5l4 6M5 12h6"/>',

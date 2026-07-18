@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/geekgonecrazy/cairn/event"
@@ -44,6 +45,14 @@ func SubmitEvent(ev *cairnv1.Event) error {
 		return err
 	}
 	if stored {
+		// Fold room/space membership into the materialized tables. The event is
+		// already verified and durable, so a fold failure is a data problem to
+		// surface — never a reason to reject an event that verifies.
+		if isRoomStateEvent(ev.Type) {
+			if err := applyRoomState(ev); err != nil {
+				log.Printf("core: room-state fold failed for %x: %v", ev.EventId, err)
+			}
+		}
 		hub.broadcast(ev)
 	}
 	return nil

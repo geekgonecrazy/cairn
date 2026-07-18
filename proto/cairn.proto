@@ -99,6 +99,7 @@ enum EventType {
   ROOM_KEY_ROTATE = 52;
   SPACE_CREATE    = 53;
   SPACE_UPDATE    = 54;
+  ROOM_CREATE     = 55;
 
   // Identity (live in the household identity log; fetched by hash)
   IDENTITY_ATTESTATION = 60;
@@ -159,10 +160,55 @@ message HistoryResponse {
 message GetIdentityObjectRequest { bytes hash = 1; }
 message GetIdentityObjectResponse { bytes cbor = 1; } // CBOR object; schema in PROTOCOL.md
 
+// Publish an identity-log object. The server VERIFIES the signature before
+// storing; it never mints or vouches for identity, it only carries and serves
+// what already verifies on its own.
+message PutIdentityObjectRequest { bytes cbor = 1; }
+message PutIdentityObjectResponse { bytes hash = 1; } // BLAKE3-256 content address
+
+// Resolve a sender key to the identity-log objects that place it.
+//
+// GetIdentityObject is keyed by HASH, but a client meeting an unknown sender
+// holds only its PUBKEY and has no way to learn the hash — so hash-only lookup
+// cannot bootstrap. This returns the whole chain for a sender key in one round
+// trip: session delegation (if any), device delegation, attestation, and any
+// revoke. Each object is independently signed, so the client verifies them
+// itself and the server stays untrusted.
+// A room/space the caller is a member of. Rooms are NOT pre-seeded: a household
+// starts empty and every room exists because someone created it (ROOM_CREATE).
+message RoomInfo {
+  bytes room_id = 1;
+  bytes space_id = 2;
+  string name = 3;
+  int64 created_at = 4;
+}
+message SpaceInfo {
+  bytes space_id = 1;
+  string name = 2;
+}
+// Rooms visible to member_pub — i.e. rooms it has been admitted to. Membership
+// is a property of the MEMBER ROOT, not a device or session key.
+message ListRoomsRequest { bytes member_pub = 1; }
+message ListRoomsResponse {
+  repeated RoomInfo rooms = 1;
+  repeated SpaceInfo spaces = 2;
+}
+
+message ResolveSenderRequest { bytes sender_pub = 1; }
+message ResolveSenderResponse {
+  bytes session_delegation = 1; // CBOR, empty if the sender is a device key
+  bytes device_delegation = 2;  // CBOR, empty if unknown
+  bytes attestation = 3;        // CBOR, empty if unknown
+  bytes device_revoke = 4;      // CBOR, empty if not revoked
+}
+
 service CairnService {
   rpc SendEvent(SendEventRequest) returns (SendEventResponse);
   rpc Sync(SyncRequest) returns (SyncResponse);
   rpc History(HistoryRequest) returns (HistoryResponse);
   rpc GetIdentityObject(GetIdentityObjectRequest) returns (GetIdentityObjectResponse);
+  rpc PutIdentityObject(PutIdentityObjectRequest) returns (PutIdentityObjectResponse);
+  rpc ResolveSender(ResolveSenderRequest) returns (ResolveSenderResponse);
+  rpc ListRooms(ListRoomsRequest) returns (ListRoomsResponse);
   // Realtime push is SSE (see PROTOCOL.md §API), not a proto stream.
 }

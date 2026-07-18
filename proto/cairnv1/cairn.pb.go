@@ -59,6 +59,7 @@ const (
 	EventType_ROOM_KEY_ROTATE EventType = 52
 	EventType_SPACE_CREATE    EventType = 53
 	EventType_SPACE_UPDATE    EventType = 54
+	EventType_ROOM_CREATE     EventType = 55
 	// Identity (live in the household identity log; fetched by hash)
 	EventType_IDENTITY_ATTESTATION EventType = 60
 	EventType_DEVICE_DELEGATION    EventType = 61
@@ -97,6 +98,7 @@ var (
 		52: "ROOM_KEY_ROTATE",
 		53: "SPACE_CREATE",
 		54: "SPACE_UPDATE",
+		55: "ROOM_CREATE",
 		60: "IDENTITY_ATTESTATION",
 		61: "DEVICE_DELEGATION",
 		62: "DEVICE_REVOKE",
@@ -131,6 +133,7 @@ var (
 		"ROOM_KEY_ROTATE":        52,
 		"SPACE_CREATE":           53,
 		"SPACE_UPDATE":           54,
+		"ROOM_CREATE":            55,
 		"IDENTITY_ATTESTATION":   60,
 		"DEVICE_DELEGATION":      61,
 		"DEVICE_REVOKE":          62,
@@ -746,6 +749,437 @@ func (x *GetIdentityObjectResponse) GetCbor() []byte {
 	return nil
 }
 
+// Publish an identity-log object. The server VERIFIES the signature before
+// storing; it never mints or vouches for identity, it only carries and serves
+// what already verifies on its own.
+type PutIdentityObjectRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Cbor          []byte                 `protobuf:"bytes,1,opt,name=cbor,proto3" json:"cbor,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PutIdentityObjectRequest) Reset() {
+	*x = PutIdentityObjectRequest{}
+	mi := &file_cairn_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PutIdentityObjectRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PutIdentityObjectRequest) ProtoMessage() {}
+
+func (x *PutIdentityObjectRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cairn_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PutIdentityObjectRequest.ProtoReflect.Descriptor instead.
+func (*PutIdentityObjectRequest) Descriptor() ([]byte, []int) {
+	return file_cairn_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *PutIdentityObjectRequest) GetCbor() []byte {
+	if x != nil {
+		return x.Cbor
+	}
+	return nil
+}
+
+type PutIdentityObjectResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Hash          []byte                 `protobuf:"bytes,1,opt,name=hash,proto3" json:"hash,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PutIdentityObjectResponse) Reset() {
+	*x = PutIdentityObjectResponse{}
+	mi := &file_cairn_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PutIdentityObjectResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PutIdentityObjectResponse) ProtoMessage() {}
+
+func (x *PutIdentityObjectResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_cairn_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PutIdentityObjectResponse.ProtoReflect.Descriptor instead.
+func (*PutIdentityObjectResponse) Descriptor() ([]byte, []int) {
+	return file_cairn_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *PutIdentityObjectResponse) GetHash() []byte {
+	if x != nil {
+		return x.Hash
+	}
+	return nil
+}
+
+// Resolve a sender key to the identity-log objects that place it.
+//
+// GetIdentityObject is keyed by HASH, but a client meeting an unknown sender
+// holds only its PUBKEY and has no way to learn the hash — so hash-only lookup
+// cannot bootstrap. This returns the whole chain for a sender key in one round
+// trip: session delegation (if any), device delegation, attestation, and any
+// revoke. Each object is independently signed, so the client verifies them
+// itself and the server stays untrusted.
+// A room/space the caller is a member of. Rooms are NOT pre-seeded: a household
+// starts empty and every room exists because someone created it (ROOM_CREATE).
+type RoomInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RoomId        []byte                 `protobuf:"bytes,1,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
+	SpaceId       []byte                 `protobuf:"bytes,2,opt,name=space_id,json=spaceId,proto3" json:"space_id,omitempty"`
+	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	CreatedAt     int64                  `protobuf:"varint,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RoomInfo) Reset() {
+	*x = RoomInfo{}
+	mi := &file_cairn_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RoomInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RoomInfo) ProtoMessage() {}
+
+func (x *RoomInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_cairn_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RoomInfo.ProtoReflect.Descriptor instead.
+func (*RoomInfo) Descriptor() ([]byte, []int) {
+	return file_cairn_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *RoomInfo) GetRoomId() []byte {
+	if x != nil {
+		return x.RoomId
+	}
+	return nil
+}
+
+func (x *RoomInfo) GetSpaceId() []byte {
+	if x != nil {
+		return x.SpaceId
+	}
+	return nil
+}
+
+func (x *RoomInfo) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *RoomInfo) GetCreatedAt() int64 {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return 0
+}
+
+type SpaceInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SpaceId       []byte                 `protobuf:"bytes,1,opt,name=space_id,json=spaceId,proto3" json:"space_id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SpaceInfo) Reset() {
+	*x = SpaceInfo{}
+	mi := &file_cairn_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SpaceInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SpaceInfo) ProtoMessage() {}
+
+func (x *SpaceInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_cairn_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SpaceInfo.ProtoReflect.Descriptor instead.
+func (*SpaceInfo) Descriptor() ([]byte, []int) {
+	return file_cairn_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *SpaceInfo) GetSpaceId() []byte {
+	if x != nil {
+		return x.SpaceId
+	}
+	return nil
+}
+
+func (x *SpaceInfo) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+// Rooms visible to member_pub — i.e. rooms it has been admitted to. Membership
+// is a property of the MEMBER ROOT, not a device or session key.
+type ListRoomsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MemberPub     []byte                 `protobuf:"bytes,1,opt,name=member_pub,json=memberPub,proto3" json:"member_pub,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListRoomsRequest) Reset() {
+	*x = ListRoomsRequest{}
+	mi := &file_cairn_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListRoomsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListRoomsRequest) ProtoMessage() {}
+
+func (x *ListRoomsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cairn_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListRoomsRequest.ProtoReflect.Descriptor instead.
+func (*ListRoomsRequest) Descriptor() ([]byte, []int) {
+	return file_cairn_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ListRoomsRequest) GetMemberPub() []byte {
+	if x != nil {
+		return x.MemberPub
+	}
+	return nil
+}
+
+type ListRoomsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Rooms         []*RoomInfo            `protobuf:"bytes,1,rep,name=rooms,proto3" json:"rooms,omitempty"`
+	Spaces        []*SpaceInfo           `protobuf:"bytes,2,rep,name=spaces,proto3" json:"spaces,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListRoomsResponse) Reset() {
+	*x = ListRoomsResponse{}
+	mi := &file_cairn_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListRoomsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListRoomsResponse) ProtoMessage() {}
+
+func (x *ListRoomsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_cairn_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListRoomsResponse.ProtoReflect.Descriptor instead.
+func (*ListRoomsResponse) Descriptor() ([]byte, []int) {
+	return file_cairn_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *ListRoomsResponse) GetRooms() []*RoomInfo {
+	if x != nil {
+		return x.Rooms
+	}
+	return nil
+}
+
+func (x *ListRoomsResponse) GetSpaces() []*SpaceInfo {
+	if x != nil {
+		return x.Spaces
+	}
+	return nil
+}
+
+type ResolveSenderRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SenderPub     []byte                 `protobuf:"bytes,1,opt,name=sender_pub,json=senderPub,proto3" json:"sender_pub,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveSenderRequest) Reset() {
+	*x = ResolveSenderRequest{}
+	mi := &file_cairn_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveSenderRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveSenderRequest) ProtoMessage() {}
+
+func (x *ResolveSenderRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cairn_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveSenderRequest.ProtoReflect.Descriptor instead.
+func (*ResolveSenderRequest) Descriptor() ([]byte, []int) {
+	return file_cairn_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ResolveSenderRequest) GetSenderPub() []byte {
+	if x != nil {
+		return x.SenderPub
+	}
+	return nil
+}
+
+type ResolveSenderResponse struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	SessionDelegation []byte                 `protobuf:"bytes,1,opt,name=session_delegation,json=sessionDelegation,proto3" json:"session_delegation,omitempty"` // CBOR, empty if the sender is a device key
+	DeviceDelegation  []byte                 `protobuf:"bytes,2,opt,name=device_delegation,json=deviceDelegation,proto3" json:"device_delegation,omitempty"`    // CBOR, empty if unknown
+	Attestation       []byte                 `protobuf:"bytes,3,opt,name=attestation,proto3" json:"attestation,omitempty"`                                      // CBOR, empty if unknown
+	DeviceRevoke      []byte                 `protobuf:"bytes,4,opt,name=device_revoke,json=deviceRevoke,proto3" json:"device_revoke,omitempty"`                // CBOR, empty if not revoked
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *ResolveSenderResponse) Reset() {
+	*x = ResolveSenderResponse{}
+	mi := &file_cairn_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveSenderResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveSenderResponse) ProtoMessage() {}
+
+func (x *ResolveSenderResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_cairn_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveSenderResponse.ProtoReflect.Descriptor instead.
+func (*ResolveSenderResponse) Descriptor() ([]byte, []int) {
+	return file_cairn_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ResolveSenderResponse) GetSessionDelegation() []byte {
+	if x != nil {
+		return x.SessionDelegation
+	}
+	return nil
+}
+
+func (x *ResolveSenderResponse) GetDeviceDelegation() []byte {
+	if x != nil {
+		return x.DeviceDelegation
+	}
+	return nil
+}
+
+func (x *ResolveSenderResponse) GetAttestation() []byte {
+	if x != nil {
+		return x.Attestation
+	}
+	return nil
+}
+
+func (x *ResolveSenderResponse) GetDeviceRevoke() []byte {
+	if x != nil {
+		return x.DeviceRevoke
+	}
+	return nil
+}
+
 var File_cairn_proto protoreflect.FileDescriptor
 
 const file_cairn_proto_rawDesc = "" +
@@ -784,7 +1218,34 @@ const file_cairn_proto_rawDesc = "" +
 	"\x18GetIdentityObjectRequest\x12\x12\n" +
 	"\x04hash\x18\x01 \x01(\fR\x04hash\"/\n" +
 	"\x19GetIdentityObjectResponse\x12\x12\n" +
-	"\x04cbor\x18\x01 \x01(\fR\x04cbor*\xbb\x04\n" +
+	"\x04cbor\x18\x01 \x01(\fR\x04cbor\".\n" +
+	"\x18PutIdentityObjectRequest\x12\x12\n" +
+	"\x04cbor\x18\x01 \x01(\fR\x04cbor\"/\n" +
+	"\x19PutIdentityObjectResponse\x12\x12\n" +
+	"\x04hash\x18\x01 \x01(\fR\x04hash\"q\n" +
+	"\bRoomInfo\x12\x17\n" +
+	"\aroom_id\x18\x01 \x01(\fR\x06roomId\x12\x19\n" +
+	"\bspace_id\x18\x02 \x01(\fR\aspaceId\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\x04 \x01(\x03R\tcreatedAt\":\n" +
+	"\tSpaceInfo\x12\x19\n" +
+	"\bspace_id\x18\x01 \x01(\fR\aspaceId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"1\n" +
+	"\x10ListRoomsRequest\x12\x1d\n" +
+	"\n" +
+	"member_pub\x18\x01 \x01(\fR\tmemberPub\"j\n" +
+	"\x11ListRoomsResponse\x12(\n" +
+	"\x05rooms\x18\x01 \x03(\v2\x12.cairn.v1.RoomInfoR\x05rooms\x12+\n" +
+	"\x06spaces\x18\x02 \x03(\v2\x13.cairn.v1.SpaceInfoR\x06spaces\"5\n" +
+	"\x14ResolveSenderRequest\x12\x1d\n" +
+	"\n" +
+	"sender_pub\x18\x01 \x01(\fR\tsenderPub\"\xba\x01\n" +
+	"\x15ResolveSenderResponse\x12-\n" +
+	"\x12session_delegation\x18\x01 \x01(\fR\x11sessionDelegation\x12+\n" +
+	"\x11device_delegation\x18\x02 \x01(\fR\x10deviceDelegation\x12 \n" +
+	"\vattestation\x18\x03 \x01(\fR\vattestation\x12#\n" +
+	"\rdevice_revoke\x18\x04 \x01(\fR\fdeviceRevoke*\xcc\x04\n" +
 	"\tEventType\x12\x1a\n" +
 	"\x16EVENT_TYPE_UNSPECIFIED\x10\x00\x12\b\n" +
 	"\x04CHAT\x10\x01\x12\f\n" +
@@ -818,7 +1279,8 @@ const file_cairn_proto_rawDesc = "" +
 	"\rMEMBER_REMOVE\x103\x12\x13\n" +
 	"\x0fROOM_KEY_ROTATE\x104\x12\x10\n" +
 	"\fSPACE_CREATE\x105\x12\x10\n" +
-	"\fSPACE_UPDATE\x106\x12\x18\n" +
+	"\fSPACE_UPDATE\x106\x12\x0f\n" +
+	"\vROOM_CREATE\x107\x12\x18\n" +
 	"\x14IDENTITY_ATTESTATION\x10<\x12\x15\n" +
 	"\x11DEVICE_DELEGATION\x10=\x12\x11\n" +
 	"\rDEVICE_REVOKE\x10>*\x90\x01\n" +
@@ -827,12 +1289,15 @@ const file_cairn_proto_rawDesc = "" +
 	"\x12TRANSPORT_HINT_LAN\x10\x01\x12\x17\n" +
 	"\x13TRANSPORT_HINT_MESH\x10\x02\x12\x16\n" +
 	"\x12TRANSPORT_HINT_BLE\x10\x03\x12\x16\n" +
-	"\x12TRANSPORT_HINT_ALL\x10\x042\xa9\x02\n" +
+	"\x12TRANSPORT_HINT_ALL\x10\x042\x9f\x04\n" +
 	"\fCairnService\x12D\n" +
 	"\tSendEvent\x12\x1a.cairn.v1.SendEventRequest\x1a\x1b.cairn.v1.SendEventResponse\x125\n" +
 	"\x04Sync\x12\x15.cairn.v1.SyncRequest\x1a\x16.cairn.v1.SyncResponse\x12>\n" +
 	"\aHistory\x12\x18.cairn.v1.HistoryRequest\x1a\x19.cairn.v1.HistoryResponse\x12\\\n" +
-	"\x11GetIdentityObject\x12\".cairn.v1.GetIdentityObjectRequest\x1a#.cairn.v1.GetIdentityObjectResponseB6Z4github.com/geekgonecrazy/cairn/proto/cairnv1;cairnv1b\x06proto3"
+	"\x11GetIdentityObject\x12\".cairn.v1.GetIdentityObjectRequest\x1a#.cairn.v1.GetIdentityObjectResponse\x12\\\n" +
+	"\x11PutIdentityObject\x12\".cairn.v1.PutIdentityObjectRequest\x1a#.cairn.v1.PutIdentityObjectResponse\x12P\n" +
+	"\rResolveSender\x12\x1e.cairn.v1.ResolveSenderRequest\x1a\x1f.cairn.v1.ResolveSenderResponse\x12D\n" +
+	"\tListRooms\x12\x1a.cairn.v1.ListRoomsRequest\x1a\x1b.cairn.v1.ListRoomsResponseB6Z4github.com/geekgonecrazy/cairn/proto/cairnv1;cairnv1b\x06proto3"
 
 var (
 	file_cairn_proto_rawDescOnce sync.Once
@@ -847,7 +1312,7 @@ func file_cairn_proto_rawDescGZIP() []byte {
 }
 
 var file_cairn_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_cairn_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_cairn_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_cairn_proto_goTypes = []any{
 	(EventType)(0),                    // 0: cairn.v1.EventType
 	(TransportHint)(0),                // 1: cairn.v1.TransportHint
@@ -860,6 +1325,14 @@ var file_cairn_proto_goTypes = []any{
 	(*HistoryResponse)(nil),           // 8: cairn.v1.HistoryResponse
 	(*GetIdentityObjectRequest)(nil),  // 9: cairn.v1.GetIdentityObjectRequest
 	(*GetIdentityObjectResponse)(nil), // 10: cairn.v1.GetIdentityObjectResponse
+	(*PutIdentityObjectRequest)(nil),  // 11: cairn.v1.PutIdentityObjectRequest
+	(*PutIdentityObjectResponse)(nil), // 12: cairn.v1.PutIdentityObjectResponse
+	(*RoomInfo)(nil),                  // 13: cairn.v1.RoomInfo
+	(*SpaceInfo)(nil),                 // 14: cairn.v1.SpaceInfo
+	(*ListRoomsRequest)(nil),          // 15: cairn.v1.ListRoomsRequest
+	(*ListRoomsResponse)(nil),         // 16: cairn.v1.ListRoomsResponse
+	(*ResolveSenderRequest)(nil),      // 17: cairn.v1.ResolveSenderRequest
+	(*ResolveSenderResponse)(nil),     // 18: cairn.v1.ResolveSenderResponse
 }
 var file_cairn_proto_depIdxs = []int32{
 	0,  // 0: cairn.v1.Event.type:type_name -> cairn.v1.EventType
@@ -867,19 +1340,27 @@ var file_cairn_proto_depIdxs = []int32{
 	1,  // 2: cairn.v1.SendEventRequest.hint:type_name -> cairn.v1.TransportHint
 	2,  // 3: cairn.v1.SyncResponse.missing:type_name -> cairn.v1.Event
 	2,  // 4: cairn.v1.HistoryResponse.events:type_name -> cairn.v1.Event
-	3,  // 5: cairn.v1.CairnService.SendEvent:input_type -> cairn.v1.SendEventRequest
-	5,  // 6: cairn.v1.CairnService.Sync:input_type -> cairn.v1.SyncRequest
-	7,  // 7: cairn.v1.CairnService.History:input_type -> cairn.v1.HistoryRequest
-	9,  // 8: cairn.v1.CairnService.GetIdentityObject:input_type -> cairn.v1.GetIdentityObjectRequest
-	4,  // 9: cairn.v1.CairnService.SendEvent:output_type -> cairn.v1.SendEventResponse
-	6,  // 10: cairn.v1.CairnService.Sync:output_type -> cairn.v1.SyncResponse
-	8,  // 11: cairn.v1.CairnService.History:output_type -> cairn.v1.HistoryResponse
-	10, // 12: cairn.v1.CairnService.GetIdentityObject:output_type -> cairn.v1.GetIdentityObjectResponse
-	9,  // [9:13] is the sub-list for method output_type
-	5,  // [5:9] is the sub-list for method input_type
-	5,  // [5:5] is the sub-list for extension type_name
-	5,  // [5:5] is the sub-list for extension extendee
-	0,  // [0:5] is the sub-list for field type_name
+	13, // 5: cairn.v1.ListRoomsResponse.rooms:type_name -> cairn.v1.RoomInfo
+	14, // 6: cairn.v1.ListRoomsResponse.spaces:type_name -> cairn.v1.SpaceInfo
+	3,  // 7: cairn.v1.CairnService.SendEvent:input_type -> cairn.v1.SendEventRequest
+	5,  // 8: cairn.v1.CairnService.Sync:input_type -> cairn.v1.SyncRequest
+	7,  // 9: cairn.v1.CairnService.History:input_type -> cairn.v1.HistoryRequest
+	9,  // 10: cairn.v1.CairnService.GetIdentityObject:input_type -> cairn.v1.GetIdentityObjectRequest
+	11, // 11: cairn.v1.CairnService.PutIdentityObject:input_type -> cairn.v1.PutIdentityObjectRequest
+	17, // 12: cairn.v1.CairnService.ResolveSender:input_type -> cairn.v1.ResolveSenderRequest
+	15, // 13: cairn.v1.CairnService.ListRooms:input_type -> cairn.v1.ListRoomsRequest
+	4,  // 14: cairn.v1.CairnService.SendEvent:output_type -> cairn.v1.SendEventResponse
+	6,  // 15: cairn.v1.CairnService.Sync:output_type -> cairn.v1.SyncResponse
+	8,  // 16: cairn.v1.CairnService.History:output_type -> cairn.v1.HistoryResponse
+	10, // 17: cairn.v1.CairnService.GetIdentityObject:output_type -> cairn.v1.GetIdentityObjectResponse
+	12, // 18: cairn.v1.CairnService.PutIdentityObject:output_type -> cairn.v1.PutIdentityObjectResponse
+	18, // 19: cairn.v1.CairnService.ResolveSender:output_type -> cairn.v1.ResolveSenderResponse
+	16, // 20: cairn.v1.CairnService.ListRooms:output_type -> cairn.v1.ListRoomsResponse
+	14, // [14:21] is the sub-list for method output_type
+	7,  // [7:14] is the sub-list for method input_type
+	7,  // [7:7] is the sub-list for extension type_name
+	7,  // [7:7] is the sub-list for extension extendee
+	0,  // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_cairn_proto_init() }
@@ -893,7 +1374,7 @@ func file_cairn_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cairn_proto_rawDesc), len(file_cairn_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   9,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

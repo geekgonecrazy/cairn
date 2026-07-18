@@ -230,7 +230,9 @@ between two devices; approving a capability triggers a biometric ceremony.
 ## 5. Open questions to resolve before the phase that needs them
 
 From `protocol.md` (carry these forward):
-- **Household-root bootstrap & recovery** shape (apex key above member roots) — needed **Phase 4**.
+- ~~**Household-root bootstrap & recovery** shape (apex key above member roots) — needed **Phase 4**.~~
+  **DECIDED 2026-07-18:** offline-only apex, BIP-39 24-word derived, never persisted; recovery =
+  re-derive + re-attest. See `decisions.md` §Household-root bootstrap & recovery shape.
 - **Tiebreak rule** (lower `event_id` hash) composes with parent-count + timestamp — **Phase 1**.
 - **History recovery after long partition** (incremental sync since common ancestor, bounded) — **Phase 3**.
 - **Room-key rotation on membership change** — state the pre-join-opacity rule — **Phase 1**.

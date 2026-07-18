@@ -10,6 +10,7 @@
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
     "gen": "buf generate",
     "conformance": "tsx scripts/conformance.ts",
+    "identity-conformance": "tsx scripts/identity-conformance.ts",
     "inlay-check": "tsx scripts/inlay-check.ts"
   },
   "devDependencies": {
@@ -17,6 +18,7 @@
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "@tsconfig/svelte": "^5.0.8",
     "@types/node": "^24.13.2",
+    "@types/qrcode": "^1.5.6",
     "svelte": "^5.56.4",
     "svelte-check": "^4.7.1",
     "tsx": "^4.23.1",
@@ -29,6 +31,8 @@
     "@connectrpc/connect-web": "^2.1.2",
     "@hpke/core": "^1.9.0",
     "@noble/curves": "^2.2.0",
-    "@noble/hashes": "^2.2.0"
+    "@noble/hashes": "^2.2.0",
+    "@scure/bip39": "^2.2.0",
+    "qrcode": "^1.5.4"
   }
 }

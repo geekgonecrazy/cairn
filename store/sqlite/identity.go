@@ -100,6 +100,18 @@ func (s *Store) DeviceRevoked(devicePub []byte) bool {
 	return err == nil
 }
 
+// DeviceRevokeFor returns the revocation object itself, not just the boolean
+// DeviceRevoked answers. ResolveSender has to hand the actual signed revoke to
+// the client — telling a client "revoked, trust me" would make the server an
+// authority; giving it the signed object lets the client verify for itself.
+func (s *Store) DeviceRevokeFor(devicePub []byte) (*identity.DeviceRevoke, bool) {
+	var d identity.DeviceRevoke
+	if !s.lookup(objDeviceRevoke, devicePub, &d) {
+		return nil, false
+	}
+	return &d, true
+}
+
 func (s *Store) Attestation(memberPub []byte) (*identity.IdentityAttestation, bool) {
 	var a identity.IdentityAttestation
 	if !s.lookup(objAttestation, memberPub, &a) {

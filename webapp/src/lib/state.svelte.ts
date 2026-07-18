@@ -16,18 +16,23 @@ import {
   buildFileRef,
   roomKeyBytes,
   buildMemberAdd,
+  buildRoomCreate,
+  buildSpaceCreate,
   buildRoomKeyRotate,
   applyKeyEvent,
   openEvent,
   verifyEvent,
-  importRoomKeyFromHash,
   sessionPub,
   sessionSigner,
-  roomKeyLink,
+  haveRoomKey,
   currentEpoch,
   type Decoded,
 } from './crypto'
 import { cachePut, cacheLoad } from './idb'
+import { identity } from './identity.svelte'
+import { directory } from './directory.svelte'
+import { roomStore, slugify, householdSpaceId } from './rooms.svelte'
+import { decode as cborDecode } from './cbor'
 import {
   decodeRequest,
   decodeGrant,
@@ -107,12 +112,24 @@ function laterThan(a: Event, b: Event): boolean {
 }
 
 class AppState {
-  currentRoomId = $state<string>('general')
+  // No room until one is loaded — a household starts empty and 'general' was a
+  // fixture that manufactured membership nobody had established.
+  currentRoomId = $state<string>('')
   messages = $state<Msg[]>([])
   connected = $state<boolean>(false)
   replyingTo = $state<Msg | null>(null)
   quotingTo = $state<Msg | null>(null)
   presenceSeen = $state<Record<string, number>>({}) // sender hex → last-seen ms
+  /**
+   * Whether we hold a key for the current room — i.e. are really a member.
+   *
+   * Mirrored into reactive state because the underlying key lives in
+   * localStorage, which Svelte cannot track. Without this, a key that arrives
+   * via member_add AFTER mount installs correctly but the composer stays hidden.
+   */
+  hasRoomKey = $state(false)
+  /** Roster for the current room, folded from member_add events. */
+  members = $state<{ pubHex: string; pub: Uint8Array; role: string; mine: boolean }[]>([])
 
   /** Members seen active within the presence window. */
   online = $derived(
@@ -133,19 +150,75 @@ class AppState {
     minted: Set<string>
   } = { grants: new Map(), denies: new Map(), minted: new Set() }
 
+  /**
+   * Re-read the signing key after onboarding or recovery. The session key slot
+   * is scoped to the device key, so completing setup swaps in a NEW session key
+   * — without this the tab keeps signing (and rendering "mine") under the
+   * pre-identity throwaway key it started with.
+   */
+  reidentify() {
+    this.myPubHex = hex(sessionPub())
+    this.rebuild()
+  }
+
   init() {
     if (this.stopSSE) return
-    importRoomKeyFromHash()
     this.myPubHex = hex(sessionPub())
     this.stopSSE = subscribe(
       (ev) => void this.ingest(ev),
       () => (this.connected = true),
     )
-    void this.selectRoom(this.currentRoomId)
+    void this.openFirstRoom()
+  }
+
+  /** Select the first room we're actually a member of, if any. A household with
+   *  no rooms stays on the empty state rather than opening a phantom one. */
+  private async openFirstRoom() {
+    await roomStore.refresh()
+    const first = roomStore.rooms[0]
+    if (first) await this.selectRoom(first.id)
+  }
+
+  /**
+   * Handle a membership event for a room we are not currently viewing: install
+   * the room key if it was wrapped to us, and refresh the sidebar so the room
+   * appears immediately.
+   */
+  private async noteOutOfRoomMembership(ev: Event) {
+    if (ev.type !== EventType.MEMBER_ADD && ev.type !== EventType.ROOM_CREATE) return
+    const me = identity.current
+    if (!me) return
+
+    if (ev.type === EventType.MEMBER_ADD) {
+      // applyKeyEvent is a no-op unless this add wrapped a key to our member
+      // root, so it doubles as the "is this about me?" check.
+      const installed = await applyKeyEvent(ev)
+      if (!installed) return
+    }
+    await roomStore.refresh()
+    this.refreshKeyState()
+    // If we had no room open, drop into the one we were just admitted to.
+    if (!this.currentRoomId) {
+      const first = roomStore.rooms[0]
+      if (first) await this.selectRoom(first.id)
+    }
+  }
+
+  /** Re-read key availability into reactive state. */
+  refreshKeyState() {
+    this.hasRoomKey = !!this.currentRoomId && haveRoomKey(this.currentRoomId)
+  }
+
+  /** Recompute the roster and kick off name lookups for anyone unresolved. */
+  refreshMembers() {
+    this.members = this.foldMembers()
+    for (const m of this.members) if (!m.mine) directory.resolveMember(m.pub)
   }
 
   async selectRoom(id: string) {
+    if (!id) return
     this.currentRoomId = id
+    this.refreshKeyState()
     this.replyingTo = null
     this.quotingTo = null
     this.presenceSeen = {}
@@ -161,6 +234,7 @@ class AppState {
 
     // 2. Reconcile with the server: pull what we lack, push what it lacks.
     await this.reconcile(id)
+    this.refreshKeyState()
 
     // 3. Announce presence (ephemeral — the server broadcasts, never stores it).
     void this.announcePresence()
@@ -381,13 +455,15 @@ class AppState {
   }
 
   /** My member public key (hex) — share it with a device you want added. */
+  /**
+   * OUR MEMBER ROOT, hex — the key someone else pastes to add us to a room.
+   *
+   * Not the session key: room keys are wrapped to member roots, so handing out
+   * a session key would grant access that evaporates when the tab closes.
+   */
   myKey(): string {
-    return this.myPubHex
-  }
-
-  /** A shareable room-key link (dev handoff) for the current room + epoch. */
-  keyLink(): string {
-    return roomKeyLink(this.currentRoomId)
+    const me = identity.current
+    return me ? hex(me.memberPub) : ''
   }
 
   /** The current key epoch for the room (shown in the members panel). */
@@ -409,19 +485,96 @@ class AppState {
     return out
   }
 
-  /** Add a member by their pubkey hex: mint a new epoch, wrap it to everyone. */
-  async addMember(pubHex: string) {
+  /**
+   * Member ROOTS currently in this room, folded from member_add payloads.
+   *
+   * Not distinctSenders(): senders are session keys, which die with the tab. A
+   * room key wrapped to a session key strands that member on reload — membership
+   * is a property of the member root (models.Member.MemberPub).
+   */
+  private roomMemberPubs(): Uint8Array[] {
+    return this.foldMembers().map((m) => m.pub)
+  }
+
+  /** Fold member_add events into the current roster (last role wins). */
+  private foldMembers(): { pubHex: string; pub: Uint8Array; role: string; mine: boolean }[] {
+    const byKey = new Map<string, { pubHex: string; pub: Uint8Array; role: string; mine: boolean }>()
+    const myMember = identity.current ? hex(identity.current.memberPub) : ''
+    for (const ev of this.events) {
+      if (ev.type !== EventType.MEMBER_ADD) continue
+      try {
+        // Room-state events are epoch 0: a single 0x00 frame byte, then CBOR.
+        const obj = cborDecode(ev.payload.subarray(1)) as {
+          member_pub?: Uint8Array
+          role?: string
+        }
+        const pub = obj.member_pub
+        if (!pub || pub.length !== 32) continue
+        const pubHex = hex(pub)
+        byKey.set(pubHex, {
+          pubHex,
+          pub,
+          role: obj.role || 'member',
+          mine: pubHex === myMember,
+        })
+      } catch {
+        /* not a foldable member_add */
+      }
+    }
+    return [...byKey.values()]
+  }
+
+  /**
+   * Create a room: space (if this is the first), room + its first key, then a
+   * member_add naming our own member root.
+   *
+   * The creator is admitted by an explicit signed event rather than inferred
+   * from authorship, so membership always has an auditable act behind it.
+   */
+  async createRoom(name: string): Promise<string> {
+    const me = identity.current
+    if (!me) throw new Error('create an identity first')
+
+    // The space id is derived from the HOUSEHOLD ROOT, not from whoever happens
+    // to create the first room. Deriving it from a display name meant the second
+    // member to create a room forked a second space inside one household.
+    // Everyone in a household computes the same id, so their rooms land together.
+    const spaceId = householdSpaceId(me.householdPub)
+    if (!roomStore.spaces.some((sp) => sp.id === spaceId)) {
+      await this.deliver(await buildSpaceCreate(spaceId, 'Household'))
+    }
+
+    const roomId = slugify(name)
+    await this.deliver(await buildRoomCreate(roomId, name.trim() || roomId, spaceId))
+    // Admit ourselves. mintEpoch wraps to the member roots we pass plus our own.
+    await this.deliver(await buildMemberAdd(roomId, me.memberPub, 'admin', [], []))
+
+    await roomStore.refresh()
+    await this.selectRoom(roomId)
+    return roomId
+  }
+
+  /** Add a member by their MEMBER ROOT pubkey hex: mint a new epoch, wrap to all. */
+  async addMember(pubHex: string, shareHistory = false) {
     const pub = fromHex(pubHex.trim())
     if (!pub || pub.length !== 32) throw new Error('member key must be 64 hex chars')
-    const ev = await buildMemberAdd(this.currentRoomId, pub, 'member', this.distinctSenders(), localHeads(this.events))
+    const ev = await buildMemberAdd(
+      this.currentRoomId,
+      pub,
+      'member',
+      this.roomMemberPubs(),
+      localHeads(this.events),
+      shareHistory,
+    )
     await this.ingest(ev, false)
     this.rebuild()
     await this.deliver(ev)
+    await roomStore.refresh()
   }
 
   /** Rotate the room key for the current membership. */
   async rotateKey() {
-    const ev = await buildRoomKeyRotate(this.currentRoomId, this.distinctSenders(), localHeads(this.events))
+    const ev = await buildRoomKeyRotate(this.currentRoomId, this.roomMemberPubs(), localHeads(this.events))
     await this.ingest(ev, false)
     this.rebuild()
     await this.deliver(ev)
@@ -442,7 +595,18 @@ class AppState {
 
   /** Verify, decrypt, and record an event. rebuild=true folds immediately (live path). */
   private async ingest(ev: Event, rebuild = true) {
-    if (roomIdOf(ev) !== this.currentRoomId) return
+    // Membership events for OTHER rooms must be handled before the room filter.
+    // Being added to a room you aren't currently viewing is the normal case —
+    // dropping those events meant a newcomer sat on an empty screen until they
+    // happened to reload, which looked like the invite had silently failed.
+    if (roomIdOf(ev) !== this.currentRoomId) {
+      await this.noteOutOfRoomMembership(ev)
+      return
+    }
+
+    // Learn who this sender is (async, verified locally). Until it resolves the
+    // row renders an honest key stub rather than an unverified name.
+    if (hex(ev.senderPub) !== this.myPubHex) directory.resolve(ev.senderPub)
 
     // Presence is ephemeral: update the live roster, never store it in the DAG.
     if (ev.type === EventType.PRESENCE) {
@@ -472,7 +636,10 @@ class AppState {
     // Key-material events: install our epoch key first, then re-decrypt anything
     // that was opaque for lack of it (pre-key events now become readable).
     if (ev.type === EventType.MEMBER_ADD || ev.type === EventType.ROOM_KEY_ROTATE) {
-      if (await applyKeyEvent(ev)) await this.redecryptOpaque()
+      if (await applyKeyEvent(ev)) {
+        await this.redecryptOpaque()
+        this.refreshKeyState()
+      }
     }
 
     this.decoded.set(idHex, await openEvent(ev))
@@ -505,6 +672,7 @@ class AppState {
 
   /** Fold the raw DAG into the rendered message list. */
   private rebuild() {
+    this.refreshMembers()
     // Approval fold: a request is pending until a grant/deny/minted with the
     // same request_id lands. Resolution is by request_id, not causal position,
     // because the artifacts are portable and may arrive by any path.
@@ -560,7 +728,7 @@ class AppState {
           ev,
           idHex,
           mine: hex(ev.senderPub) === this.myPubHex,
-          author: 'cairn:' + hex(ev.senderPub).slice(0, 6),
+          author: identity.nameFor(hex(ev.senderPub), this.myPubHex),
           ts: Number(ev.ts),
           body: d.caption ?? '',
           opaque: false,
@@ -580,7 +748,7 @@ class AppState {
           ev,
           idHex,
           mine: hex(ev.senderPub) === this.myPubHex,
-          author: 'cairn:' + hex(ev.senderPub).slice(0, 6),
+          author: identity.nameFor(hex(ev.senderPub), this.myPubHex),
           ts: Number(ev.ts),
           body: d.instance.text,
           opaque: false,
@@ -611,7 +779,7 @@ class AppState {
           ev,
           idHex,
           mine: hex(ev.senderPub) === this.myPubHex,
-          author: 'cairn:' + hex(ev.senderPub).slice(0, 6),
+          author: identity.nameFor(hex(ev.senderPub), this.myPubHex),
           ts: Number(ev.ts),
           body: '',
           opaque: false,
@@ -680,7 +848,7 @@ class AppState {
         ev,
         idHex,
         mine: hex(ev.senderPub) === this.myPubHex,
-        author: 'cairn:' + hex(ev.senderPub).slice(0, 6),
+        author: identity.nameFor(hex(ev.senderPub), this.myPubHex),
         ts: Number(ev.ts),
         body,
         opaque: d === null,

@@ -123,15 +123,40 @@ function computeId(
 }
 
 // ---- session key (per tab) ----
-const SK_KEY = 'cairn-session-sk'
+// The session key is SCOPED TO THE DEVICE KEY that delegates it. Onboarding (or
+// recovery) mints a new device key, which changes this storage slot, so a tab
+// that was open before setup stops signing under its pre-identity throwaway key
+// instead of silently carrying it forward.
+//
+// With no identity yet (the pre-onboarding shell) we still mint an unbound key
+// so the app renders, but it chains to nothing and is replaced on setup.
+const SK_KEY_BASE = 'cairn-session-sk'
+
+function sessionSlot(): string {
+  const devicePub = currentDevicePubHex()
+  return devicePub ? `${SK_KEY_BASE}:${devicePub.slice(0, 16)}` : SK_KEY_BASE
+}
 
 function sessionSecret(): Uint8Array {
-  const stored = sessionStorage.getItem(SK_KEY)
+  const slot = sessionSlot()
+  const stored = sessionStorage.getItem(slot)
   if (stored) return b64ToBytes(stored)
   const utils = ed25519.utils as { randomSecretKey?: () => Uint8Array; randomPrivateKey?: () => Uint8Array }
   const sk = (utils.randomSecretKey ?? utils.randomPrivateKey)!()
-  sessionStorage.setItem(SK_KEY, bytesToB64(sk))
+  sessionStorage.setItem(slot, bytesToB64(sk))
   return sk
+}
+
+/** Device pubkey hex from the vault, or '' when this browser is un-onboarded.
+ *  Read straight from storage to keep crypto.ts free of app-state imports. */
+function currentDevicePubHex(): string {
+  try {
+    const sk = localStorage.getItem('cairn-device-sk')
+    if (!sk) return ''
+    return hexStr(ed25519.getPublicKey(b64ToBytes(sk)))
+  } catch {
+    return ''
+  }
 }
 
 export function sessionPub(): Uint8Array {
@@ -177,16 +202,43 @@ function storeRoomKey(room: string, epoch: number, raw: Uint8Array) {
   cryptoKeyCache.delete(`${room}:${epoch}`)
 }
 
-// The room key for the current epoch, bootstrapping epoch 1 on first use so a
-// brand-new room is immediately usable (real membership arrives via member_add).
-function ensureCurrentKey(room: string): { epoch: number; raw: Uint8Array } {
-  const epoch = currentEpoch(room)
-  let raw = rawRoomKey(room, epoch)
-  if (!raw) {
-    raw = crypto.getRandomValues(new Uint8Array(32))
-    storeRoomKey(room, epoch, raw)
+/** Thrown when an operation needs a room key we do not hold — i.e. we are not a
+ *  member of that room. Callers surface this as an honest "no access" state,
+ *  never by minting a key. */
+export class NoRoomKeyError extends Error {
+  constructor(room: string) {
+    super(`no room key for "${room}" — you are not a member of this room`)
+    this.name = 'NoRoomKeyError'
   }
-  return { epoch, raw }
+}
+
+/**
+ * The room key for the current epoch, or null if we hold none.
+ *
+ * This DELIBERATELY does not mint one. Silently generating a key for any room
+ * you happen to open is what let two people sit in the same "room" holding
+ * different keys, each believing they were members of something nobody had
+ * created. A key arrives exactly two ways: you created the room, or a member
+ * wrapped one to you (member_add / room_key_rotate). No key means no membership,
+ * and the UI must say so rather than encrypt into the void.
+ */
+function currentKey(room: string): { epoch: number; raw: Uint8Array } | null {
+  const epoch = currentEpoch(room)
+  const raw = rawRoomKey(room, epoch)
+  return raw ? { epoch, raw } : null
+}
+
+/** Mint the first key for a room being created. Only createRoom may call this. */
+export function mintInitialRoomKey(room: string): Uint8Array {
+  const raw = crypto.getRandomValues(new Uint8Array(32))
+  storeRoomKey(room, 1, raw)
+  setEpoch(room, 1)
+  return raw
+}
+
+/** Whether we hold a usable key for this room (i.e. we are really a member). */
+export function haveRoomKey(room: string): boolean {
+  return currentKey(room) !== null
 }
 
 function roomCryptoKey(room: string, epoch: number): Promise<CryptoKey> | null {
@@ -203,25 +255,22 @@ function roomCryptoKey(room: string, epoch: number): Promise<CryptoKey> | null {
 
 /** The current-epoch room key bytes — needed to wrap per-file keys (data plane). */
 export function roomKeyBytes(room: string): Uint8Array {
-  return ensureCurrentKey(room).raw
+  const k = currentKey(room)
+  if (!k) throw new NoRoomKeyError(room)
+  return k.raw
 }
 
-/** Export the current-epoch room key as a shareable link fragment (dev handoff). */
-export function roomKeyLink(room: string): string {
-  const { epoch, raw } = ensureCurrentKey(room)
-  return `${location.origin}${import.meta.env.BASE_URL}#rk=${room}:${epoch}:${bytesToB64(raw)}`
-}
-
-/** Import a room key from a #rk=room:epoch:base64 fragment, if present. */
-export function importRoomKeyFromHash() {
-  const m = location.hash.match(/#rk=([^:]+):(\d+):(.+)$/)
-  if (!m) return
-  const room = decodeURIComponent(m[1])
-  const epoch = Number(m[2])
-  storeRoomKey(room, epoch, b64ToBytes(m[3]))
-  setEpoch(room, epoch)
-  history.replaceState(null, '', location.pathname + location.search)
-}
+// REMOVED: the #rk= room-key link (roomKeyLink / importRoomKeyFromHash).
+//
+// It was a Phase-1 dev shortcut from when rooms were the hardcoded data.ts
+// fixture: pasting a link installed a key and you "joined" a room that had
+// always been on screen. With real membership the link cannot work — the
+// sidebar is driven by signed MEMBER_ADD events, so a key alone leaves you
+// with nothing to open, and only an existing member can sign you in.
+//
+// It was also a soft hazard: any URL could silently plant a room key in your
+// browser. Use Members & keys → Add a member by key instead, which mints an
+// epoch and records membership in the DAG.
 
 // ---- build / open / verify ----
 
@@ -500,8 +549,9 @@ async function seal(
   type: number,
   plaintext: Uint8Array,
 ): Promise<Uint8Array> {
-  const { epoch } = ensureCurrentKey(roomIdStr)
-  const key = await roomCryptoKey(roomIdStr, epoch)!
+  const k = currentKey(roomIdStr)
+  if (!k) throw new NoRoomKeyError(roomIdStr)
+  const key = await roomCryptoKey(roomIdStr, k.epoch)!
   const nonce = crypto.getRandomValues(new Uint8Array(12))
   const aad = buildAAD(senderPub, roomId, ts, type)
   const ct = new Uint8Array(
@@ -511,7 +561,7 @@ async function seal(
       bs(plaintext),
     ),
   )
-  return concat(putUvarint(epoch), nonce, ct)
+  return concat(putUvarint(k.epoch), nonce, ct)
 }
 
 async function open(ev: Event): Promise<Uint8Array> {
@@ -567,11 +617,26 @@ async function wrapKeyTo(recipientEdPub: Uint8Array, roomKey: Uint8Array): Promi
   return concat(putUvarint(enc.length), enc, ct)
 }
 
+/** Member root keypair from the vault, read straight from storage to keep
+ *  crypto.ts free of app-state imports. Null when un-onboarded. */
+function memberIdentity(): { memberPub: Uint8Array; memberPriv: Uint8Array } | null {
+  try {
+    const sk = localStorage.getItem('cairn-member-sk')
+    if (!sk) return null
+    const memberPriv = b64ToBytes(sk)
+    return { memberPriv, memberPub: ed25519.getPublicKey(memberPriv) }
+  } catch {
+    return null
+  }
+}
+
 async function unwrapKey(blob: Uint8Array): Promise<Uint8Array> {
   const { value: encLen, rest } = readUvarint(blob)
   const enc = rest.subarray(0, encLen)
   const ct = rest.subarray(encLen)
-  const xPriv = ed25519.utils.toMontgomerySecret(sessionSecret())
+  const me = memberIdentity()
+  if (!me) throw new Error('no member identity to unwrap a room key with')
+  const xPriv = ed25519.utils.toMontgomerySecret(me.memberPriv)
   const rsk = await hpke.kem.importKey('raw', ab(xPriv), false)
   const recip = await hpke.createRecipientContext({ recipientKey: rsk, enc: ab(enc), info: bs(HPKE_INFO) })
   return new Uint8Array(await recip.open(bs(ct)))
@@ -616,7 +681,12 @@ async function mintEpoch(
   const newKey = crypto.getRandomValues(new Uint8Array(32))
   const epoch = currentEpoch(roomIdStr) + 1
   const wrapped_keys: { [hex: string]: Uint8Array } = {}
-  for (const pub of dedupePubs([...recipients, sessionPub()])) {
+  // Wrap to MEMBER ROOTS, never session keys. Membership is a property of the
+  // member (models.Member.MemberPub): a session key dies with the tab, so a
+  // room key wrapped to one would silently strand the member on reload.
+  const me = memberIdentity()
+  if (!me) throw new Error('cannot mint a room key without an identity')
+  for (const pub of dedupePubs([...recipients, me.memberPub])) {
     wrapped_keys[hexStr(pub)] = await wrapKeyTo(pub, newKey)
   }
   storeRoomKey(roomIdStr, epoch, newKey)
@@ -624,19 +694,100 @@ async function mintEpoch(
   return { epoch, wrapped_keys }
 }
 
-/** Add a member: mint a new epoch, wrap it to everyone, emit member_add. */
+/**
+ * Create a space. Cleartext (epoch 0) because a space_create is the root of a
+ * policy boundary — nothing is encrypted under it yet.
+ */
+export async function buildSpaceCreate(
+  spaceIdStr: string,
+  name: string,
+  parents: Uint8Array[] = [],
+): Promise<Event> {
+  return buildCleartext(
+    spaceIdStr,
+    EventType.SPACE_CREATE,
+    { space_name: name, admit_kind: 'human,agent', admit_origin: 'own' },
+    parents,
+  )
+}
+
+/**
+ * Create a room and mint its first key.
+ *
+ * ROOM_CREATE is cleartext: a node that is not yet a member must be able to fold
+ * it, and there is no key to encrypt under until this call mints one. The
+ * creator is NOT implicitly a member — the caller follows this with a
+ * member_add naming their own member root, so membership always has a signed
+ * event behind it rather than being inferred from authorship.
+ */
+export async function buildRoomCreate(
+  roomIdStr: string,
+  name: string,
+  spaceIdStr: string,
+  parents: Uint8Array[] = [],
+): Promise<Event> {
+  mintInitialRoomKey(roomIdStr)
+  return buildCleartext(
+    roomIdStr,
+    EventType.ROOM_CREATE,
+    { name, space_id: utf8(spaceIdStr) },
+    parents,
+  )
+}
+
+/** Every epoch key we hold for a room, oldest first. */
+function heldEpochs(room: string): { epoch: number; raw: Uint8Array }[] {
+  const out: { epoch: number; raw: Uint8Array }[] = []
+  for (let e = 1; e <= currentEpoch(room); e++) {
+    const raw = rawRoomKey(room, e)
+    if (raw) out.push({ epoch: e, raw })
+  }
+  return out
+}
+
+/**
+ * Add a member: mint a new epoch, wrap it to everyone, emit member_add.
+ *
+ * shareHistory wraps the OLDER epoch keys we hold to the newcomer as well, so
+ * they can read messages sent before they joined. Default false — pre-join
+ * opacity is the protocol's stated rule (plan.md Phase 1), and disclosing the
+ * backlog must be a deliberate act.
+ *
+ * IRREVERSIBLE: once an old epoch key is wrapped to someone, they hold it
+ * forever. Removing them later does not un-share what they can already decrypt.
+ * The `history_shared` flag rides in the signed payload so every member can see
+ * that it happened — sharing the backlog silently would be the dishonest version.
+ */
 export async function buildMemberAdd(
   roomIdStr: string,
   newMemberPub: Uint8Array,
   role: string,
   existingMemberPubs: Uint8Array[],
   parents: Uint8Array[],
+  shareHistory = false,
 ): Promise<Event> {
   const { epoch, wrapped_keys } = await mintEpoch(roomIdStr, [...existingMemberPubs, newMemberPub])
+
+  // Past epochs, wrapped to the newcomer only — existing members already hold them.
+  const history_keys: { [hex: string]: Uint8Array } = {}
+  if (shareHistory) {
+    for (const { epoch: e, raw } of heldEpochs(roomIdStr)) {
+      if (e >= epoch) continue
+      history_keys[String(e)] = await wrapKeyTo(newMemberPub, raw)
+    }
+  }
+
   return buildCleartext(
     roomIdStr,
     EventType.MEMBER_ADD,
-    { member_pub: newMemberPub, role, epoch, wrapped_keys },
+    {
+      member_pub: newMemberPub,
+      role,
+      epoch,
+      wrapped_keys,
+      history_shared: shareHistory,
+      history_keys,
+    },
     parents,
   )
 }
@@ -660,8 +811,27 @@ export async function applyKeyEvent(ev: Event): Promise<boolean> {
     const obj = cborDecode(readUvarint(ev.payload).rest) as {
       epoch: number
       wrapped_keys: { [hex: string]: Uint8Array }
+      member_pub?: Uint8Array
+      history_keys?: { [epoch: string]: Uint8Array }
     }
-    const blob = obj.wrapped_keys?.[hexStr(sessionPub())]
+    const me = memberIdentity()
+    if (!me) return false
+
+    // Back-fill any shared history epochs addressed to us. Done before the
+    // current-epoch check so a re-delivered member_add still installs them.
+    if (obj.member_pub && hexStr(obj.member_pub) === hexStr(me.memberPub) && obj.history_keys) {
+      for (const [epochStr, blob] of Object.entries(obj.history_keys)) {
+        const e = Number(epochStr)
+        if (!Number.isFinite(e) || rawRoomKey(room, e)) continue
+        try {
+          storeRoomKey(room, e, await unwrapKey(blob as Uint8Array))
+        } catch {
+          /* not wrapped to us, or corrupt — skip rather than fail the whole event */
+        }
+      }
+    }
+
+    const blob = obj.wrapped_keys?.[hexStr(me.memberPub)]
     if (!blob) return false // not addressed to me
     if (rawRoomKey(room, obj.epoch)) {
       setEpoch(room, obj.epoch)

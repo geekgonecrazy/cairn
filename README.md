@@ -71,9 +71,29 @@ Then open **http://localhost:8099/__hub/** (`/` redirects there).
 
 ## Things to try
 
-- **Open two browser tabs.** Each tab gets its own session key (`sessionStorage`), so they act
-  as two distinct participants, while sharing the room key (`localStorage`). Send a message in
+- **Set up an identity.** A household is founded **once**; everyone else **joins** it. On the
+  very first browser, take "Nobody has set ours up yet" → write down the 24-word recovery
+  phrase → confirm three words back. The phrase is shown once and never stored (see
+  `decisions.md` §Household-root).
+- **Add a second person.** In a fresh browser take *Join a household* → copy the join code. In
+  the first browser: **Identity & devices → Members → Add someone**, paste the code, enter the
+  24 words, and send back the invite. The joiner compares the household fingerprint before
+  accepting — that comparison is load-bearing, since an invite's household is self-declared.
+- **Open two browser windows.** Since Phase 4 the member + device keys persist in
+  `localStorage`, so two *tabs* are now one member. For two distinct participants use a normal
+  and a private window (or two browser profiles), each with its own household. Send a message in
   one and watch it converge in the other over SSE.
+- **Create a room.** A new household has **no rooms** — the sidebar is empty by design.
+  Hit **+** to create one; you become its first member and it mints the room key. Add someone
+  with **Members & keys** → paste their member key (from their **Identity & devices → You**).
+  Joining a household does *not* grant room access: those are separate acts.
+- **Reset this device** — **Identity & devices → You → Reset this device**. Erases keys, room
+  keys and the cached DAG. Not a "log out": there is no server session, the keys *are* the
+  account, and without your 24 words the household is gone from this device.
+- **Person icon** (room header) — identity & devices: your member/household fingerprints, paired
+  devices, and QR pairing. Paste a device's `cairn:pair:1:…` code, compare the fingerprint shown
+  on both screens, and admit it. Revoking is permanent — a revoked key is treated as compromised
+  and cannot be re-paired.
 - **`/inlay greenhouse`** in the composer — posts a *declared inlay* rendered entirely from
   primitives by the generic role renderer. Also `poll`, `tasks`, `agent`, `widget`.
   `greenhouse` is deliberately **not** standard-library, so it demonstrates the per-room
@@ -81,10 +101,35 @@ Then open **http://localhost:8099/__hub/** (`/` redirects there).
 - **Paperclip icon** — encrypts the file locally, uploads only ciphertext, and posts a tiny
   `file_ref` envelope. The card shows honest retrieval state
   (`available` / `pending — no fat link` / `downloading` / `broken`).
-- **Members icon** (room header) — shows your member key, adds a member by pasted key
-  (mints a new room-key epoch, HPKE-wrapped to everyone), rotates the key, or copies a
-  room-key link for a second browser.
+- **Members icon** (room header) — adds a member by their **full member key** (they copy it
+  from the rail avatar → **You**), rotates the key, or copies a room-key link. Adding mints a
+  new epoch HPKE-wrapped to every member. **"Let them read past messages"** also wraps the
+  older epochs to them — off by default, irreversible once granted, and visible to the room.
 - **Restart `cairnd`** — history survives; it's in SQLite.
+
+---
+
+## A headless client (`cmd/agent`)
+
+Proof that the protocol is client-agnostic: a plain Go program with an Ed25519 keypair,
+speaking the same signed events as the browser.
+
+```sh
+# create a room, admit a human by their MEMBER key, post inlays + a capability request
+go run ./cmd/agent -member <64-hex member key> -room demo
+
+# verify the human's decision — standalone: signature, expiry, and binding to the
+# exact capability and agent. Works for both approval_grant and approval_deny.
+go run ./cmd/agent -watch <room-id>
+```
+
+Copy the member key from the rail avatar → **You** → *Copy member key*.
+
+> Keys go to `$TMPDIR/cairn-agent` by default (never `$HOME`) — this is a test client and it
+> stores a private key plus **plaintext room keys**. Use `-keys` to choose deliberately.
+>
+> Not idempotent: re-running for an existing room mints a fresh key at the same epoch and
+> collides with the key members already hold. Use a new `-room` name each time.
 
 ---
 
@@ -106,8 +151,18 @@ go run ./cmd/cairnd -configFile config.yaml
 | `blobDir` | `cairn-blobs` | local blob store directory |
 | `trustedRoots` | *(empty)* | hex household root pubkeys. **Empty = accept any well-formed signed event** (dev). Once set, senders must chain to one of these roots. |
 
-**Dev-phase policy:** there are no migrations. To reset, stop the server and delete
-`cairn.db*` and `cairn-blobs/`.
+**Dev-phase policy:** there are no migrations. Resetting takes **both sides**, in this order:
+
+1. **Close every Cairn tab**, and clear the browser's site data for the origin
+   (DevTools → Application → Storage → *Clear site data*). This drops the IndexedDB DAG cache
+   (`cairn`), the identity vault and room keys (`localStorage`), and the session key
+   (`sessionStorage`).
+2. **Then** stop the server and delete `cairn.db*` and `cairn-blobs/`.
+
+> ⚠️ **Order matters.** Cairn is local-first: a client holds the full DAG and pushes anything
+> the server lacks on reconnect (frontier sync, §6). Wipe the server with a tab still open and
+> that client immediately re-uploads its history — the database refills itself and it looks
+> like the wipe silently failed. It didn't; the client won.
 
 ---
 
@@ -120,6 +175,7 @@ go vet ./...
 cd webapp
 npm run check                  # svelte-check + tsc
 npm run conformance            # browser event_ids must match Go byte-for-byte
+npm run identity-conformance   # browser household derivation + attestation sigs match Go
 npm run inlay-check            # every declaration's binds resolve against its bindings
 npm run build
 ```
@@ -175,6 +231,15 @@ claude-design/  React mockup — visual reference, not shipped
 - **The capability broker is external** and not built here. Cairn delivers a capability
   request, lets you sign a grant **in the UI** with your key, and produces a portable artifact
   the agent carries to the broker. Cairn never mints credentials or evaluates policy.
-- **The UI has not been visually verified in a real browser.** It typechecks, builds, serves,
-  and its protocol/crypto paths are proven by cross-language harnesses — but the development
-  environment could not run a browser, so expect visual papercuts.
+- **Device pairing is paste-a-code, not scan-a-code.** The QR is rendered and the payload is
+  final, but there is no camera capture yet — you copy the `cairn:pair:1:…` string between
+  devices. Camera scanning needs `getUserMedia` and a secure context.
+- **⚠️ Revocation propagates but is NOT ENFORCED by default.** A revoke now reaches other
+  members (`PutIdentityObject` → `ResolveSender`), and clients render a revoked sender as
+  `Name (revoked device)`. But `cairnd`'s chain gate is opt-in: with `trustedRoots` empty
+  (the dev default) it accepts **any** well-formed signed event, so a revoked device can still
+  post. Enforcement requires setting `trustedRoots` to your household root — visible in the UI
+  under **Identity & devices → You → Household**. Until then revocation is advisory: clients
+  label it, the server does not refuse it.
+- **Spaces admit-policy, peer-household join, and notification settings are not built.** They
+  are the deferred half of Phase 4 (see `plan.md`).

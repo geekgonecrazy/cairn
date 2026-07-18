@@ -63,3 +63,21 @@ export async function cacheLoad(roomIdStr: string): Promise<Event[]> {
     return []
   }
 }
+
+/**
+ * Drop the entire local DAG cache.
+ *
+ * Part of a device reset, and NOT optional: the cache is a full copy of the
+ * room history, and a client that keeps it will push those events straight back
+ * to the server on reconnect (frontier sync). Clearing identity while leaving
+ * this behind produces a "wiped" device that immediately re-uploads everything.
+ */
+export async function cacheClear(): Promise<void> {
+  const conn = await db()
+  await new Promise<void>((resolve, reject) => {
+    const tx = conn.transaction(STORE, 'readwrite')
+    tx.objectStore(STORE).clear()
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+  })
+}

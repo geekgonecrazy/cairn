@@ -61,6 +61,10 @@ type Store interface {
 	// GetIdentityObject returns the raw CBOR of an identity-log object by its
 	// BLAKE3 hash (serves GetIdentityObject over the wire).
 	GetIdentityObject(hash []byte) ([]byte, error)
+	// DeviceRevokeFor returns the signed revocation itself (not just the
+	// boolean Resolver.DeviceRevoked gives), so ResolveSender can hand clients
+	// an object they verify rather than an assertion they must trust.
+	DeviceRevokeFor(devicePub []byte) (*identity.DeviceRevoke, bool)
 
 	// The store resolves a sender's chain from the identity log:
 	// SessionDelegation / DeviceDelegation / DeviceRevoked / Attestation.

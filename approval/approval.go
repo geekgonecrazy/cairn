@@ -55,9 +55,43 @@ func HashCapability(c *Capability) ([32]byte, error) {
 	return blake3.Sum256(b), nil
 }
 
+// Artifact type tags, part of each artifact's SIGNED bytes.
+//
+// Inside Cairn the event envelope already says what an artifact is — but a
+// Grant's whole purpose is to verify STANDALONE, outside Cairn, with no room
+// key and no envelope (Phase 2 exit criterion). A broker holding a bare blob is
+// in exactly the position the carrier was: it must not have to guess. Tagging
+// inside the signature means a Deny can never be re-read as a Grant, which on
+// this path would be the difference between refusing and minting a credential.
+const (
+	TypeRequest = "approval_request"
+	TypeGrant   = "approval_grant"
+	TypeDeny    = "approval_deny"
+)
+
+// typeHeader decodes just the discriminator so a broker can dispatch.
+type typeHeader struct {
+	Type string `cbor:"type"`
+}
+
+// ArtifactType reports the declared type tag of a CBOR approval artifact. The
+// tag is untrusted until the signature verifies — it says what the bytes CLAIM
+// to be, which is what a dispatcher needs.
+func ArtifactType(blob []byte) (string, error) {
+	var h typeHeader
+	if err := identity.Unmarshal(blob, &h); err != nil {
+		return "", fmt.Errorf("approval: undecodable artifact: %w", err)
+	}
+	if h.Type == "" {
+		return "", fmt.Errorf("approval: artifact has no type tag")
+	}
+	return h.Type, nil
+}
+
 // Request is the agent's signed ask, emitted into the room as approval_request.
 // Signed by the agent's own device key.
 type Request struct {
+	Type        string      `cbor:"type"` // always TypeRequest; signed
 	RequestID   []byte      `cbor:"request_id"`
 	AgentPub    []byte      `cbor:"agent_pub"`
 	Capability  *Capability `cbor:"capability"`
@@ -72,6 +106,7 @@ type Request struct {
 // replayed by a different agent for a different action. Single-use enforcement
 // (the consumed-id cache) is the broker's job, not Cairn's.
 type Grant struct {
+	Type           string `cbor:"type"` // always TypeGrant; signed
 	RequestID      []byte `cbor:"request_id"`
 	CapabilityHash []byte `cbor:"capability_hash"`
 	AgentPub       []byte `cbor:"agent_pub"`
@@ -84,6 +119,7 @@ type Grant struct {
 // Deny closes the loop negatively. Timeout-driven denial is the absence of a
 // grant before ExpiresAt.
 type Deny struct {
+	Type        string `cbor:"type"` // always TypeDeny; signed
 	RequestID   []byte `cbor:"request_id"`
 	ApproverPub []byte `cbor:"approver_pub"`
 	Reason      string `cbor:"reason,omitempty"`
@@ -108,21 +144,59 @@ type artifact interface {
 // exactly what the signer signs and any verifier recomputes. Because it covers
 // only the artifact's own fields, verification needs nothing from Cairn.
 func signingBytes[T artifact](a T) ([]byte, error) {
+	tag, err := typeTagOf(a)
+	if err != nil {
+		return nil, err
+	}
 	switch v := any(a).(type) {
 	case *Request:
 		c := *v
-		c.Sig = nil
+		c.Sig, c.Type = nil, tag
 		return identity.Marshal(&c)
 	case *Grant:
 		c := *v
-		c.Sig = nil
+		c.Sig, c.Type = nil, tag
 		return identity.Marshal(&c)
 	case *Deny:
 		c := *v
-		c.Sig = nil
+		c.Sig, c.Type = nil, tag
 		return identity.Marshal(&c)
 	default:
 		return nil, fmt.Errorf("approval: unsignable type %T", a)
+	}
+}
+
+// typeTagOf returns the canonical tag for an artifact's Go type.
+func typeTagOf[T artifact](a T) (string, error) {
+	switch any(a).(type) {
+	case *Request:
+		return TypeRequest, nil
+	case *Grant:
+		return TypeGrant, nil
+	case *Deny:
+		return TypeDeny, nil
+	default:
+		return "", fmt.Errorf("approval: unsignable type %T", a)
+	}
+}
+
+// checkTag reports whether a's stored Type is canonical for its Go type. An
+// artifact off the wire carries whatever tag its sender wrote; a mismatch means
+// the bytes were decoded as the wrong shape.
+func checkTag[T artifact](a T) bool {
+	want, err := typeTagOf(a)
+	if err != nil {
+		return false
+	}
+	switch v := any(a).(type) {
+	case *Request:
+		return v.Type == want
+	case *Grant:
+		return v.Type == want
+	case *Deny:
+		return v.Type == want
+	default:
+		return false
 	}
 }
 
@@ -133,20 +207,29 @@ func Sign[T artifact](a T, priv ed25519.PrivateKey) error {
 	if err != nil {
 		return err
 	}
+	tag, err := typeTagOf(a)
+	if err != nil {
+		return err
+	}
 	sig := ed25519.Sign(priv, msg)
 	switch v := any(a).(type) {
 	case *Request:
-		v.Sig = sig
+		v.Sig, v.Type = sig, tag
 	case *Grant:
-		v.Sig = sig
+		v.Sig, v.Type = sig, tag
 	case *Deny:
-		v.Sig = sig
+		v.Sig, v.Type = sig, tag
 	}
 	return nil
 }
 
 // verify checks an artifact's own signature against signerPub.
 func verify[T artifact](a T, signerPub, sig []byte) error {
+	// Tag first: an artifact decoded as the wrong shape is rejected before any
+	// signature work, so a Deny can never be verified as a Grant.
+	if !checkTag(a) {
+		return ErrBadSignature
+	}
 	if len(signerPub) != ed25519.PublicKeySize || len(sig) != ed25519.SignatureSize {
 		return ErrBadSignature
 	}
