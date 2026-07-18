@@ -11,6 +11,10 @@ option go_package = "github.com/geekgonecrazy/cairn/proto/cairnv1;cairnv1";
 // encrypted under the room key and is opaque to the router. Payload schemas,
 // signing/hashing, the DAG, sync, and room-key handling are all specified in
 // PROTOCOL.md — this file is only the routable/typed surface.
+//
+// DEV PHASE: break this freely. Until we declare real users, edit fields/enums
+// without versioning and wipe the DB — no backward-compat, no migrations. Enum
+// numbers only need to stay stable AFTER the real-users switch. See decisions.md.
 
 // ---------------------------------------------------------------------------
 // Event envelope

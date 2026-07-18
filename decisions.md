@@ -17,6 +17,11 @@ Companion to [`plan.md`](./plan.md) (the build plan) and the design mockup in
   for the mobile app. (See `plan.md` §1 for how these compose.)
 - **Sources of truth:** the `claude-design/` mockup is the UI source of truth (React files are a
   *picture, not a blueprint*); the vision repo at `/root/code/vision` is the architecture source.
+- **Dev-phase policy — no backward-compat burden yet.** Until we **explicitly declare real users**,
+  the proto, CBOR payload schemas, and the DB schema are **freely breakable**: edit
+  `proto/cairn.proto` and the payload schemas without versioning, change the SQLite schema in place,
+  and **wipe the database at will**. **No migrations.** Backward-compat, additive-only wire changes,
+  stable enum numbers, and real migrations begin **only** once we flip the real-users switch.
 - **Realtime transport = SSE.** User preference; matches `flockledger/controllers/sse.go`. The
   realtime `Subscribe` is a plain HTTP SSE stream of `Event`s; unary calls (send / sync / history) are
   request/response. (Resolves the earlier SSE-vs-WebSocket item.)

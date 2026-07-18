@@ -6,6 +6,10 @@ is what an implementer needs to reach the **Phase 1 exit** ("two clients converg
 history"). Grounded in `/root/code/vision/systems/cairn/protocol.md`; where that doc left a knob
 open, it's flagged **[OPEN]** here.
 
+> **Dev-phase policy:** until we declare *real users*, this schema is **freely breakable** — change
+> the proto/CBOR/SQLite in place, no versioning, **wipe the DB at will, no migrations** (see
+> `decisions.md`). Backward-compat starts only at the real-users switch.
+
 Primitives (no inventing): **Ed25519** (signing), **BLAKE3-256** (content hash / `event_id`),
 **AES-256-GCM** (room payload encryption), **X25519-HPKE** (wrapping room keys to members),
 **deterministic CBOR** (RFC 8949 §4.2) for canonical content and payloads, **WebAuthn** (browser
@@ -230,7 +234,9 @@ policy is a **separate** table (`cross-cutting/push-wake.md`).
 
 ## 10. SQLite schema (`store/sqlite`)
 
-Pragmatic starting schema; one file per entity in `store/sqlite/`.
+Pragmatic starting schema; one file per entity in `store/sqlite/`. **Dev phase: no migrations — a
+single `CreateTables`/`CheckDb` that (re)creates the schema; wipe the DB file to reset.** Migrations
+land only at the real-users switch.
 
 ```sql
 -- events: the DAG (payload stored as received — encrypted)
