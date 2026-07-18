@@ -45,6 +45,19 @@ class UIState {
   closeCreateSpace() {
     this.createSpaceOpen = false
   }
+
+  /** Space settings (rename, members, admit policy) for the active space, opened
+   *  from the gear in the room-list header. */
+  spaceSettingsOpen = $state(false)
+
+  openSpaceSettings() {
+    this.spaceSettingsOpen = true
+    this.navOpen = false
+  }
+
+  closeSpaceSettings() {
+    this.spaceSettingsOpen = false
+  }
 }
 
 export const ui = new UIState()

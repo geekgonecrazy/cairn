@@ -238,6 +238,37 @@ func TestRoomVisibilityDefault(t *testing.T) {
 	}
 }
 
+// TestSpaceUpdateAndMemberRemove: SPACE_UPDATE renames a space (and rewrites its
+// admit policy), and SPACE_MEMBER_REMOVE revokes a discovery grant.
+func TestSpaceUpdateAndMemberRemove(t *testing.T) {
+	setTestStore(t)
+	alice, _ := identity.GenerateKey()
+	member, _ := identity.GenerateKey()
+
+	const space = "sp-1"
+	fold(t, alice, space, cairnv1.EventType_SPACE_CREATE, roomStatePayload{SpaceName: "Family", AdmitKind: "human,agent", AdmitOrigin: "own"})
+	fold(t, alice, space, cairnv1.EventType_SPACE_MEMBER_ADD, roomStatePayload{MemberPub: member.Pub, Role: "member"})
+
+	// Rename + tighten policy.
+	fold(t, alice, space, cairnv1.EventType_SPACE_UPDATE, roomStatePayload{SpaceName: "Familia", AdmitKind: "human", AdmitOrigin: "any"})
+	spaces, err := st.ListSpaces()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(spaces) != 1 || spaces[0].Name != "Familia" || spaces[0].AdmitKind != "human" || spaces[0].AdmitOrigin != "any" {
+		t.Fatalf("space_update did not rewrite name/policy: %+v", spaces)
+	}
+
+	// Member is on the roster, then removed.
+	if ms, _ := st.ListSpaceMembers([]byte(space)); len(ms) != 1 {
+		t.Fatalf("expected 1 space member before remove, got %d", len(ms))
+	}
+	fold(t, alice, space, cairnv1.EventType_SPACE_MEMBER_REMOVE, roomStatePayload{MemberPub: member.Pub})
+	if ms, _ := st.ListSpaceMembers([]byte(space)); len(ms) != 0 {
+		t.Fatalf("space_member_remove should empty the roster, got %d", len(ms))
+	}
+}
+
 // TestJoinRequestFold: a ROOM_JOIN_REQUEST folds into the room's pending list so
 // members can answer it.
 func TestJoinRequestFold(t *testing.T) {

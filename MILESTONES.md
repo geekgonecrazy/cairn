@@ -284,15 +284,25 @@ join; the recovery flow is gated and unskippable.
       to the active space (`inSpace`), and inviting a member (`addSpaceMember`) grants discovery of
       the **active** space's channels. Closes the "every space is hardcoded Household / not nameable"
       gap.
+- [x] **Space settings surface + member management.** A gear on the active space opens a
+      `SpaceSettingsModal` (per `claude-design/cairn-spaces.jsx`): **rename** the space (wired
+      `SPACE_UPDATE` — fold + builder), a **member roster** (new `ListSpaceMembers` RPC; names
+      resolve from the identity log exactly like a room roster) with **add-by-key** and **remove**
+      (new `SPACE_MEMBER_REMOVE` (58) → `DeleteSpaceMember`), and the **admit-policy** controls
+      (agents kind, origin own/any) recorded via `SPACE_UPDATE`. `core/rooms_test.go` covers the
+      rename + member-remove folds. Removing a space member revokes discovery only; it does not touch
+      channels they were separately added to.
+      > **Honest gap surfaced in the UI:** admit policy is **recorded but not yet enforced** — the
+      > carrier does not gate a `SPACE_MEMBER_ADD` on it. The modal says so. Peer-household admission
+      > (origin = specific roots, the `PeerJoinModal` flow) is deliberately deferred.
 
 **Not yet — the rest of Phase 4:**
 
 - [ ] Camera QR capture (`getUserMedia`); today pairing is copy/paste of the same payload.
-- [ ] Space settings + admit-policy **enforcement** (kind + origin); peer-household join with
-      origin-fingerprint review; notifications settings. (Space *membership* now exists — see the
-      two-tier section above — but nothing yet enforces a space's `admit_kind`/`admit_origin` on a
-      `SPACE_MEMBER_ADD`, and there is no space-settings surface. A space admin adds members by
-      key today, mirroring room add-by-key.)
+- [ ] **Admit-policy enforcement** — a space's `admit_kind`/`admit_origin` is now editable and stored
+      (see above) but nothing gates a `SPACE_MEMBER_ADD` on it; a space admin adds members by key
+      regardless. Plus **peer-household join** with origin-fingerprint review (`PeerJoinModal`), and
+      notifications settings.
 - [ ] Parent-sets-up-kid provisioning flow (`claude-design/cairn-settings.jsx` §B).
 - [ ] `approval_deny` carries a `reason` field that the UI never collects — a refusal reaches
       the agent and the audit log as a bare no.

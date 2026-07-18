@@ -69,9 +69,12 @@ func applyRoomState(ev *cairnv1.Event) error {
 	st := Store()
 
 	switch ev.Type {
-	case cairnv1.EventType_SPACE_CREATE:
+	case cairnv1.EventType_SPACE_CREATE, cairnv1.EventType_SPACE_UPDATE:
+		// Both name the space in room_id and carry its full state; an update is a
+		// PutSpace with the new name/policy. The modal always sends the complete
+		// policy, so this overwrites rather than merges.
 		return st.PutSpace(&models.Space{
-			SpaceID:     ev.RoomId, // a space_create names the space in room_id
+			SpaceID:     ev.RoomId,
 			Name:        p.SpaceName,
 			AdmitKind:   p.AdmitKind,
 			AdmitOrigin: p.AdmitOrigin,
@@ -135,6 +138,14 @@ func applyRoomState(ev *cairnv1.Event) error {
 			RequestEvent: ev.EventId,
 			RequestedAt:  ev.Ts,
 		})
+
+	case cairnv1.EventType_SPACE_MEMBER_REMOVE:
+		// Revokes the discovery grant: drop the member from the space roster. Their
+		// individual room memberships are untouched — those are removed per-room.
+		if len(p.MemberPub) != 32 {
+			return fmt.Errorf("core: space_member_remove without a valid member_pub")
+		}
+		return st.DeleteSpaceMember(ev.RoomId, p.MemberPub)
 	}
 	return nil
 }
@@ -220,9 +231,11 @@ func VisibleRooms(memberPub []byte) ([]VisibleRoom, []*models.Space, error) {
 func isRoomStateEvent(t cairnv1.EventType) bool {
 	switch t {
 	case cairnv1.EventType_SPACE_CREATE,
+		cairnv1.EventType_SPACE_UPDATE,
 		cairnv1.EventType_ROOM_CREATE,
 		cairnv1.EventType_MEMBER_ADD,
 		cairnv1.EventType_SPACE_MEMBER_ADD,
+		cairnv1.EventType_SPACE_MEMBER_REMOVE,
 		cairnv1.EventType_ROOM_JOIN_REQUEST:
 		return true
 	}

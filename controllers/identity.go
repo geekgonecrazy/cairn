@@ -164,8 +164,36 @@ func (CairnController) ListRooms(
 	}
 	for _, sp := range spaces {
 		out.Spaces = append(out.Spaces, &cairnv1.SpaceInfo{
-			SpaceId: sp.SpaceID,
-			Name:    sp.Name,
+			SpaceId:     sp.SpaceID,
+			Name:        sp.Name,
+			AdmitKind:   sp.AdmitKind,
+			AdmitOrigin: sp.AdmitOrigin,
+		})
+	}
+	return connect.NewResponse(out), nil
+}
+
+// ListSpaceMembers returns a space's roster — the member roots a SPACE_MEMBER_ADD
+// admitted to it. Names are not included: the client resolves them from the
+// identity log (ResolveSender) and shows a name only for a chain that verifies to
+// our own household, exactly as it does for a room roster.
+func (CairnController) ListSpaceMembers(
+	_ context.Context,
+	req *connect.Request[cairnv1.ListSpaceMembersRequest],
+) (*connect.Response[cairnv1.ListSpaceMembersResponse], error) {
+	spaceID := req.Msg.GetSpaceId()
+	if len(spaceID) == 0 {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("space_id is required"))
+	}
+	members, err := core.Store().ListSpaceMembers(spaceID)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	out := &cairnv1.ListSpaceMembersResponse{}
+	for _, m := range members {
+		out.Members = append(out.Members, &cairnv1.SpaceMemberInfo{
+			MemberPub: m.MemberPub,
+			Role:      m.Role,
 		})
 	}
 	return connect.NewResponse(out), nil

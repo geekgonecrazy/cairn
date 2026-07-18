@@ -110,6 +110,12 @@ enum EventType {
   // into a MEMBER_ADD (the only act that can wrap the key). Cleartext epoch 0 —
   // the requester holds no room key to encrypt under.
   ROOM_JOIN_REQUEST = 57;
+  // Removes a member root from a SPACE — revokes the discovery grant. Like
+  // SPACE_MEMBER_ADD it names the space in room_id and wraps no key; it drops the
+  // member from the space roster so they no longer discover its channels. It does
+  // NOT reach into individual rooms — a room MEMBER_ADD already made stays until
+  // that room removes them separately.
+  SPACE_MEMBER_REMOVE = 58;
 
   // Identity (live in the household identity log; fetched by hash)
   IDENTITY_ATTESTATION = 60;
@@ -204,6 +210,8 @@ message RoomInfo {
 message SpaceInfo {
   bytes space_id = 1;
   string name = 2;
+  string admit_kind = 3;   // e.g. "human" or "human,agent"
+  string admit_origin = 4; // "own" | "any" | comma-joined root pubkeys (hex)
 }
 // Rooms visible to member_pub: every room it was admitted to (joined), plus the
 // discoverable rooms of every space it is a member of (unjoined). Visibility is
@@ -213,6 +221,15 @@ message ListRoomsResponse {
   repeated RoomInfo rooms = 1;
   repeated SpaceInfo spaces = 2;
 }
+
+// A member root admitted to a space (the space roster). Names resolve client-side
+// from the identity log, exactly like a room roster.
+message SpaceMemberInfo {
+  bytes member_pub = 1;
+  string role = 2;
+}
+message ListSpaceMembersRequest { bytes space_id = 1; }
+message ListSpaceMembersResponse { repeated SpaceMemberInfo members = 1; }
 
 message ResolveSenderRequest { bytes sender_pub = 1; }
 message ResolveSenderResponse {
@@ -230,5 +247,6 @@ service CairnService {
   rpc PutIdentityObject(PutIdentityObjectRequest) returns (PutIdentityObjectResponse);
   rpc ResolveSender(ResolveSenderRequest) returns (ResolveSenderResponse);
   rpc ListRooms(ListRoomsRequest) returns (ListRoomsResponse);
+  rpc ListSpaceMembers(ListSpaceMembersRequest) returns (ListSpaceMembersResponse);
   // Realtime push is SSE (see PROTOCOL.md §API), not a proto stream.
 }

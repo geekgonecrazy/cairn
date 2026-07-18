@@ -52,6 +52,8 @@ type Store interface {
 	PutSpaceMember(*models.SpaceMember) error
 	ListSpaceMembers(spaceID []byte) ([]*models.SpaceMember, error)
 	SpaceMembershipsFor(memberPub []byte) ([]*models.SpaceMember, error)
+	// DeleteSpaceMember revokes a space membership (folded from SPACE_MEMBER_REMOVE).
+	DeleteSpaceMember(spaceID, memberPub []byte) error
 	// Join requests — a discoverer's ask to be admitted to a room they can see.
 	PutJoinRequest(*models.JoinRequest) error
 	ListJoinRequests(roomID []byte) ([]*models.JoinRequest, error)

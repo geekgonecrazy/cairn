@@ -43,7 +43,14 @@
 
 <aside class="room-list" aria-label="Rooms">
   <div class="head">
-    <h2>{spaceName}</h2>
+    <div class="head-row">
+      <h2>{spaceName}</h2>
+      {#if hasSpace}
+        <button class="gear" title="Space settings" aria-label="Space settings" onclick={() => ui.openSpaceSettings()}>
+          <Icon name="settings" size={15} />
+        </button>
+      {/if}
+    </div>
     <div class="meta">local-first · e2ee</div>
   </div>
 
@@ -196,7 +203,22 @@
     min-height: 0;
   }
   .head { padding: 18px 18px 12px; }
-  .head h2 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+  .head-row { display: flex; align-items: center; gap: 8px; }
+  .head h2 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gear {
+    margin-left: auto;
+    width: 26px;
+    height: 26px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-3);
+    cursor: pointer;
+    flex: 0 0 auto;
+  }
+  .gear:hover { background: var(--surface); color: var(--text); }
   .head .meta {
     font-family: var(--font-mono);
     font-size: 11px;

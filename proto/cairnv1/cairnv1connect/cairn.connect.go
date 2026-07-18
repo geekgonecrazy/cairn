@@ -50,6 +50,9 @@ const (
 	CairnServiceResolveSenderProcedure = "/cairn.v1.CairnService/ResolveSender"
 	// CairnServiceListRoomsProcedure is the fully-qualified name of the CairnService's ListRooms RPC.
 	CairnServiceListRoomsProcedure = "/cairn.v1.CairnService/ListRooms"
+	// CairnServiceListSpaceMembersProcedure is the fully-qualified name of the CairnService's
+	// ListSpaceMembers RPC.
+	CairnServiceListSpaceMembersProcedure = "/cairn.v1.CairnService/ListSpaceMembers"
 )
 
 // CairnServiceClient is a client for the cairn.v1.CairnService service.
@@ -61,6 +64,7 @@ type CairnServiceClient interface {
 	PutIdentityObject(context.Context, *connect.Request[cairnv1.PutIdentityObjectRequest]) (*connect.Response[cairnv1.PutIdentityObjectResponse], error)
 	ResolveSender(context.Context, *connect.Request[cairnv1.ResolveSenderRequest]) (*connect.Response[cairnv1.ResolveSenderResponse], error)
 	ListRooms(context.Context, *connect.Request[cairnv1.ListRoomsRequest]) (*connect.Response[cairnv1.ListRoomsResponse], error)
+	ListSpaceMembers(context.Context, *connect.Request[cairnv1.ListSpaceMembersRequest]) (*connect.Response[cairnv1.ListSpaceMembersResponse], error)
 }
 
 // NewCairnServiceClient constructs a client for the cairn.v1.CairnService service. By default, it
@@ -116,6 +120,12 @@ func NewCairnServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(cairnServiceMethods.ByName("ListRooms")),
 			connect.WithClientOptions(opts...),
 		),
+		listSpaceMembers: connect.NewClient[cairnv1.ListSpaceMembersRequest, cairnv1.ListSpaceMembersResponse](
+			httpClient,
+			baseURL+CairnServiceListSpaceMembersProcedure,
+			connect.WithSchema(cairnServiceMethods.ByName("ListSpaceMembers")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -128,6 +138,7 @@ type cairnServiceClient struct {
 	putIdentityObject *connect.Client[cairnv1.PutIdentityObjectRequest, cairnv1.PutIdentityObjectResponse]
 	resolveSender     *connect.Client[cairnv1.ResolveSenderRequest, cairnv1.ResolveSenderResponse]
 	listRooms         *connect.Client[cairnv1.ListRoomsRequest, cairnv1.ListRoomsResponse]
+	listSpaceMembers  *connect.Client[cairnv1.ListSpaceMembersRequest, cairnv1.ListSpaceMembersResponse]
 }
 
 // SendEvent calls cairn.v1.CairnService.SendEvent.
@@ -165,6 +176,11 @@ func (c *cairnServiceClient) ListRooms(ctx context.Context, req *connect.Request
 	return c.listRooms.CallUnary(ctx, req)
 }
 
+// ListSpaceMembers calls cairn.v1.CairnService.ListSpaceMembers.
+func (c *cairnServiceClient) ListSpaceMembers(ctx context.Context, req *connect.Request[cairnv1.ListSpaceMembersRequest]) (*connect.Response[cairnv1.ListSpaceMembersResponse], error) {
+	return c.listSpaceMembers.CallUnary(ctx, req)
+}
+
 // CairnServiceHandler is an implementation of the cairn.v1.CairnService service.
 type CairnServiceHandler interface {
 	SendEvent(context.Context, *connect.Request[cairnv1.SendEventRequest]) (*connect.Response[cairnv1.SendEventResponse], error)
@@ -174,6 +190,7 @@ type CairnServiceHandler interface {
 	PutIdentityObject(context.Context, *connect.Request[cairnv1.PutIdentityObjectRequest]) (*connect.Response[cairnv1.PutIdentityObjectResponse], error)
 	ResolveSender(context.Context, *connect.Request[cairnv1.ResolveSenderRequest]) (*connect.Response[cairnv1.ResolveSenderResponse], error)
 	ListRooms(context.Context, *connect.Request[cairnv1.ListRoomsRequest]) (*connect.Response[cairnv1.ListRoomsResponse], error)
+	ListSpaceMembers(context.Context, *connect.Request[cairnv1.ListSpaceMembersRequest]) (*connect.Response[cairnv1.ListSpaceMembersResponse], error)
 }
 
 // NewCairnServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -225,6 +242,12 @@ func NewCairnServiceHandler(svc CairnServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(cairnServiceMethods.ByName("ListRooms")),
 		connect.WithHandlerOptions(opts...),
 	)
+	cairnServiceListSpaceMembersHandler := connect.NewUnaryHandler(
+		CairnServiceListSpaceMembersProcedure,
+		svc.ListSpaceMembers,
+		connect.WithSchema(cairnServiceMethods.ByName("ListSpaceMembers")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/cairn.v1.CairnService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case CairnServiceSendEventProcedure:
@@ -241,6 +264,8 @@ func NewCairnServiceHandler(svc CairnServiceHandler, opts ...connect.HandlerOpti
 			cairnServiceResolveSenderHandler.ServeHTTP(w, r)
 		case CairnServiceListRoomsProcedure:
 			cairnServiceListRoomsHandler.ServeHTTP(w, r)
+		case CairnServiceListSpaceMembersProcedure:
+			cairnServiceListSpaceMembersHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -276,4 +301,8 @@ func (UnimplementedCairnServiceHandler) ResolveSender(context.Context, *connect.
 
 func (UnimplementedCairnServiceHandler) ListRooms(context.Context, *connect.Request[cairnv1.ListRoomsRequest]) (*connect.Response[cairnv1.ListRoomsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cairn.v1.CairnService.ListRooms is not implemented"))
+}
+
+func (UnimplementedCairnServiceHandler) ListSpaceMembers(context.Context, *connect.Request[cairnv1.ListSpaceMembersRequest]) (*connect.Response[cairnv1.ListSpaceMembersResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cairn.v1.CairnService.ListSpaceMembers is not implemented"))
 }

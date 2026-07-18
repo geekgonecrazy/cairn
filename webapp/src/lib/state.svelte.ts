@@ -19,6 +19,8 @@ import {
   buildRoomCreate,
   buildSpaceCreate,
   buildSpaceMemberAdd,
+  buildSpaceMemberRemove,
+  buildSpaceUpdate,
   buildRoomJoinRequest,
   buildRoomKeyRotate,
   applyKeyEvent,
@@ -651,6 +653,48 @@ class AppState {
     if (!spaceId) throw new Error('create or select a space first')
     await this.deliver(await buildSpaceMemberAdd(spaceId, memberPub, role))
     await roomStore.refresh()
+  }
+
+  /** Add a space member by their MEMBER ROOT pubkey hex (the settings modal's
+   *  add-by-key). */
+  async addSpaceMemberByKey(pubHex: string) {
+    const pub = fromHex(pubHex.trim())
+    if (!pub || pub.length !== 32) throw new Error('member key must be 64 hex chars')
+    await this.addSpaceMember(pub)
+  }
+
+  /** Rename the active space and set its admit policy. Sends the full state; the
+   *  fold overwrites, so the modal must pass every field. */
+  async updateSpace(name: string, admitKind: string, admitOrigin: string) {
+    const spaceId = this.activeSpaceId
+    if (!spaceId) throw new Error('no active space')
+    await this.deliver(await buildSpaceUpdate(spaceId, name.trim() || 'Space', admitKind, admitOrigin))
+    await roomStore.refresh()
+  }
+
+  /** Revoke a member's discovery grant in the active space. */
+  async removeSpaceMember(memberPub: Uint8Array) {
+    const spaceId = this.activeSpaceId
+    if (!spaceId) throw new Error('no active space')
+    await this.deliver(await buildSpaceMemberRemove(spaceId, memberPub))
+    await roomStore.refresh()
+  }
+
+  /**
+   * Fetch the active space's roster from the carrier and kick off name lookups.
+   * Names resolve the same way a room roster's do — shown only for a chain that
+   * verifies to our own household. Returns key stubs until then.
+   */
+  async spaceMembers(): Promise<{ pubHex: string; pub: Uint8Array; role: string; mine: boolean }[]> {
+    const spaceId = this.activeSpaceId
+    if (!spaceId) return []
+    const myMember = identity.current ? hex(identity.current.memberPub) : ''
+    const res = await cairn.listSpaceMembers({ spaceId: utf8(spaceId) })
+    return res.members.map((m) => {
+      const pubHex = hex(m.memberPub)
+      if (pubHex !== myMember) directory.resolveMember(m.memberPub)
+      return { pubHex, pub: m.memberPub, role: m.role || 'member', mine: pubHex === myMember }
+    })
   }
 
   /**

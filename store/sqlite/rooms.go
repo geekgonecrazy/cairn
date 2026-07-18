@@ -161,6 +161,11 @@ func (s *Store) SpaceMembershipsFor(memberPub []byte) ([]*models.SpaceMember, er
 	return out, rows.Err()
 }
 
+func (s *Store) DeleteSpaceMember(spaceID, memberPub []byte) error {
+	_, err := s.db.Exec(`DELETE FROM space_members WHERE space_id=? AND member_pub=?`, spaceID, memberPub)
+	return err
+}
+
 func (s *Store) PutJoinRequest(r *models.JoinRequest) error {
 	_, err := s.db.Exec(
 		`INSERT INTO join_requests(room_id,member_pub,reason,request_event,requested_at) VALUES(?,?,?,?,?)

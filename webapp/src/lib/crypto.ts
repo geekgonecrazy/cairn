@@ -782,6 +782,41 @@ export async function buildRoomJoinRequest(
   )
 }
 
+/**
+ * Update a space's name and admit policy. Carries the FULL desired state (the
+ * settings modal always sends every field), so the fold overwrites rather than
+ * merges. Cleartext epoch 0, like space_create.
+ */
+export async function buildSpaceUpdate(
+  spaceIdStr: string,
+  name: string,
+  admitKind: string,
+  admitOrigin: string,
+  parents: Uint8Array[] = [],
+): Promise<Event> {
+  return buildCleartext(
+    spaceIdStr,
+    EventType.SPACE_UPDATE,
+    { space_name: name, admit_kind: admitKind, admit_origin: admitOrigin },
+    parents,
+  )
+}
+
+/** Revoke a member's SPACE membership — drops them from the space roster (their
+ *  discovery grant). Wraps no key and does not touch individual room memberships. */
+export async function buildSpaceMemberRemove(
+  spaceIdStr: string,
+  memberPub: Uint8Array,
+  parents: Uint8Array[] = [],
+): Promise<Event> {
+  return buildCleartext(
+    spaceIdStr,
+    EventType.SPACE_MEMBER_REMOVE,
+    { member_pub: memberPub },
+    parents,
+  )
+}
+
 /** Every epoch key we hold for a room, oldest first. */
 function heldEpochs(room: string): { epoch: number; raw: Uint8Array }[] {
   const out: { epoch: number; raw: Uint8Array }[] = []

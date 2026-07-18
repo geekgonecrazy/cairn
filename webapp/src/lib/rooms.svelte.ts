@@ -33,6 +33,9 @@ export interface Space {
   name: string
   /** 1–2 char rail glyph, derived from the name (no separate stored field). */
   label: string
+  /** Admit policy (recorded; enforcement is a separate milestone). */
+  admitKind: string
+  admitOrigin: string
 }
 
 const dec = new TextDecoder()
@@ -85,6 +88,8 @@ class RoomStore {
         id: dec.decode(s.spaceId),
         name: s.name,
         label: glyphFor(s.name),
+        admitKind: s.admitKind || 'human,agent',
+        admitOrigin: s.admitOrigin || 'own',
       }))
       this.error = ''
     } catch (e) {
