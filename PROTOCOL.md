@@ -271,8 +271,16 @@ CREATE TABLE members ( room_id BLOB, member_pub BLOB, role TEXT, added_event BLO
 
 CREATE TABLE room_keys ( room_id BLOB, epoch INTEGER, key BLOB, PRIMARY KEY (room_id, epoch) ); -- local unwrapped key
 
-CREATE TABLE identities  ( pubkey BLOB PRIMARY KEY, kind TEXT, origin BLOB, operated_by BLOB, display_name TEXT, attestation BLOB );
-CREATE TABLE delegations ( device_pub BLOB PRIMARY KEY, member_pub BLOB, object BLOB, expires_at INTEGER, revoked INTEGER DEFAULT 0 );
+-- identity log: one content-addressed table. obj_type+subject_pub index the
+-- chain-walk resolver; hash serves GetIdentityObject. subject_pub = the pubkey
+-- the object AUTHORIZES (session_pub / device_pub / member_pub / revoked device).
+CREATE TABLE identity_log (
+  hash        BLOB PRIMARY KEY,   -- BLAKE3-256 of the det-CBOR object
+  obj_type    TEXT NOT NULL,      -- attestation|device_delegation|session_delegation|device_revoke
+  subject_pub BLOB NOT NULL,
+  cbor        BLOB NOT NULL
+);
+CREATE INDEX idx_identity_subject ON identity_log(obj_type, subject_pub);
 
 CREATE TABLE peer_frontier ( peer_pub BLOB, room_id BLOB, head_id BLOB, PRIMARY KEY (peer_pub, room_id, head_id) ); -- outbox cursor
 

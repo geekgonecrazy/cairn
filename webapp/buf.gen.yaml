@@ -1,0 +1,11 @@
+# Generates the TS message + service types from ../proto into src/gen.
+# protobuf-es v2 emits Connect-compatible service descriptors (no separate
+# connect-es plugin needed in v2). Regenerate with `npm run gen`; never hand-edit.
+version: v2
+inputs:
+  - directory: ../proto
+plugins:
+  - local: ./node_modules/.bin/protoc-gen-es
+    out: src/gen
+    opt:
+      - target=ts

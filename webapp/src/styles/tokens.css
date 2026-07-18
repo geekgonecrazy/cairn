@@ -1,0 +1,86 @@
+/* Cairn design tokens — ported verbatim from claude-design/Cairn.html
+   (#cairn-tokens). Colors are authored in OKLCH; keep them as-is (all evergreen
+   browsers support oklch() + color-mix) rather than converting, or the theme
+   drifts. Light is the default :root; dark is html[data-theme="dark"]. */
+
+:root {
+  /* Typography */
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Radii */
+  --r-1: 4px;  --r-2: 6px;  --r-3: 8px;  --r-4: 10px;  --r-5: 14px;
+
+  /* Spacing */
+  --s-1: 4px;  --s-2: 6px;  --s-3: 8px;  --s-4: 10px;  --s-5: 12px;
+  --s-6: 14px; --s-7: 16px; --s-8: 20px; --s-9: 24px; --s-10: 32px;
+
+  /* Surfaces / neutrals */
+  --bg:        oklch(0.985 0.002 250);
+  --surface:   oklch(1 0 0);
+  --surface-2: oklch(0.965 0.003 250);
+  --surface-3: oklch(0.945 0.004 250);
+  --border:    oklch(0.91 0.005 250);
+  --border-2:  oklch(0.86 0.006 250);
+
+  /* Text ramp */
+  --text:   oklch(0.22 0.012 260);
+  --text-2: oklch(0.48 0.012 260);
+  --text-3: oklch(0.62 0.010 260);
+  --text-4: oklch(0.74 0.008 260);
+
+  /* Accent */
+  --accent:        oklch(0.56 0.14 255);
+  --accent-fg:     oklch(0.985 0.005 255);
+  --accent-soft:   oklch(0.94 0.03 255);
+  --accent-soft-2: oklch(0.88 0.06 255);
+
+  /* Semantic status */
+  --pos:       oklch(0.58 0.12 150);
+  --pos-soft:  oklch(0.94 0.04 150);
+  --neg:       oklch(0.58 0.16 25);
+  --neg-soft:  oklch(0.95 0.04 25);
+  --busy:      oklch(0.68 0.13 75);
+  --busy-soft: oklch(0.95 0.05 75);
+  --warn:      oklch(0.65 0.14 60);
+
+  /* Shadows */
+  --shadow-1: 0 1px 2px -1px oklch(0.2 0.02 260 / 0.08), 0 1px 1px oklch(0.2 0.02 260 / 0.05);
+  --shadow-2: 0 4px 12px -4px oklch(0.2 0.02 260 / 0.12), 0 2px 6px oklch(0.2 0.02 260 / 0.06);
+  --shadow-3: 0 24px 48px -16px oklch(0.18 0.02 260 / 0.22), 0 8px 20px -6px oklch(0.18 0.02 260 / 0.12);
+
+  --cross-tint: oklch(0.72 0.12 35);
+}
+
+html[data-theme="dark"] {
+  --bg:        oklch(0.155 0.008 260);
+  --surface:   oklch(0.185 0.008 260);
+  --surface-2: oklch(0.215 0.008 260);
+  --surface-3: oklch(0.255 0.008 260);
+  --border:    oklch(0.295 0.008 260);
+  --border-2:  oklch(0.355 0.010 260);
+
+  --text:   oklch(0.96 0.004 260);
+  --text-2: oklch(0.74 0.008 260);
+  --text-3: oklch(0.58 0.010 260);
+  --text-4: oklch(0.46 0.010 260);
+
+  --accent:        oklch(0.74 0.13 255);
+  --accent-fg:     oklch(0.16 0.02 255);
+  --accent-soft:   oklch(0.30 0.06 255);
+  --accent-soft-2: oklch(0.40 0.10 255);
+
+  --pos:       oklch(0.74 0.14 152);
+  --pos-soft:  oklch(0.30 0.06 150);
+  --neg:       oklch(0.72 0.16 25);
+  --neg-soft:  oklch(0.30 0.06 25);
+  --busy:      oklch(0.80 0.14 75);
+  --busy-soft: oklch(0.32 0.07 75);
+  --warn:      oklch(0.78 0.15 60);
+
+  --shadow-1: 0 1px 2px -1px oklch(0 0 0 / 0.5);
+  --shadow-2: 0 6px 16px -6px oklch(0 0 0 / 0.5), 0 2px 6px oklch(0 0 0 / 0.3);
+  --shadow-3: 0 24px 48px -16px oklch(0 0 0 / 0.6), 0 8px 20px -6px oklch(0 0 0 / 0.4);
+
+  --cross-tint: oklch(0.78 0.13 50);
+}

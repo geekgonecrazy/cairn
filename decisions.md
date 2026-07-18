@@ -22,6 +22,12 @@ Companion to [`plan.md`](./plan.md) (the build plan) and the design mockup in
   `proto/cairn.proto` and the payload schemas without versioning, change the SQLite schema in place,
   and **wipe the database at will**. **No migrations.** Backward-compat, additive-only wire changes,
   stable enum numbers, and real migrations begin **only** once we flip the real-users switch.
+- **Unary API binding = ConnectRPC.** Decided 2026-07-18. `buf` + `connect-go` (Go server stubs) +
+  `connect-es` (TS client) generated from `proto/cairn.proto`; the `CairnService` service defs are the
+  typed surface (`SendEvent`, `Sync`, `History`, `GetIdentityObject`). Diverges from the reference
+  repos' Gin REST, but keeps one proto as the single contract for Go + TS. Realtime stays **SSE** (a
+  plain HTTP `text/event-stream`, *not* Connect server-streaming) per the SSE decision below. (Resolves
+  the earlier ConnectRPC-vs-Gin-REST open item.)
 - **Realtime transport = SSE.** User preference; matches `flockledger/controllers/sse.go`. The
   realtime `Subscribe` is a plain HTTP SSE stream of `Event`s; unary calls (send / sync / history) are
   request/response. (Resolves the earlier SSE-vs-WebSocket item.)
@@ -47,9 +53,6 @@ Companion to [`plan.md`](./plan.md) (the build plan) and the design mockup in
 
 ## Open — questioned / proposed, NOT yet decided
 
-- **Unary API binding:** open — ConnectRPC (typed Go+TS from the proto) vs. plain Gin REST over the
-  proto message types (matches the reference repos). The `Event` is proto-encoded on the wire either
-  way; this is only the request/response binding.
 - **SQLite driver:** `modernc.org/sqlite` (pure-Go, no cgo) is my recommendation for clean
   mobile cross-compile. Not decided.
 - **Wails3 topology:** does the native app embed the full Go `core` as an on-device node, or act as a

@@ -1,0 +1,12 @@
+version: v2
+# Generated Go lands at proto/cairnv1/ (matching go_package). Never hand-edit it.
+# The TS client is generated separately into webapp/ (see webapp/buf.gen.yaml).
+plugins:
+  - local: protoc-gen-go
+    out: .
+    opt:
+      - module=github.com/geekgonecrazy/cairn
+  - local: protoc-gen-connect-go
+    out: .
+    opt:
+      - module=github.com/geekgonecrazy/cairn

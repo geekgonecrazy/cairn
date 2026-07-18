@@ -1,0 +1,16 @@
+# Go
+/cairnd
+*.db
+*.db-shm
+*.db-wal
+cairn.db*
+
+# Node / webapp
+node_modules/
+webapp/node_modules/
+webapp/dist/
+webapp/.svelte-kit/
+
+# Editor / OS
+.DS_Store
+*.log

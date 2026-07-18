@@ -1,0 +1,33 @@
+@import './styles/tokens.css';
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body { height: 100%; margin: 0; }
+
+body {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--text);
+  background: var(--bg);
+  font-feature-settings: "ss01", "cv11";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+#app { height: 100%; }
+
+button { font-family: inherit; }
+
+::selection { background: var(--accent-soft-2); color: var(--text); }
+
+/* Custom scrollbars (10px, subtle thumb). */
+* { scrollbar-width: thin; scrollbar-color: var(--border-2) transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+  background: var(--border-2);
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--text-4); background-clip: content-box; }
