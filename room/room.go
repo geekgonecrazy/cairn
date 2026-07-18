@@ -126,6 +126,25 @@ func PayloadEpoch(payload []byte) (uint64, error) {
 	return epoch, err
 }
 
+// FrameCleartext frames an unencrypted payload as key_epoch 0 (uvarint(0)||cbor),
+// used by member_add/room_key_rotate and identity events whose payloads carry
+// their own key material in cleartext-CBOR (PROTOCOL.md §2.2).
+func FrameCleartext(cbor []byte) []byte {
+	return append([]byte{0x00}, cbor...) // uvarint(0) is a single 0x00 byte
+}
+
+// Cleartext returns the cleartext CBOR of an epoch-0 event payload.
+func Cleartext(ev *cairnv1.Event) ([]byte, error) {
+	epoch, rest, err := splitFrame(ev.Payload)
+	if err != nil {
+		return nil, err
+	}
+	if epoch != 0 {
+		return nil, fmt.Errorf("room: expected cleartext (epoch 0), got epoch %d", epoch)
+	}
+	return rest, nil
+}
+
 func splitFrame(payload []byte) (epoch uint64, rest []byte, err error) {
 	epoch, n := binary.Uvarint(payload)
 	if n <= 0 {

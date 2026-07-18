@@ -56,6 +56,44 @@ type Presence struct {
 	Via   string `cbor:"via,omitempty"`
 }
 
+// WrappedKeys maps a recipient member pubkey (hex) to the HPKE-wrapped room key
+// for the new epoch. Hex keys keep it a text-keyed CBOR map (the browser's
+// minimal CBOR encodes only string keys).
+type WrappedKeys map[string][]byte
+
+// MemberAdd introduces a member and hands them (and re-hands existing members)
+// the new epoch's room key, HPKE-wrapped per recipient. Cleartext-CBOR payload
+// (key_epoch 0). See PROTOCOL.md §3, §5.
+type MemberAdd struct {
+	MemberPub   []byte      `cbor:"member_pub"`
+	Role        string      `cbor:"role"`
+	Epoch       uint64      `cbor:"epoch"`
+	WrappedKeys WrappedKeys `cbor:"wrapped_keys"`
+}
+
+// RoomKeyRotate rolls the room key to a new epoch, wrapped to each current
+// member. Cleartext-CBOR payload (key_epoch 0).
+type RoomKeyRotate struct {
+	Epoch       uint64      `cbor:"epoch"`
+	WrappedKeys WrappedKeys `cbor:"wrapped_keys"`
+}
+
+func DecodeMemberAdd(b []byte) (*MemberAdd, error) {
+	var m MemberAdd
+	if err := cbor.Unmarshal(b, &m); err != nil {
+		return nil, err
+	}
+	return &m, nil
+}
+
+func DecodeRoomKeyRotate(b []byte) (*RoomKeyRotate, error) {
+	var r RoomKeyRotate
+	if err := cbor.Unmarshal(b, &r); err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
 // EncodePayload deterministic-CBOR encodes a payload map (the plaintext to seal).
 func EncodePayload(v any) ([]byte, error) { return identity.Marshal(v) }
 
