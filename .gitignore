@@ -12,6 +12,10 @@ webapp/node_modules/
 webapp/dist/
 webapp/.svelte-kit/
 
+# mise: per-machine overrides stay local; mise.toml itself is committed
+mise.local.toml
+.mise.local.toml
+
 # Editor / OS
 .DS_Store
 *.log

@@ -1,0 +1,54 @@
+# Toolchain for Cairn. `mise install` once, then the right versions are on PATH
+# whenever you're in this directory.
+#
+# Why this exists: the webapp needs Node 20.19+/22.12+ (Vite 8), and a machine
+# default of Node 18 fails in ways that don't obviously point at the Node
+# version — `npm run dev` dies on a missing `styleText` export, and
+# `npm run build` / the conformance scripts fail separately. Pinning it here
+# means nobody has to know that.
+
+[tools]
+# Matches go.mod's `go 1.25.10`. Keep the two in step.
+go = "1.25.10"
+# README prerequisite is 20.19+ or 22.12+; pin 22 LTS.
+node = "22"
+
+[env]
+# Vite serves the SPA under this base path (see webapp/vite.config.ts). Handy for
+# scripts and curl; the app itself reads it from the Vite config, not from here.
+CAIRN_WEBAPP_URL = "http://localhost:5173/__hub/"
+
+[tasks.dev]
+description = "Run cairnd (API + SSE on :8099)"
+run = "go run ./cmd/cairnd"
+
+[tasks.web]
+description = "Run the Vite dev server (proxies to cairnd)"
+dir = "webapp"
+run = "npm run dev"
+
+[tasks.check]
+description = "Everything CI would run: Go tests + vet, typecheck, conformance, build"
+run = """
+set -e
+go vet ./...
+go test ./...
+cd webapp
+npm run check
+npm run conformance
+npm run identity-conformance
+npm run inlay-check
+npm run build
+rm -rf dist
+"""
+
+[tasks.reset]
+description = "Dev-phase wipe of SERVER state (stop cairnd first; clients also hold state)"
+run = """
+rm -f cairn.db cairn.db-shm cairn.db-wal
+rm -rf cairn-blobs
+echo "server state cleared."
+echo "NOTE: clients keep their own copy of the DAG and will re-upload it on"
+echo "reconnect. Close every Cairn tab (or use Reset this device) FIRST, or the"
+echo "database refills itself and the wipe looks like it silently failed."
+"""

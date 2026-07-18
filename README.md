@@ -22,6 +22,20 @@ wire contract, [`plan.md`](./plan.md) for the phased build plan, and
 | **Go** | **1.25+** | `go.mod` targets 1.25.10 |
 | **Node** | **20.19+** or **22.12+** | required by Vite 8 |
 
+**With [mise](https://mise.jdx.dev) both are pinned for you** — `mise.toml` is in the repo:
+
+```sh
+mise trust && mise install     # once
+```
+
+After that the right Go and Node are on PATH inside this directory. Worth doing: a
+machine default of Node 18 fails in ways that don't point at the Node version —
+`npm run dev` dies on a missing `styleText` export, and `npm run build` and the
+conformance scripts fail separately.
+
+Handy tasks: `mise run dev` (cairnd), `mise run web` (Vite), `mise run check`
+(everything CI would run), `mise run reset` (wipe server state).
+
 That's all you need to run it. Generated protobuf code (Go and TypeScript) is **committed**,
 so you do *not* need `buf` or the protoc plugins unless you change `proto/cairn.proto` —
 see [Regenerating the wire schema](#regenerating-the-wire-schema).
