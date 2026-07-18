@@ -218,21 +218,65 @@ join; the recovery flow is gated and unskippable.
       signature, expiry, and binding to the exact capability and agent. Keys default to
       `$TMPDIR/cairn-agent`, never `$HOME`: it stores a private key and plaintext room keys.
 
+### Two-tier membership: space discovery + join requests — done 2026-07-18
+
+- [x] **Spaces have membership, and it is the discovery tier.** `SPACE_MEMBER_ADD` (enum 56)
+      admits a member root to a space and **wraps no key** — it grants the right to *see* the
+      space's discoverable rooms, nothing more. Folded into `space_members`, keyed on the member
+      root. This closes the recorded gap "a newcomer sees no rooms and cannot discover that any
+      exist": founding a space makes the founder its first space member, and inviting a household
+      member (`DevicesModal`) grants them space membership, so they arrive with the household's
+      rooms visible (locked) instead of a blank sidebar. Rationale in `decisions.md`.
+- [x] **`ListRooms` returns two tiers.** `core.VisibleRooms` returns rooms a `MEMBER_ADD` admitted
+      you to (`joined=true`, readable) plus the discoverable rooms of every space you belong to
+      (`joined=false`, locked). The sidebar renders unjoined rooms with a lock; opening one offers
+      "Ask to join" rather than the dead-end no-key screen. `core/rooms_test.go` pins the matrix:
+      founder sees all, a space-only member discovers only the discoverable rooms, a room-only
+      member sees no siblings, a stranger sees nothing.
+- [x] **Room `visibility` (`discoverable` | `hidden`, default discoverable).** A hidden room is
+      returned only to someone a `MEMBER_ADD` actually admitted — space membership never reveals
+      it — so a DM or private room can live in the household space without being listed to everyone.
+      Selectable at room creation.
+- [x] **`ROOM_JOIN_REQUEST` (enum 57).** A discoverer signs an ask into the room DAG carrying their
+      member root; an existing member sees it in "Members & keys" and answers with the ordinary
+      add-by-key (the only act that can wrap the key). Cleartext epoch 0 — the requester holds no
+      key. "Pending" is derived (request minus roster), so a fulfilled request needs no record.
+      > **Room membership is NOT a discovery grant.** Being added to one room reveals that room and
+      > its space, never sibling rooms — discovery stays a deliberate `SPACE_MEMBER_ADD`. This keeps
+      > the invariant that what you can see is always the result of a signed act naming you, the
+      > same principle behind killing the `data.ts` phantom rooms.
+
+### Chain gate enforced — done 2026-07-18
+
+- [x] **The chain gate is now enforced (default-deny), and revocation is real.** `SubmitEvent`
+      accepts an event only from a sender that `identity.VerifySender` chains to a trusted household
+      root — no more accept-all. The open question "what does a node that trusts no root do" is
+      answered by a **founding window**, not an open mode: a root-less carrier refuses events but
+      accepts identity-log objects, and the **first attestation it stores adopts that household root**
+      (`core.MaybeAdoptRoot`, persisted in `meta`, survives restart). `trustedRoots` in config pins
+      roots and skips adoption (strict from t=0). Rationale + the TOFU-capture tradeoff in
+      `decisions.md`.
+      > **Error taxonomy that keeps the app working.** `ErrAwaitingFounding` / `ErrUnknownObject` →
+      > `FailedPrecondition` (RECOVERABLE: publish identity and retry — how a founder's first events
+      > land); revoked / untrusted / expired / bad-sig → `PermissionDenied` (TERMINAL). The webapp's
+      > `deliver()` republishes-and-retries once on the former; the latter stays `queued`.
+      > **Verified live:** fresh carrier logs *awaiting founding* and refuses → `cmd/smoke` founds →
+      > *adopted … now ENFORCING* + event verifies → restart reloads the root and stays enforcing.
+      > `core/gate_test.go` pins the four rejections (pre-founding, revoked, foreign household,
+      > unknown link). `cmd/agent`/`cmd/smoke` now establish a self-household (`identity.SelfHousehold`)
+      > so they pass the gate; the agent↔human demo (two households) needs both roots pinned.
+
 **Not yet — the rest of Phase 4:**
 
-- [ ] **⚠️ Enforce the chain gate.** `core/events.go` only checks sender chains when
-      `trustedRoots` is non-empty; the dev default is empty, so a revoked device can still
-      post. Revocation is currently *advisory* — clients label it, the server accepts it.
-      Closing this means teaching `cairnd` the household root (config today; a bootstrap
-      handshake would be better) and deciding what happens to a node that trusts no root.
 - [ ] Camera QR capture (`getUserMedia`); today pairing is copy/paste of the same payload.
-- [ ] Space settings + admit-policy (kind + origin); peer-household join with
-      origin-fingerprint review; notifications settings.
+- [ ] Space settings + admit-policy **enforcement** (kind + origin); peer-household join with
+      origin-fingerprint review; notifications settings. (Space *membership* now exists — see the
+      two-tier section above — but nothing yet enforces a space's `admit_kind`/`admit_origin` on a
+      `SPACE_MEMBER_ADD`, and there is no space-settings surface. A space admin adds members by
+      key today, mirroring room add-by-key.)
 - [ ] Parent-sets-up-kid provisioning flow (`claude-design/cairn-settings.jsx` §B).
 - [ ] Space naming — every space is hardcoded `"Household"` since the id became
       household-derived. It should be nameable at founding or in space settings.
-- [ ] A newcomer sees no rooms and cannot discover that any exist, so they cannot ask to be
-      added to something they can't see. Protocol-correct, but a likely onboarding complaint.
 - [ ] `approval_deny` carries a `reason` field that the UI never collects — a refusal reaches
       the agent and the audit log as a bare no.
 - [ ] `cmd/agent` is not idempotent: re-running for an existing room mints a fresh key at the

@@ -45,6 +45,21 @@
       busy = false
     }
   }
+
+  // Admit a pending requester: the same add-by-key path, so it mints an epoch and
+  // wraps the key to them. History is not shared on an admit-from-request —
+  // sharing the backlog stays the deliberate, checkbox-gated act it is above.
+  async function admit(pubHex: string) {
+    error = ''
+    busy = true
+    try {
+      await app.addMember(pubHex, false)
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'could not admit member'
+    } finally {
+      busy = false
+    }
+  }
 </script>
 
 <div
@@ -87,6 +102,30 @@
           {/each}
         </ul>
       </div>
+
+      {#if app.joinRequests.length > 0}
+        <div class="field">
+          <label for="requests">
+            Wants to join <span class="count">{app.joinRequests.length}</span>
+          </label>
+          <ul id="requests" class="roster">
+            {#each app.joinRequests as r (r.pubHex)}
+              <li>
+                <span class="who">
+                  {#if directory.memberName(r.pubHex)}
+                    <strong>{directory.memberName(r.pubHex)}</strong>
+                  {:else}
+                    <span class="unresolved">cairn:{r.pubHex.slice(0, 6)}</span>
+                  {/if}
+                  {#if r.reason}<span class="reason">{r.reason}</span>{/if}
+                </span>
+                <button class="btn primary sm" disabled={busy} onclick={() => admit(r.pubHex)}>Admit</button>
+              </li>
+            {/each}
+          </ul>
+          <p class="hint">Admitting mints a new key epoch and wraps it to them.</p>
+        </div>
+      {/if}
 
       <div class="field">
         <label for="mykey">Your member key</label>
@@ -166,6 +205,7 @@
   }
   .who { display: flex; align-items: center; gap: 7px; }
   .unresolved { font-family: var(--font-mono, monospace); color: var(--text-3); }
+  .reason { font-size: 12px; color: var(--text-3); font-style: italic; }
   .role {
     font-size: 10px;
     text-transform: uppercase;

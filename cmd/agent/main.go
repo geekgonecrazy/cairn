@@ -106,6 +106,33 @@ func main() {
 		log.Printf("sent %-18s %x", what, ev.EventId[:6])
 	}
 
+	// 0. Establish identity. The carrier enforces the chain gate — it accepts an
+	//    event only from a sender that chains to a trusted household root. The
+	//    agent is a standalone participant: its key is its own household of one,
+	//    operated by the human it's demoing with. Publishing the self-attestation
+	//    founds that household on a fresh carrier (adoption), so every event below
+	//    verifies. Without it the first SendEvent is refused with PermissionDenied.
+	agentID := identity.KeyPair{Pub: me.Pub, Priv: me.Priv}
+	att, dd, err := identity.SelfHousehold(agentID, identity.KindAgent, human, "cmd/agent", time.Now().UnixMilli())
+	if err != nil {
+		log.Fatalf("agent: self-household: %v", err)
+	}
+	for _, obj := range []any{att, dd} {
+		blob, err := identity.Marshal(obj)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if _, err := client.PutIdentityObject(ctx, connect.NewRequest(&cairnv1.PutIdentityObjectRequest{Cbor: blob})); err != nil {
+			log.Fatalf("agent: publish identity: %v", err)
+		}
+	}
+	log.Printf("founded standalone household %x (operated by %x)", me.Pub[:6], human[:6])
+	// NOTE: the agent and the human are DIFFERENT households, but a carrier adopts
+	// only ONE root at founding. To run the full agent↔human approval demo, start
+	// cairnd with both roots pinned: `trustedRoots: [<agent key>, <human household
+	// root>]` (adoption is for the single-household case). Otherwise whichever
+	// party founds the carrier first is trusted and the other's events are refused.
+
 	// 1. Space + room. Both cleartext (epoch 0): a node that is not yet a member
 	//    must be able to fold them.
 	send(mustCleartext(me, spaceID, cairnv1.EventType_SPACE_CREATE, map[string]any{

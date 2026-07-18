@@ -13,6 +13,7 @@ package core
 // pair, and survive a session key rotating.
 
 import (
+	"bytes"
 	"fmt"
 
 	"github.com/fxamacker/cbor/v2"
@@ -27,15 +28,18 @@ import (
 // payload encrypted under a key the admit is granting you.
 type roomStatePayload struct {
 	// ROOM_CREATE
-	Name    string `cbor:"name"`
-	SpaceID []byte `cbor:"space_id"`
+	Name       string `cbor:"name"`
+	SpaceID    []byte `cbor:"space_id"`
+	Visibility string `cbor:"visibility"` // "discoverable" | "hidden"
 	// SPACE_CREATE
 	SpaceName   string `cbor:"space_name"`
 	AdmitKind   string `cbor:"admit_kind"`
 	AdmitOrigin string `cbor:"admit_origin"`
-	// MEMBER_ADD / MEMBER_REMOVE
+	// MEMBER_ADD / MEMBER_REMOVE / SPACE_MEMBER_ADD
 	MemberPub []byte `cbor:"member_pub"`
 	Role      string `cbor:"role"`
+	// ROOM_JOIN_REQUEST
+	Reason string `cbor:"reason"`
 }
 
 // decodeRoomState strips the uvarint(0) epoch frame and decodes the payload.
@@ -74,11 +78,18 @@ func applyRoomState(ev *cairnv1.Event) error {
 		})
 
 	case cairnv1.EventType_ROOM_CREATE:
+		visibility := p.Visibility
+		if visibility != "hidden" {
+			// Anything unset or unrecognised defaults to discoverable — a room is
+			// only invisible when its author deliberately said so.
+			visibility = "discoverable"
+		}
 		return st.PutRoom(&models.Room{
-			RoomID:    ev.RoomId,
-			SpaceID:   p.SpaceID,
-			Name:      p.Name,
-			CreatedAt: ev.Ts,
+			RoomID:     ev.RoomId,
+			SpaceID:    p.SpaceID,
+			Name:       p.Name,
+			CreatedAt:  ev.Ts,
+			Visibility: visibility,
 		})
 
 	case cairnv1.EventType_MEMBER_ADD:
@@ -95,8 +106,113 @@ func applyRoomState(ev *cairnv1.Event) error {
 			Role:       role,
 			AddedEvent: ev.EventId,
 		})
+
+	case cairnv1.EventType_SPACE_MEMBER_ADD:
+		// A space_member_add names the space in room_id, exactly as space_create
+		// does. It grants discovery only — no key rides it.
+		if len(p.MemberPub) != 32 {
+			return fmt.Errorf("core: space_member_add without a valid member_pub")
+		}
+		role := p.Role
+		if role == "" {
+			role = "member"
+		}
+		return st.PutSpaceMember(&models.SpaceMember{
+			SpaceID:    ev.RoomId,
+			MemberPub:  p.MemberPub,
+			Role:       role,
+			AddedEvent: ev.EventId,
+		})
+
+	case cairnv1.EventType_ROOM_JOIN_REQUEST:
+		if len(p.MemberPub) != 32 {
+			return fmt.Errorf("core: room_join_request without a valid member_pub")
+		}
+		return st.PutJoinRequest(&models.JoinRequest{
+			RoomID:       ev.RoomId,
+			MemberPub:    p.MemberPub,
+			Reason:       p.Reason,
+			RequestEvent: ev.EventId,
+			RequestedAt:  ev.Ts,
+		})
 	}
 	return nil
+}
+
+// VisibleRoom is a room a member can see, tagged with whether they actually hold
+// membership (joined) or can only discover it through space membership.
+type VisibleRoom struct {
+	Room   *models.Room
+	Joined bool
+}
+
+// VisibleRooms computes what memberPub can see, across the two membership tiers:
+//
+//   - Rooms a MEMBER_ADD admitted them to → Joined=true (readable).
+//   - The discoverable rooms of every SPACE they belong to → Joined=false
+//     (visible but locked; joining means a ROOM_JOIN_REQUEST a member answers).
+//
+// A hidden room is returned only to a member who was actually admitted — space
+// membership alone never reveals it. Spaces are returned when they hold a
+// visible room OR the member belongs to them directly (so an empty space they
+// were just added to still shows). This is the single source of truth for the
+// sidebar; the controller only shapes it onto the wire.
+func VisibleRooms(memberPub []byte) ([]VisibleRoom, []*models.Space, error) {
+	spaceMemberships, err := st.SpaceMembershipsFor(memberPub)
+	if err != nil {
+		return nil, nil, err
+	}
+	memberOfSpace := map[string]bool{}
+	for _, sm := range spaceMemberships {
+		memberOfSpace[string(sm.SpaceID)] = true
+	}
+
+	rooms, err := st.ListRooms()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	visibleSpaces := map[string]bool{}
+	for sid := range memberOfSpace {
+		visibleSpaces[sid] = true
+	}
+	var out []VisibleRoom
+	for _, r := range rooms {
+		members, err := st.ListMembers(r.RoomID)
+		if err != nil {
+			return nil, nil, err
+		}
+		joined := false
+		for _, m := range members {
+			if bytes.Equal(m.MemberPub, memberPub) {
+				joined = true
+				break
+			}
+		}
+		// Empty visibility is treated as discoverable (fold normalises it; a
+		// legacy row may predate the column).
+		discoverable := r.Visibility != "hidden"
+		inMemberSpace := len(r.SpaceID) > 0 && memberOfSpace[string(r.SpaceID)]
+		if !joined && !(inMemberSpace && discoverable) {
+			continue
+		}
+		out = append(out, VisibleRoom{Room: r, Joined: joined})
+		if len(r.SpaceID) > 0 {
+			visibleSpaces[string(r.SpaceID)] = true
+		}
+	}
+
+	allSpaces, err := st.ListSpaces()
+	if err != nil {
+		return nil, nil, err
+	}
+	var spaces []*models.Space
+	for _, sp := range allSpaces {
+		if visibleSpaces[string(sp.SpaceID)] {
+			spaces = append(spaces, sp)
+		}
+	}
+	return out, spaces, nil
 }
 
 // isRoomStateEvent reports whether an event carries room/space membership state
@@ -105,7 +221,9 @@ func isRoomStateEvent(t cairnv1.EventType) bool {
 	switch t {
 	case cairnv1.EventType_SPACE_CREATE,
 		cairnv1.EventType_ROOM_CREATE,
-		cairnv1.EventType_MEMBER_ADD:
+		cairnv1.EventType_MEMBER_ADD,
+		cairnv1.EventType_SPACE_MEMBER_ADD,
+		cairnv1.EventType_ROOM_JOIN_REQUEST:
 		return true
 	}
 	return false

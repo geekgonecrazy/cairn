@@ -89,6 +89,93 @@ Closes the open question carried in `plan.md` §5 and `PROTOCOL.md` §298. Imple
   error. That is BIP-39's plausible-deniability property; the UI must make the resulting
   "nobody recognizes you" state legible rather than looking like a bug.
 
+### Chain gate: default-deny + founding-window adoption — decided 2026-07-18 (Phase 4)
+
+Closes the ⚠️ item flagged at the Phase-4 identity slice: `core/events.go` verified sender chains
+only when `trustedRoots` was non-empty, and the dev default was empty — so the carrier accepted any
+well-formed signed event and **revocation was advisory** (clients labelled a revoked device; the
+server still took its posts). `identity.VerifySender` (chain walk + expiry + revoke + trusted-root)
+already existed and was tested; the gate was simply off.
+
+**Decision: the carrier is default-deny, and the open question "what does a node that trusts no root
+do" is answered by a founding window, not an open mode.**
+
+- **`SubmitEvent` enforces unconditionally.** A sender must chain to a trusted household root. There
+  is no accept-all mode — a carrier that can't verify a sender refuses the event.
+- **A root-less carrier is *awaiting founding*, not *open*.** It still accepts identity-log objects
+  via `PutIdentityObject` (each is individually signature-verified before storing), and the **first
+  attestation it stores adopts that attestation's origin as its household root** (`MaybeAdoptRoot`),
+  persisted in the `meta` table so it survives restarts. From that instant it enforces. The key
+  insight (per the reframe that drove this): the carrier *knows* whether a household exists yet, so
+  "no root" is a legible bootstrapping state with a defined exit — founding — rather than a hole to
+  leave open.
+- **Config pins skip the window.** If `trustedRoots` is set, adoption is off and the carrier is
+  strict from t=0 against exactly those roots. A pinned carrier never auto-trusts a household it
+  merely met first.
+- **Error taxonomy drives client behaviour.** `ErrAwaitingFounding` and `identity.ErrUnknownObject`
+  → `FailedPrecondition` = RECOVERABLE: the carrier lacks identity objects it can be given, so the
+  client publishes its identity and retries (this is how a founder's first events land — publishing
+  the attestation both adopts the root and supplies the chain). Revoked / untrusted / expired /
+  bad-signature → `PermissionDenied` = TERMINAL: retrying changes nothing. The webapp's `deliver()`
+  republishes-and-retries once on `FailedPrecondition`; a terminal denial stays `queued`.
+
+**TOFU capture, accepted and bounded.** Adopt-first-attestation means whoever founds the carrier
+first owns it. For a home appliance the operator onboards before exposing it, and config pins remove
+the risk entirely for shared/hardened deployments. A stronger bootstrap handshake remains the
+future improvement the milestone anticipated; adoption is the minimal version of it.
+
+**Consequence for multi-household setups.** One carrier adopts one household. The `cmd/agent` demo,
+where an agent and a human are *different* households sharing a room, therefore requires the operator
+to pin **both** roots in `trustedRoots` (adoption is single-household). Standalone tools
+(`cmd/smoke`, a solo agent) found their own household via `identity.SelfHousehold` — a single key
+acting as root+member+device — and self-adopt on a fresh carrier.
+
+Verified end-to-end against a live cairnd: a fresh carrier logs *awaiting founding* and refuses;
+`cmd/smoke` publishes its self-attestation → carrier logs *adopted … now ENFORCING* and the event
+round-trips and verifies; on restart the carrier loads the persisted root and stays enforcing.
+`core/gate_test.go` pins the rejections (pre-founding, revoked, foreign household, unknown link) that
+can't be driven without a browser here.
+
+### Two-tier membership: spaces grant discovery, rooms grant access — decided 2026-07-18 (Phase 4)
+
+Membership was a single tier: a signed `MEMBER_ADD` that HPKE-wraps the room key. You saw only
+rooms you were admitted to, so a newcomer landed on an empty sidebar and could not learn that any
+room existed to ask into (a recorded Phase-4 gap). Spaces existed as a policy record but conferred
+nothing.
+
+**Decision: spaces have their own membership, and it is the discovery tier.**
+
+- `SPACE_MEMBER_ADD` (enum 56) admits a member root to a **space**. It **wraps no key** — it grants
+  the right to *see* the space's discoverable rooms and nothing more. Cheap to give, and it leaks
+  nothing about room contents. Folded into `space_members`, keyed on the member root like room
+  membership, so a member's spaces follow them across devices.
+- `ListRooms` (now `core.VisibleRooms`) returns two tiers: rooms a `MEMBER_ADD` admitted you to
+  (`joined=true`, readable) **plus** the discoverable rooms of every space you belong to
+  (`joined=false`, visible but locked). The client renders unjoined rooms with a lock.
+- **Rooms carry a `visibility`** (`discoverable` | `hidden`, default discoverable). A `hidden` room
+  is returned only to someone a `MEMBER_ADD` actually admitted — space membership never reveals it.
+  This is what lets a DM or a private room live inside the household space without being listed to
+  everyone.
+- **Room membership is NOT a discovery grant.** Being added to one room reveals that room and its
+  space, but not sibling rooms — discovery is a separate, deliberate `SPACE_MEMBER_ADD`. Founding a
+  space makes the founder its first space member; inviting a household member grants them space
+  membership, so they arrive with the household's rooms visible instead of a blank sidebar.
+- **Getting into a discovered room: `ROOM_JOIN_REQUEST` (enum 57).** A discoverer signs an ask into
+  the room DAG carrying their member root; an existing member answers it with the ordinary
+  add-by-key (the only act that can wrap the key). Cleartext epoch 0 — the requester holds no key.
+  "Pending" is derived (request minus roster), so a fulfilled request needs no separate record.
+
+**Why not fold space membership into room membership / auto-reveal siblings.** Auto-revealing every
+room in a space to anyone in one room would make a household's room list leak through a single
+shared channel. Keeping discovery an explicit grant preserves the property that *what you can see is
+always the result of a signed act naming you* — the same principle that killed the `data.ts` phantom
+rooms and `ensureCurrentKey`.
+
+Both new events are cleartext epoch-0 room-state events (like `ROOM_CREATE` / `MEMBER_ADD`): a node
+that is not yet a member must still be able to fold them. `core/rooms_test.go` pins the two-tier
+matrix — founder sees all, a space-only member discovers just the discoverable rooms, a room-only
+member sees no siblings, a stranger sees nothing.
+
 ### Typed identity-log objects and approval artifacts — decided 2026-07-18
 
 Every identity-log object (`identity/`) and portable approval artifact (`approval/`) now carries

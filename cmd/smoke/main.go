@@ -33,6 +33,25 @@ func main() {
 	}
 	room := []byte("smoke-room")
 
+	// The carrier enforces the chain gate: it accepts an event only from a sender
+	// that chains to a trusted household root. As a standalone client, we ARE our
+	// own household of one — publishing our self-attestation founds it on a fresh
+	// carrier (adoption) so our events verify. Skipping this yields PermissionDenied.
+	att, dd, err := identity.SelfHousehold(kp, identity.KindHuman, nil, "smoke", 1)
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, obj := range []any{att, dd} {
+		blob, err := identity.Marshal(obj)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if _, err := client.PutIdentityObject(ctx, connect.NewRequest(&cairnv1.PutIdentityObjectRequest{Cbor: blob})); err != nil {
+			log.Fatalf("PutIdentityObject: %v", err)
+		}
+	}
+	fmt.Printf("founded standalone household %x\n", kp.Pub)
+
 	ev, err := event.Build(kp.Pub, kp.Priv, room, 1, nil, cairnv1.EventType_CHAT, []byte("hello from smoke"))
 	if err != nil {
 		log.Fatal(err)

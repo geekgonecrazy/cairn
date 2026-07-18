@@ -20,6 +20,7 @@
     validateMnemonicPhrase,
   } from '../identity'
   import { attestJoinRequest } from '../vault'
+  import { app } from '../state.svelte'
 
   let { onclose }: { onclose: () => void } = $props()
 
@@ -46,7 +47,7 @@
     }
   }
 
-  function makeInvite() {
+  async function makeInvite() {
     memberError = ''
     inviteOut = ''
     const bad = validateMnemonicPhrase(inviterWords)
@@ -55,10 +56,22 @@
       return
     }
     try {
+      const newcomer = parseJoinRequest(joinCodeIn).memberPub
       inviteOut = attestJoinRequest(inviterWords, inviterPass, joinCodeIn)
       // The words were only needed for this signature; don't leave them around.
       inviterWords = ''
       inviterPass = ''
+      // Grant SPACE membership so the newcomer lands with the household's
+      // discoverable rooms visible (locked) instead of an empty sidebar. This is
+      // discovery only — it wraps no room key, so they still can't read anything
+      // until a room member adds them. Non-fatal if it can't reach the carrier:
+      // the attestation above is the essential artifact; discovery can be granted
+      // again later.
+      try {
+        await app.addSpaceMember(newcomer)
+      } catch {
+        /* carrier unreachable — the invite blob still works; retry discovery later */
+      }
     } catch (e) {
       memberError = e instanceof Error ? e.message : String(e)
     }

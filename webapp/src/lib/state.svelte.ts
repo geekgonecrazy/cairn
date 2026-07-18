@@ -4,7 +4,7 @@
 // events (PROTOCOL.md §4): a message's rendered text = its latest edit; a
 // deletion tombstones it; reactions = the union of each sender's latest set.
 
-import { cairn, subscribe, utf8, hex } from './api'
+import { cairn, subscribe, utf8, hex, needsIdentityPublish } from './api'
 import {
   buildChat,
   buildReaction,
@@ -18,6 +18,8 @@ import {
   buildMemberAdd,
   buildRoomCreate,
   buildSpaceCreate,
+  buildSpaceMemberAdd,
+  buildRoomJoinRequest,
   buildRoomKeyRotate,
   applyKeyEvent,
   openEvent,
@@ -130,6 +132,10 @@ class AppState {
   hasRoomKey = $state(false)
   /** Roster for the current room, folded from member_add events. */
   members = $state<{ pubHex: string; pub: Uint8Array; role: string; mine: boolean }[]>([])
+  /** Pending join requests for the current room, folded from ROOM_JOIN_REQUEST
+   *  and filtered to anyone not yet admitted. Shown to members so they can
+   *  answer with an add. */
+  joinRequests = $state<{ pubHex: string; pub: Uint8Array; reason: string }[]>([])
 
   /** Members seen active within the presence window. */
   online = $derived(
@@ -185,9 +191,19 @@ class AppState {
    * appears immediately.
    */
   private async noteOutOfRoomMembership(ev: Event) {
-    if (ev.type !== EventType.MEMBER_ADD && ev.type !== EventType.ROOM_CREATE) return
     const me = identity.current
     if (!me) return
+
+    // A space_member_add can make new rooms DISCOVERABLE to us (it wraps no key,
+    // so there is nothing to install — just re-list). Refresh unconditionally:
+    // the grant may be about us (new rooms appear) or about someone else in a
+    // space we share (a no-op refresh, cheap).
+    if (ev.type === EventType.SPACE_MEMBER_ADD) {
+      await roomStore.refresh()
+      return
+    }
+
+    if (ev.type !== EventType.MEMBER_ADD && ev.type !== EventType.ROOM_CREATE) return
 
     if (ev.type === EventType.MEMBER_ADD) {
       // applyKeyEvent is a no-op unless this add wrapped a key to our member
@@ -213,6 +229,33 @@ class AppState {
   refreshMembers() {
     this.members = this.foldMembers()
     for (const m of this.members) if (!m.mine) directory.resolveMember(m.pub)
+    this.joinRequests = this.foldJoinRequests()
+    for (const r of this.joinRequests) directory.resolveMember(r.pub)
+  }
+
+  /**
+   * Fold ROOM_JOIN_REQUEST events into the pending-request list, dropping anyone
+   * already admitted. A fulfilled request has no explicit "accepted" record — the
+   * requester simply appears in `members` once someone answers with an add, so we
+   * derive "still pending" by subtracting the roster.
+   */
+  private foldJoinRequests(): { pubHex: string; pub: Uint8Array; reason: string }[] {
+    const admitted = new Set(this.foldMembers().map((m) => m.pubHex))
+    const byKey = new Map<string, { pubHex: string; pub: Uint8Array; reason: string }>()
+    for (const ev of this.events) {
+      if (ev.type !== EventType.ROOM_JOIN_REQUEST) continue
+      try {
+        const obj = cborDecode(ev.payload.subarray(1)) as { member_pub?: Uint8Array; reason?: string }
+        const pub = obj.member_pub
+        if (!pub || pub.length !== 32) continue
+        const pubHex = hex(pub)
+        if (admitted.has(pubHex)) continue // already in — request satisfied
+        byKey.set(pubHex, { pubHex, pub, reason: obj.reason || '' })
+      } catch {
+        /* not a foldable join request */
+      }
+    }
+    return [...byKey.values()]
   }
 
   async selectRoom(id: string) {
@@ -531,7 +574,7 @@ class AppState {
    * The creator is admitted by an explicit signed event rather than inferred
    * from authorship, so membership always has an auditable act behind it.
    */
-  async createRoom(name: string): Promise<string> {
+  async createRoom(name: string, visibility: 'discoverable' | 'hidden' = 'discoverable'): Promise<string> {
     const me = identity.current
     if (!me) throw new Error('create an identity first')
 
@@ -542,16 +585,55 @@ class AppState {
     const spaceId = householdSpaceId(me.householdPub)
     if (!roomStore.spaces.some((sp) => sp.id === spaceId)) {
       await this.deliver(await buildSpaceCreate(spaceId, 'Household'))
+      // Founding the space also makes the founder its first member, so their
+      // sidebar reflects space membership like everyone they later invite — the
+      // discovery tier is not a thing only newcomers have.
+      await this.deliver(await buildSpaceMemberAdd(spaceId, me.memberPub, 'admin'))
     }
 
     const roomId = slugify(name)
-    await this.deliver(await buildRoomCreate(roomId, name.trim() || roomId, spaceId))
+    await this.deliver(await buildRoomCreate(roomId, name.trim() || roomId, spaceId, visibility))
     // Admit ourselves. mintEpoch wraps to the member roots we pass plus our own.
     await this.deliver(await buildMemberAdd(roomId, me.memberPub, 'admin', [], []))
 
     await roomStore.refresh()
     await this.selectRoom(roomId)
     return roomId
+  }
+
+  /**
+   * Grant SPACE membership to a member root — the discovery tier. This is what
+   * an inviter emits so a newcomer lands with the household's discoverable rooms
+   * visible (locked) instead of an empty sidebar. It wraps no key: it does not
+   * grant read access to any room, only the ability to see them and ask in.
+   */
+  async addSpaceMember(memberPub: Uint8Array, role = 'member') {
+    const me = identity.current
+    if (!me) throw new Error('create an identity first')
+    const spaceId = householdSpaceId(me.householdPub)
+    // Found the space on demand if this member is inviting before creating any
+    // room, so the newcomer has a space to be a member of.
+    if (!roomStore.spaces.some((sp) => sp.id === spaceId)) {
+      await this.deliver(await buildSpaceCreate(spaceId, 'Household'))
+      await this.deliver(await buildSpaceMemberAdd(spaceId, me.memberPub, 'admin'))
+    }
+    await this.deliver(await buildSpaceMemberAdd(spaceId, memberPub, role))
+    await roomStore.refresh()
+  }
+
+  /**
+   * Ask to be admitted to the current room — a room we can discover but hold no
+   * key for. Emits a signed ROOM_JOIN_REQUEST an existing member can answer with
+   * an add; it grants nothing by itself.
+   */
+  async requestJoin(reason = '') {
+    const me = identity.current
+    if (!me) throw new Error('create an identity first')
+    if (!this.currentRoomId) return
+    const ev = await buildRoomJoinRequest(this.currentRoomId, me.memberPub, reason, localHeads(this.events))
+    await this.ingest(ev, false)
+    this.rebuild()
+    await this.deliver(ev)
   }
 
   /** Add a member by their MEMBER ROOT pubkey hex: mint a new epoch, wrap to all. */
@@ -587,7 +669,23 @@ class AppState {
     try {
       await cairn.sendEvent({ event: ev })
       if (this.states.get(idHex) === 'sending') this.states.set(idHex, 'sent')
-    } catch {
+    } catch (e) {
+      // The chain gate refuses events whose sender it can't yet verify: a carrier
+      // awaiting founding, or one that hasn't been handed our identity chain. That
+      // is recoverable — publish our identity (which founds the household on a
+      // fresh carrier) and retry once. A terminal rejection (revoked/untrusted)
+      // is NOT retried; it falls through to queued so the state stays honest.
+      if (needsIdentityPublish(e)) {
+        try {
+          await identity.publish()
+          await cairn.sendEvent({ event: ev })
+          if (this.states.get(idHex) === 'sending') this.states.set(idHex, 'sent')
+          this.rebuild()
+          return
+        } catch {
+          /* still refused — fall through to queued */
+        }
+      }
       this.states.set(idHex, 'queued')
     }
     this.rebuild()

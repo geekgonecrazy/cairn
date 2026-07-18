@@ -446,6 +446,12 @@ export async function openEvent(ev: Event): Promise<Decoded | null> {
       return { kind: 'other' }
     }
   }
+  // A join request rides the room DAG in cleartext (the requester holds no key).
+  // Render it as a system line; the actionable surface is the pending-request
+  // list folded separately, not this row.
+  if (ev.type === EventType.ROOM_JOIN_REQUEST) {
+    return { kind: 'system', text: 'asked to join' }
+  }
   try {
     const pt = await open(ev)
 
@@ -724,13 +730,54 @@ export async function buildRoomCreate(
   roomIdStr: string,
   name: string,
   spaceIdStr: string,
+  visibility: 'discoverable' | 'hidden' = 'discoverable',
   parents: Uint8Array[] = [],
 ): Promise<Event> {
   mintInitialRoomKey(roomIdStr)
   return buildCleartext(
     roomIdStr,
     EventType.ROOM_CREATE,
-    { name, space_id: utf8(spaceIdStr) },
+    { name, space_id: utf8(spaceIdStr), visibility },
+    parents,
+  )
+}
+
+/**
+ * Grant SPACE membership — the discovery tier. Unlike buildMemberAdd this wraps
+ * NO key: it only records that a member root belongs to a space, which is what
+ * lets them SEE the space's discoverable rooms. The space is named in room_id,
+ * exactly as buildSpaceCreate names it.
+ */
+export async function buildSpaceMemberAdd(
+  spaceIdStr: string,
+  memberPub: Uint8Array,
+  role: string,
+  parents: Uint8Array[] = [],
+): Promise<Event> {
+  return buildCleartext(
+    spaceIdStr,
+    EventType.SPACE_MEMBER_ADD,
+    { member_pub: memberPub, role },
+    parents,
+  )
+}
+
+/**
+ * Ask to be admitted to a room you can discover but hold no key for. Carries our
+ * own member root so an existing member knows who to wrap the key to; cleartext
+ * (epoch 0) because the requester has no room key to encrypt under. It is an
+ * ask, not an admission — only a member's MEMBER_ADD actually grants access.
+ */
+export async function buildRoomJoinRequest(
+  roomIdStr: string,
+  memberPub: Uint8Array,
+  reason: string,
+  parents: Uint8Array[] = [],
+): Promise<Event> {
+  return buildCleartext(
+    roomIdStr,
+    EventType.ROOM_JOIN_REQUEST,
+    { member_pub: memberPub, reason },
     parents,
   )
 }

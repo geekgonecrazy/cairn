@@ -46,6 +46,15 @@ type Store interface {
 	ListSpaces() ([]*models.Space, error)
 	PutMember(*models.Member) error
 	ListMembers(roomID []byte) ([]*models.Member, error)
+	// Space membership — the discovery tier (no key). SpaceMembershipsFor is the
+	// pubkey-keyed entry point ListRooms uses to decide which spaces' rooms a
+	// caller may see.
+	PutSpaceMember(*models.SpaceMember) error
+	ListSpaceMembers(spaceID []byte) ([]*models.SpaceMember, error)
+	SpaceMembershipsFor(memberPub []byte) ([]*models.SpaceMember, error)
+	// Join requests — a discoverer's ask to be admitted to a room they can see.
+	PutJoinRequest(*models.JoinRequest) error
+	ListJoinRequests(roomID []byte) ([]*models.JoinRequest, error)
 
 	// --- room keys (local, unwrapped) ---
 
@@ -74,4 +83,10 @@ type Store interface {
 
 	PutPeerFrontier(peerPub, roomID []byte, heads [][]byte) error
 	GetPeerFrontier(peerPub, roomID []byte) ([][]byte, error)
+
+	// --- process metadata (small key/value; e.g. the adopted household root) ---
+
+	PutMeta(key, value string) error
+	// GetMeta returns the value and whether the key was present.
+	GetMeta(key string) (string, bool, error)
 }

@@ -7,7 +7,6 @@ package controllers
 // could not re-derive from the bytes alone. Clients re-verify everything.
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -16,7 +15,6 @@ import (
 
 	"github.com/geekgonecrazy/cairn/core"
 	"github.com/geekgonecrazy/cairn/identity"
-	"github.com/geekgonecrazy/cairn/models"
 	cairnv1 "github.com/geekgonecrazy/cairn/proto/cairnv1"
 )
 
@@ -62,6 +60,13 @@ func storeIdentityObject(blob []byte) ([]byte, error) {
 			return nil, errors.New("attestation signature does not verify")
 		}
 		if err := st.PutAttestation(&att); err != nil {
+			return nil, err
+		}
+		// Founding: the first attestation this carrier stores adopts its household
+		// root, closing the default-deny window. att.Origin is proven (its
+		// self-signature was just verified), so this trusts a household, not a
+		// bare claim. No-op once a root is known or when roots were pinned.
+		if err := core.MaybeAdoptRoot(att.Origin); err != nil {
 			return nil, err
 		}
 		return identityHash(&att)
@@ -118,13 +123,19 @@ func identityHash(v any) ([]byte, error) {
 	return h[:], nil
 }
 
-// ListRooms returns the rooms memberPub has been admitted to, plus the spaces
-// containing them.
+// ListRooms returns what memberPub can see, across two tiers:
 //
-// There is no "default" or "public" room: a household starts with none, and a
-// member sees only what a signed MEMBER_ADD put them in. A caller who is in
-// nothing gets an empty list, which the UI renders as an empty sidebar with a
-// create affordance rather than inventing channels.
+//   - Rooms a MEMBER_ADD admitted them to — returned with joined=true. They hold
+//     (or will be wrapped) the key and can read the room.
+//   - The discoverable rooms of every SPACE they are a member of — returned with
+//     joined=false. They can see the room exists but hold no key; getting in
+//     means a ROOM_JOIN_REQUEST an existing member answers with a MEMBER_ADD.
+//
+// A `hidden` room is returned only to someone a MEMBER_ADD actually admitted —
+// space membership alone never reveals it. There is still no "default" or
+// "public" room: a household starts with no spaces and no rooms, so a brand-new
+// member with no space membership gets an empty list, which the UI renders as an
+// empty sidebar rather than inventing channels.
 func (CairnController) ListRooms(
 	_ context.Context,
 	req *connect.Request[cairnv1.ListRoomsRequest],
@@ -134,56 +145,30 @@ func (CairnController) ListRooms(
 		return nil, connect.NewError(connect.CodeInvalidArgument,
 			errors.New("member_pub must be 32 bytes"))
 	}
-	st := core.Store()
 
-	rooms, err := st.ListRooms()
+	rooms, spaces, err := core.VisibleRooms(memberPub)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 
 	out := &cairnv1.ListRoomsResponse{}
-	spaceIDs := map[string]bool{}
-	for _, r := range rooms {
-		members, err := st.ListMembers(r.RoomID)
-		if err != nil {
-			return nil, connect.NewError(connect.CodeInternal, err)
-		}
-		if !containsMember(members, memberPub) {
-			continue // not admitted: the room is not theirs to see
-		}
+	for _, vr := range rooms {
 		out.Rooms = append(out.Rooms, &cairnv1.RoomInfo{
-			RoomId:    r.RoomID,
-			SpaceId:   r.SpaceID,
-			Name:      r.Name,
-			CreatedAt: r.CreatedAt,
+			RoomId:     vr.Room.RoomID,
+			SpaceId:    vr.Room.SpaceID,
+			Name:       vr.Room.Name,
+			CreatedAt:  vr.Room.CreatedAt,
+			Joined:     vr.Joined,
+			Visibility: vr.Room.Visibility,
 		})
-		if len(r.SpaceID) > 0 {
-			spaceIDs[string(r.SpaceID)] = true
-		}
-	}
-
-	spaces, err := st.ListSpaces()
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	for _, sp := range spaces {
-		if spaceIDs[string(sp.SpaceID)] {
-			out.Spaces = append(out.Spaces, &cairnv1.SpaceInfo{
-				SpaceId: sp.SpaceID,
-				Name:    sp.Name,
-			})
-		}
+		out.Spaces = append(out.Spaces, &cairnv1.SpaceInfo{
+			SpaceId: sp.SpaceID,
+			Name:    sp.Name,
+		})
 	}
 	return connect.NewResponse(out), nil
-}
-
-func containsMember(members []*models.Member, memberPub []byte) bool {
-	for _, m := range members {
-		if bytes.Equal(m.MemberPub, memberPub) {
-			return true
-		}
-	}
-	return false
 }
 
 // ResolveSender returns every identity-log object needed to place senderPub,

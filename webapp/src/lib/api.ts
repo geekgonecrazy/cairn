@@ -5,7 +5,7 @@
 // The server is convenience, not authority — the client re-syncs via Sync on
 // every (re)connect, so a dropped SSE frame is never a lost message.
 
-import { createClient, type Client } from '@connectrpc/connect'
+import { createClient, type Client, ConnectError, Code } from '@connectrpc/connect'
 import { createConnectTransport } from '@connectrpc/connect-web'
 import { fromBinary } from '@bufbuild/protobuf'
 import { CairnService, EventSchema, type Event } from '../gen/cairn_pb'
@@ -15,6 +15,23 @@ import { CairnService, EventSchema, type Event } from '../gen/cairn_pb'
 const transport = createConnectTransport({ baseUrl: '' })
 
 export const cairn: Client<typeof CairnService> = createClient(CairnService, transport)
+
+/**
+ * True when the carrier REFUSED an event because it lacks identity objects it can
+ * be given — the household isn't founded on this carrier yet, or a chain link we
+ * haven't pushed. The recovery is to publish our identity and retry (the chain
+ * gate's FailedPrecondition). This is distinct from a TERMINAL denial
+ * (PermissionDenied: revoked / untrusted / expired), which retrying can't fix.
+ */
+export function needsIdentityPublish(e: unknown): boolean {
+  return e instanceof ConnectError && e.code === Code.FailedPrecondition
+}
+
+/** True when the carrier permanently rejected the sender (revoked / untrusted /
+ *  expired). No retry will help; surface it rather than silently queueing. */
+export function isSenderRejected(e: unknown): boolean {
+  return e instanceof ConnectError && e.code === Code.PermissionDenied
+}
 
 /** Open the realtime SSE stream. Calls onEvent for each Event the server pushes. */
 export function subscribe(onEvent: (ev: Event) => void, onOpen?: () => void): () => void {

@@ -60,6 +60,16 @@ const (
 	EventType_SPACE_CREATE    EventType = 53
 	EventType_SPACE_UPDATE    EventType = 54
 	EventType_ROOM_CREATE     EventType = 55
+	// A member root admitted to a SPACE — a discovery grant, not a key handoff.
+	// It wraps no room key: space membership lets you SEE the rooms in a space
+	// (their names and visibility), and nothing more. Reading a room still
+	// requires a MEMBER_ADD that HPKE-wraps the room key to you.
+	EventType_SPACE_MEMBER_ADD EventType = 56
+	// A discoverer asking to be admitted to a room they can see but have no key
+	// for. Carries the requester's member root; an existing room member turns it
+	// into a MEMBER_ADD (the only act that can wrap the key). Cleartext epoch 0 —
+	// the requester holds no room key to encrypt under.
+	EventType_ROOM_JOIN_REQUEST EventType = 57
 	// Identity (live in the household identity log; fetched by hash)
 	EventType_IDENTITY_ATTESTATION EventType = 60
 	EventType_DEVICE_DELEGATION    EventType = 61
@@ -99,6 +109,8 @@ var (
 		53: "SPACE_CREATE",
 		54: "SPACE_UPDATE",
 		55: "ROOM_CREATE",
+		56: "SPACE_MEMBER_ADD",
+		57: "ROOM_JOIN_REQUEST",
 		60: "IDENTITY_ATTESTATION",
 		61: "DEVICE_DELEGATION",
 		62: "DEVICE_REVOKE",
@@ -134,6 +146,8 @@ var (
 		"SPACE_CREATE":           53,
 		"SPACE_UPDATE":           54,
 		"ROOM_CREATE":            55,
+		"SPACE_MEMBER_ADD":       56,
+		"ROOM_JOIN_REQUEST":      57,
 		"IDENTITY_ATTESTATION":   60,
 		"DEVICE_DELEGATION":      61,
 		"DEVICE_REVOKE":          62,
@@ -848,14 +862,23 @@ func (x *PutIdentityObjectResponse) GetHash() []byte {
 // trip: session delegation (if any), device delegation, attestation, and any
 // revoke. Each object is independently signed, so the client verifies them
 // itself and the server stays untrusted.
-// A room/space the caller is a member of. Rooms are NOT pre-seeded: a household
-// starts empty and every room exists because someone created it (ROOM_CREATE).
+// A room the caller can see. Rooms are NOT pre-seeded: a household starts empty
+// and every room exists because someone created it (ROOM_CREATE).
+//
+// `joined` distinguishes the two tiers the caller might have: a joined room is
+// one a MEMBER_ADD wrapped the key to (readable), while an unjoined room is one
+// the caller can only DISCOVER through space membership — it appears in the
+// sidebar locked, and getting in means a ROOM_JOIN_REQUEST an existing member
+// answers. `visibility` is the room's own setting: `discoverable` rooms show to
+// every space member, `hidden` rooms show only to those a MEMBER_ADD admitted.
 type RoomInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RoomId        []byte                 `protobuf:"bytes,1,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
 	SpaceId       []byte                 `protobuf:"bytes,2,opt,name=space_id,json=spaceId,proto3" json:"space_id,omitempty"`
 	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
 	CreatedAt     int64                  `protobuf:"varint,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	Joined        bool                   `protobuf:"varint,5,opt,name=joined,proto3" json:"joined,omitempty"`
+	Visibility    string                 `protobuf:"bytes,6,opt,name=visibility,proto3" json:"visibility,omitempty"` // "discoverable" | "hidden"
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -918,6 +941,20 @@ func (x *RoomInfo) GetCreatedAt() int64 {
 	return 0
 }
 
+func (x *RoomInfo) GetJoined() bool {
+	if x != nil {
+		return x.Joined
+	}
+	return false
+}
+
+func (x *RoomInfo) GetVisibility() string {
+	if x != nil {
+		return x.Visibility
+	}
+	return ""
+}
+
 type SpaceInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SpaceId       []byte                 `protobuf:"bytes,1,opt,name=space_id,json=spaceId,proto3" json:"space_id,omitempty"`
@@ -970,8 +1007,9 @@ func (x *SpaceInfo) GetName() string {
 	return ""
 }
 
-// Rooms visible to member_pub — i.e. rooms it has been admitted to. Membership
-// is a property of the MEMBER ROOT, not a device or session key.
+// Rooms visible to member_pub: every room it was admitted to (joined), plus the
+// discoverable rooms of every space it is a member of (unjoined). Visibility is
+// a property of the MEMBER ROOT, not a device or session key.
 type ListRoomsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	MemberPub     []byte                 `protobuf:"bytes,1,opt,name=member_pub,json=memberPub,proto3" json:"member_pub,omitempty"`
@@ -1222,13 +1260,17 @@ const file_cairn_proto_rawDesc = "" +
 	"\x18PutIdentityObjectRequest\x12\x12\n" +
 	"\x04cbor\x18\x01 \x01(\fR\x04cbor\"/\n" +
 	"\x19PutIdentityObjectResponse\x12\x12\n" +
-	"\x04hash\x18\x01 \x01(\fR\x04hash\"q\n" +
+	"\x04hash\x18\x01 \x01(\fR\x04hash\"\xa9\x01\n" +
 	"\bRoomInfo\x12\x17\n" +
 	"\aroom_id\x18\x01 \x01(\fR\x06roomId\x12\x19\n" +
 	"\bspace_id\x18\x02 \x01(\fR\aspaceId\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\x04 \x01(\x03R\tcreatedAt\":\n" +
+	"created_at\x18\x04 \x01(\x03R\tcreatedAt\x12\x16\n" +
+	"\x06joined\x18\x05 \x01(\bR\x06joined\x12\x1e\n" +
+	"\n" +
+	"visibility\x18\x06 \x01(\tR\n" +
+	"visibility\":\n" +
 	"\tSpaceInfo\x12\x19\n" +
 	"\bspace_id\x18\x01 \x01(\fR\aspaceId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"1\n" +
@@ -1245,7 +1287,7 @@ const file_cairn_proto_rawDesc = "" +
 	"\x12session_delegation\x18\x01 \x01(\fR\x11sessionDelegation\x12+\n" +
 	"\x11device_delegation\x18\x02 \x01(\fR\x10deviceDelegation\x12 \n" +
 	"\vattestation\x18\x03 \x01(\fR\vattestation\x12#\n" +
-	"\rdevice_revoke\x18\x04 \x01(\fR\fdeviceRevoke*\xcc\x04\n" +
+	"\rdevice_revoke\x18\x04 \x01(\fR\fdeviceRevoke*\xf9\x04\n" +
 	"\tEventType\x12\x1a\n" +
 	"\x16EVENT_TYPE_UNSPECIFIED\x10\x00\x12\b\n" +
 	"\x04CHAT\x10\x01\x12\f\n" +
@@ -1280,7 +1322,9 @@ const file_cairn_proto_rawDesc = "" +
 	"\x0fROOM_KEY_ROTATE\x104\x12\x10\n" +
 	"\fSPACE_CREATE\x105\x12\x10\n" +
 	"\fSPACE_UPDATE\x106\x12\x0f\n" +
-	"\vROOM_CREATE\x107\x12\x18\n" +
+	"\vROOM_CREATE\x107\x12\x14\n" +
+	"\x10SPACE_MEMBER_ADD\x108\x12\x15\n" +
+	"\x11ROOM_JOIN_REQUEST\x109\x12\x18\n" +
 	"\x14IDENTITY_ATTESTATION\x10<\x12\x15\n" +
 	"\x11DEVICE_DELEGATION\x10=\x12\x11\n" +
 	"\rDEVICE_REVOKE\x10>*\x90\x01\n" +

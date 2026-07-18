@@ -8,6 +8,7 @@
   let query = $state('')
   let creating = $state(false)
   let newName = $state('')
+  let newHidden = $state(false)
   let createError = $state('')
 
   const space = $derived(roomStore.spaces[0])
@@ -24,8 +25,9 @@
     const name = newName.trim()
     if (!name) return
     try {
-      await app.createRoom(name)
+      await app.createRoom(name, newHidden ? 'hidden' : 'discoverable')
       newName = ''
+      newHidden = false
       creating = false
       ui.closeNav()
     } catch (e) {
@@ -67,6 +69,10 @@
       />
       <button class="go" onclick={create} disabled={!newName.trim()}>Create</button>
     </div>
+    <label class="hidden-opt" title="Hidden rooms don't show to space members until they're added">
+      <input type="checkbox" bind:checked={newHidden} />
+      <span>Hidden — only invited members can see it</span>
+    </label>
     {#if createError}<p class="err" role="alert">{createError}</p>{/if}
   {/if}
 
@@ -74,11 +80,16 @@
     {#each rooms as r (r.id)}
       <button
         class="room-item"
+        class:discoverable={!r.joined}
         aria-current={app.currentRoomId === r.id}
         onclick={() => { app.selectRoom(r.id); ui.closeNav() }}
+        title={r.joined ? r.name : `${r.name} — you can see this room but haven't joined it`}
       >
         <span class="glyph"><Icon name="hash" size={14} /></span>
         <span class="name">{r.name}</span>
+        {#if !r.joined}
+          <span class="lock" aria-label="not joined"><Icon name="lock" size={12} /></span>
+        {/if}
       </button>
     {/each}
 
@@ -146,6 +157,16 @@
     cursor: pointer;
   }
   .create .go:disabled { opacity: 0.5; cursor: default; }
+  .hidden-opt {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin: 0 10px 8px;
+    font-size: 12px;
+    color: var(--text-3);
+    cursor: pointer;
+  }
+  .hidden-opt input { width: 14px; height: 14px; accent-color: var(--accent, #2563eb); }
   .err { margin: 0 10px 8px; font-size: 12px; color: var(--danger, #dc2626); }
   .empty {
     margin: 10px;
@@ -210,6 +231,11 @@
     margin-bottom: 1px;
   }
   .room-item:hover { background: var(--surface-3); color: var(--text); }
+  /* A discoverable room the member hasn't joined: visible but muted, with a lock
+     in the trailing column. It reads as "you can see this, but you're not in". */
+  .room-item.discoverable { color: var(--text-3); }
+  .room-item.discoverable .glyph { opacity: 0.6; }
+  .lock { color: var(--text-4); display: grid; place-items: center; }
   .room-item[aria-current='true'] {
     background: var(--surface);
     color: var(--text);

@@ -21,6 +21,11 @@ export interface Room {
   kind: RoomKind
   spaceId: string
   createdAt: number
+  /** True when a MEMBER_ADD wrapped the room key to us — we can read it. False
+   *  for a room we can only DISCOVER through space membership (shown locked). */
+  joined: boolean
+  /** "discoverable" (visible to all space members) | "hidden" (members only). */
+  visibility: string
 }
 
 export interface Space {
@@ -76,6 +81,8 @@ class RoomStore {
         kind: 'room' as RoomKind,
         spaceId: dec.decode(r.spaceId),
         createdAt: Number(r.createdAt),
+        joined: r.joined,
+        visibility: r.visibility || 'discoverable',
       }))
       this.spaces = res.spaces.map((s) => ({
         id: dec.decode(s.spaceId),

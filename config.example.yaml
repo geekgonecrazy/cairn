@@ -23,9 +23,19 @@ blobDir: "cairn-blobs"
 
 # Hex-encoded household root public keys this node recognizes.
 #
-# EMPTY (the default) means no identity gate: any well-formed, correctly signed
-# event is accepted. That is fine for development. Once you list roots here,
-# every sender must chain back to one of them
-# (session key → device key → member root → household root) or be rejected.
+# The chain gate is DEFAULT-DENY: every sender must chain back to a trusted root
+# (session key → device key → member root → household root) or its events are
+# rejected.
+#
+# EMPTY (the default) does NOT mean "open". It means the carrier is *awaiting
+# founding*: it refuses events until it stores its first attestation, which
+# ADOPTS that household as its root (persisted; survives restart). From then on
+# it enforces. This is the zero-config single-household path — the founder's
+# browser founds it automatically.
+#
+# LIST roots here to pin them: adoption is disabled and the carrier is strict
+# from the first event against exactly these roots. Needed when one carrier
+# serves more than one household (e.g. the cmd/agent demo: pin both the agent's
+# key and the human's household root).
 trustedRoots: []
 #   - "3f1a...."

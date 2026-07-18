@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS room_heads (
 
 CREATE TABLE IF NOT EXISTS rooms (
   room_id BLOB PRIMARY KEY, space_id BLOB, name TEXT,
-  transport_pref TEXT, created_at INTEGER
+  transport_pref TEXT, created_at INTEGER, visibility TEXT
 );
 CREATE TABLE IF NOT EXISTS spaces (
   space_id BLOB PRIMARY KEY, name TEXT,
@@ -78,6 +78,18 @@ CREATE TABLE IF NOT EXISTS spaces (
 );
 CREATE TABLE IF NOT EXISTS members (
   room_id BLOB, member_pub BLOB, role TEXT, added_event BLOB,
+  PRIMARY KEY (room_id, member_pub)
+);
+-- Space membership is the discovery tier: no key, just the right to see a
+-- space's discoverable rooms. Keyed on the member root like room membership.
+CREATE TABLE IF NOT EXISTS space_members (
+  space_id BLOB, member_pub BLOB, role TEXT, added_event BLOB,
+  PRIMARY KEY (space_id, member_pub)
+);
+-- Pending asks from discoverers who can see a room but hold no key. Folded from
+-- ROOM_JOIN_REQUEST; satisfied (implicitly) once the requester joins members.
+CREATE TABLE IF NOT EXISTS join_requests (
+  room_id BLOB, member_pub BLOB, reason TEXT, request_event BLOB, requested_at INTEGER,
   PRIMARY KEY (room_id, member_pub)
 );
 

@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file cairn.proto.
  */
 export const file_cairn: GenFile = /*@__PURE__*/
-  fileDesc("CgtjYWlybi5wcm90bxIIY2Fpcm4udjEisQEKBUV2ZW50EhAKCGV2ZW50X2lkGAEgASgMEhIKCnNlbmRlcl9wdWIYAiABKAwSDwoHcm9vbV9pZBgDIAEoDBIKCgJ0cxgEIAEoAxIPCgdwYXJlbnRzGAUgAygMEiEKBHR5cGUYBiABKA4yEy5jYWlybi52MS5FdmVudFR5cGUSDwoHcGF5bG9hZBgHIAEoDBILCgNzaWcYCCABKAwSEwoLYXJyaXZlZF92aWEYDyABKAkiWQoQU2VuZEV2ZW50UmVxdWVzdBIeCgVldmVudBgBIAEoCzIPLmNhaXJuLnYxLkV2ZW50EiUKBGhpbnQYAiABKA4yFy5jYWlybi52MS5UcmFuc3BvcnRIaW50IiUKEVNlbmRFdmVudFJlc3BvbnNlEhAKCGV2ZW50X2lkGAEgASgMIjIKC1N5bmNSZXF1ZXN0Eg8KB3Jvb21faWQYASABKAwSEgoKaGF2ZV9oZWFkcxgCIAMoDCI/CgxTeW5jUmVzcG9uc2USIAoHbWlzc2luZxgBIAMoCzIPLmNhaXJuLnYxLkV2ZW50Eg0KBWhlYWRzGAIgAygMIkAKDkhpc3RvcnlSZXF1ZXN0Eg8KB3Jvb21faWQYASABKAwSDgoGYmVmb3JlGAIgASgMEg0KBWxpbWl0GAMgASgNIjIKD0hpc3RvcnlSZXNwb25zZRIfCgZldmVudHMYASADKAsyDy5jYWlybi52MS5FdmVudCIoChhHZXRJZGVudGl0eU9iamVjdFJlcXVlc3QSDAoEaGFzaBgBIAEoDCIpChlHZXRJZGVudGl0eU9iamVjdFJlc3BvbnNlEgwKBGNib3IYASABKAwiKAoYUHV0SWRlbnRpdHlPYmplY3RSZXF1ZXN0EgwKBGNib3IYASABKAwiKQoZUHV0SWRlbnRpdHlPYmplY3RSZXNwb25zZRIMCgRoYXNoGAEgASgMIk8KCFJvb21JbmZvEg8KB3Jvb21faWQYASABKAwSEAoIc3BhY2VfaWQYAiABKAwSDAoEbmFtZRgDIAEoCRISCgpjcmVhdGVkX2F0GAQgASgDIisKCVNwYWNlSW5mbxIQCghzcGFjZV9pZBgBIAEoDBIMCgRuYW1lGAIgASgJIiYKEExpc3RSb29tc1JlcXVlc3QSEgoKbWVtYmVyX3B1YhgBIAEoDCJbChFMaXN0Um9vbXNSZXNwb25zZRIhCgVyb29tcxgBIAMoCzISLmNhaXJuLnYxLlJvb21JbmZvEiMKBnNwYWNlcxgCIAMoCzITLmNhaXJuLnYxLlNwYWNlSW5mbyIqChRSZXNvbHZlU2VuZGVyUmVxdWVzdBISCgpzZW5kZXJfcHViGAEgASgMInoKFVJlc29sdmVTZW5kZXJSZXNwb25zZRIaChJzZXNzaW9uX2RlbGVnYXRpb24YASABKAwSGQoRZGV2aWNlX2RlbGVnYXRpb24YAiABKAwSEwoLYXR0ZXN0YXRpb24YAyABKAwSFQoNZGV2aWNlX3Jldm9rZRgEIAEoDCrMBAoJRXZlbnRUeXBlEhoKFkVWRU5UX1RZUEVfVU5TUEVDSUZJRUQQABIICgRDSEFUEAESDAoIRklMRV9SRUYQAhIMCghQUkVTRU5DRRADEgwKCFJFQUNUSU9OEAQSCAoERURJVBAFEgoKBkRFTEVURRAGEhAKDFRBU0tfUkVRVUVTVBAKEg8KC1RBU0tfVVBEQVRFEAsSCgoGTk9USUZZEAwSCwoHQ09NTUFORBANEhQKEEFQUFJPVkFMX1JFUVVFU1QQFBISCg5BUFBST1ZBTF9HUkFOVBAVEhEKDUFQUFJPVkFMX0RFTlkQFhIVChFDUkVERU5USUFMX01JTlRFRBAXEgkKBUlOTEFZEB4SEAoMSU5MQVlfVVBEQVRFEB8SDwoLSU5MQVlfVU5QSU4QIBIPCgtJTlRFUkFDVElPThAhEhMKD1NJR05BTElOR19PRkZFUhAoEhQKEFNJR05BTElOR19BTlNXRVIQKRIRCg1TSUdOQUxJTkdfSUNFECoSDQoJQ0FMTF9SSU5HECsSDAoIQ0FMTF9CWUUQLBIOCgpNRU1CRVJfQUREEDISEQoNTUVNQkVSX1JFTU9WRRAzEhMKD1JPT01fS0VZX1JPVEFURRA0EhAKDFNQQUNFX0NSRUFURRA1EhAKDFNQQUNFX1VQREFURRA2Eg8KC1JPT01fQ1JFQVRFEDcSGAoUSURFTlRJVFlfQVRURVNUQVRJT04QPBIVChFERVZJQ0VfREVMRUdBVElPThA9EhEKDURFVklDRV9SRVZPS0UQPiqQAQoNVHJhbnNwb3J0SGludBIeChpUUkFOU1BPUlRfSElOVF9VTlNQRUNJRklFRBAAEhYKElRSQU5TUE9SVF9ISU5UX0xBThABEhcKE1RSQU5TUE9SVF9ISU5UX01FU0gQAhIWChJUUkFOU1BPUlRfSElOVF9CTEUQAxIWChJUUkFOU1BPUlRfSElOVF9BTEwQBDKfBAoMQ2Fpcm5TZXJ2aWNlEkQKCVNlbmRFdmVudBIaLmNhaXJuLnYxLlNlbmRFdmVudFJlcXVlc3QaGy5jYWlybi52MS5TZW5kRXZlbnRSZXNwb25zZRI1CgRTeW5jEhUuY2Fpcm4udjEuU3luY1JlcXVlc3QaFi5jYWlybi52MS5TeW5jUmVzcG9uc2USPgoHSGlzdG9yeRIYLmNhaXJuLnYxLkhpc3RvcnlSZXF1ZXN0GhkuY2Fpcm4udjEuSGlzdG9yeVJlc3BvbnNlElwKEUdldElkZW50aXR5T2JqZWN0EiIuY2Fpcm4udjEuR2V0SWRlbnRpdHlPYmplY3RSZXF1ZXN0GiMuY2Fpcm4udjEuR2V0SWRlbnRpdHlPYmplY3RSZXNwb25zZRJcChFQdXRJZGVudGl0eU9iamVjdBIiLmNhaXJuLnYxLlB1dElkZW50aXR5T2JqZWN0UmVxdWVzdBojLmNhaXJuLnYxLlB1dElkZW50aXR5T2JqZWN0UmVzcG9uc2USUAoNUmVzb2x2ZVNlbmRlchIeLmNhaXJuLnYxLlJlc29sdmVTZW5kZXJSZXF1ZXN0Gh8uY2Fpcm4udjEuUmVzb2x2ZVNlbmRlclJlc3BvbnNlEkQKCUxpc3RSb29tcxIaLmNhaXJuLnYxLkxpc3RSb29tc1JlcXVlc3QaGy5jYWlybi52MS5MaXN0Um9vbXNSZXNwb25zZUI2WjRnaXRodWIuY29tL2dlZWtnb25lY3JhenkvY2Fpcm4vcHJvdG8vY2Fpcm52MTtjYWlybnYxYgZwcm90bzM");
+  fileDesc("CgtjYWlybi5wcm90bxIIY2Fpcm4udjEisQEKBUV2ZW50EhAKCGV2ZW50X2lkGAEgASgMEhIKCnNlbmRlcl9wdWIYAiABKAwSDwoHcm9vbV9pZBgDIAEoDBIKCgJ0cxgEIAEoAxIPCgdwYXJlbnRzGAUgAygMEiEKBHR5cGUYBiABKA4yEy5jYWlybi52MS5FdmVudFR5cGUSDwoHcGF5bG9hZBgHIAEoDBILCgNzaWcYCCABKAwSEwoLYXJyaXZlZF92aWEYDyABKAkiWQoQU2VuZEV2ZW50UmVxdWVzdBIeCgVldmVudBgBIAEoCzIPLmNhaXJuLnYxLkV2ZW50EiUKBGhpbnQYAiABKA4yFy5jYWlybi52MS5UcmFuc3BvcnRIaW50IiUKEVNlbmRFdmVudFJlc3BvbnNlEhAKCGV2ZW50X2lkGAEgASgMIjIKC1N5bmNSZXF1ZXN0Eg8KB3Jvb21faWQYASABKAwSEgoKaGF2ZV9oZWFkcxgCIAMoDCI/CgxTeW5jUmVzcG9uc2USIAoHbWlzc2luZxgBIAMoCzIPLmNhaXJuLnYxLkV2ZW50Eg0KBWhlYWRzGAIgAygMIkAKDkhpc3RvcnlSZXF1ZXN0Eg8KB3Jvb21faWQYASABKAwSDgoGYmVmb3JlGAIgASgMEg0KBWxpbWl0GAMgASgNIjIKD0hpc3RvcnlSZXNwb25zZRIfCgZldmVudHMYASADKAsyDy5jYWlybi52MS5FdmVudCIoChhHZXRJZGVudGl0eU9iamVjdFJlcXVlc3QSDAoEaGFzaBgBIAEoDCIpChlHZXRJZGVudGl0eU9iamVjdFJlc3BvbnNlEgwKBGNib3IYASABKAwiKAoYUHV0SWRlbnRpdHlPYmplY3RSZXF1ZXN0EgwKBGNib3IYASABKAwiKQoZUHV0SWRlbnRpdHlPYmplY3RSZXNwb25zZRIMCgRoYXNoGAEgASgMInMKCFJvb21JbmZvEg8KB3Jvb21faWQYASABKAwSEAoIc3BhY2VfaWQYAiABKAwSDAoEbmFtZRgDIAEoCRISCgpjcmVhdGVkX2F0GAQgASgDEg4KBmpvaW5lZBgFIAEoCBISCgp2aXNpYmlsaXR5GAYgASgJIisKCVNwYWNlSW5mbxIQCghzcGFjZV9pZBgBIAEoDBIMCgRuYW1lGAIgASgJIiYKEExpc3RSb29tc1JlcXVlc3QSEgoKbWVtYmVyX3B1YhgBIAEoDCJbChFMaXN0Um9vbXNSZXNwb25zZRIhCgVyb29tcxgBIAMoCzISLmNhaXJuLnYxLlJvb21JbmZvEiMKBnNwYWNlcxgCIAMoCzITLmNhaXJuLnYxLlNwYWNlSW5mbyIqChRSZXNvbHZlU2VuZGVyUmVxdWVzdBISCgpzZW5kZXJfcHViGAEgASgMInoKFVJlc29sdmVTZW5kZXJSZXNwb25zZRIaChJzZXNzaW9uX2RlbGVnYXRpb24YASABKAwSGQoRZGV2aWNlX2RlbGVnYXRpb24YAiABKAwSEwoLYXR0ZXN0YXRpb24YAyABKAwSFQoNZGV2aWNlX3Jldm9rZRgEIAEoDCr5BAoJRXZlbnRUeXBlEhoKFkVWRU5UX1RZUEVfVU5TUEVDSUZJRUQQABIICgRDSEFUEAESDAoIRklMRV9SRUYQAhIMCghQUkVTRU5DRRADEgwKCFJFQUNUSU9OEAQSCAoERURJVBAFEgoKBkRFTEVURRAGEhAKDFRBU0tfUkVRVUVTVBAKEg8KC1RBU0tfVVBEQVRFEAsSCgoGTk9USUZZEAwSCwoHQ09NTUFORBANEhQKEEFQUFJPVkFMX1JFUVVFU1QQFBISCg5BUFBST1ZBTF9HUkFOVBAVEhEKDUFQUFJPVkFMX0RFTlkQFhIVChFDUkVERU5USUFMX01JTlRFRBAXEgkKBUlOTEFZEB4SEAoMSU5MQVlfVVBEQVRFEB8SDwoLSU5MQVlfVU5QSU4QIBIPCgtJTlRFUkFDVElPThAhEhMKD1NJR05BTElOR19PRkZFUhAoEhQKEFNJR05BTElOR19BTlNXRVIQKRIRCg1TSUdOQUxJTkdfSUNFECoSDQoJQ0FMTF9SSU5HECsSDAoIQ0FMTF9CWUUQLBIOCgpNRU1CRVJfQUREEDISEQoNTUVNQkVSX1JFTU9WRRAzEhMKD1JPT01fS0VZX1JPVEFURRA0EhAKDFNQQUNFX0NSRUFURRA1EhAKDFNQQUNFX1VQREFURRA2Eg8KC1JPT01fQ1JFQVRFEDcSFAoQU1BBQ0VfTUVNQkVSX0FERBA4EhUKEVJPT01fSk9JTl9SRVFVRVNUEDkSGAoUSURFTlRJVFlfQVRURVNUQVRJT04QPBIVChFERVZJQ0VfREVMRUdBVElPThA9EhEKDURFVklDRV9SRVZPS0UQPiqQAQoNVHJhbnNwb3J0SGludBIeChpUUkFOU1BPUlRfSElOVF9VTlNQRUNJRklFRBAAEhYKElRSQU5TUE9SVF9ISU5UX0xBThABEhcKE1RSQU5TUE9SVF9ISU5UX01FU0gQAhIWChJUUkFOU1BPUlRfSElOVF9CTEUQAxIWChJUUkFOU1BPUlRfSElOVF9BTEwQBDKfBAoMQ2Fpcm5TZXJ2aWNlEkQKCVNlbmRFdmVudBIaLmNhaXJuLnYxLlNlbmRFdmVudFJlcXVlc3QaGy5jYWlybi52MS5TZW5kRXZlbnRSZXNwb25zZRI1CgRTeW5jEhUuY2Fpcm4udjEuU3luY1JlcXVlc3QaFi5jYWlybi52MS5TeW5jUmVzcG9uc2USPgoHSGlzdG9yeRIYLmNhaXJuLnYxLkhpc3RvcnlSZXF1ZXN0GhkuY2Fpcm4udjEuSGlzdG9yeVJlc3BvbnNlElwKEUdldElkZW50aXR5T2JqZWN0EiIuY2Fpcm4udjEuR2V0SWRlbnRpdHlPYmplY3RSZXF1ZXN0GiMuY2Fpcm4udjEuR2V0SWRlbnRpdHlPYmplY3RSZXNwb25zZRJcChFQdXRJZGVudGl0eU9iamVjdBIiLmNhaXJuLnYxLlB1dElkZW50aXR5T2JqZWN0UmVxdWVzdBojLmNhaXJuLnYxLlB1dElkZW50aXR5T2JqZWN0UmVzcG9uc2USUAoNUmVzb2x2ZVNlbmRlchIeLmNhaXJuLnYxLlJlc29sdmVTZW5kZXJSZXF1ZXN0Gh8uY2Fpcm4udjEuUmVzb2x2ZVNlbmRlclJlc3BvbnNlEkQKCUxpc3RSb29tcxIaLmNhaXJuLnYxLkxpc3RSb29tc1JlcXVlc3QaGy5jYWlybi52MS5MaXN0Um9vbXNSZXNwb25zZUI2WjRnaXRodWIuY29tL2dlZWtnb25lY3JhenkvY2Fpcm4vcHJvdG8vY2Fpcm52MTtjYWlybnYxYgZwcm90bzM");
 
 /**
  * @generated from message cairn.v1.Event
@@ -318,8 +318,15 @@ export const PutIdentityObjectResponseSchema: GenMessage<PutIdentityObjectRespon
  * trip: session delegation (if any), device delegation, attestation, and any
  * revoke. Each object is independently signed, so the client verifies them
  * itself and the server stays untrusted.
- * A room/space the caller is a member of. Rooms are NOT pre-seeded: a household
- * starts empty and every room exists because someone created it (ROOM_CREATE).
+ * A room the caller can see. Rooms are NOT pre-seeded: a household starts empty
+ * and every room exists because someone created it (ROOM_CREATE).
+ *
+ * `joined` distinguishes the two tiers the caller might have: a joined room is
+ * one a MEMBER_ADD wrapped the key to (readable), while an unjoined room is one
+ * the caller can only DISCOVER through space membership — it appears in the
+ * sidebar locked, and getting in means a ROOM_JOIN_REQUEST an existing member
+ * answers. `visibility` is the room's own setting: `discoverable` rooms show to
+ * every space member, `hidden` rooms show only to those a MEMBER_ADD admitted.
  *
  * @generated from message cairn.v1.RoomInfo
  */
@@ -343,6 +350,18 @@ export type RoomInfo = Message<"cairn.v1.RoomInfo"> & {
    * @generated from field: int64 created_at = 4;
    */
   createdAt: bigint;
+
+  /**
+   * @generated from field: bool joined = 5;
+   */
+  joined: boolean;
+
+  /**
+   * "discoverable" | "hidden"
+   *
+   * @generated from field: string visibility = 6;
+   */
+  visibility: string;
 };
 
 /**
@@ -375,8 +394,9 @@ export const SpaceInfoSchema: GenMessage<SpaceInfo> = /*@__PURE__*/
   messageDesc(file_cairn, 12);
 
 /**
- * Rooms visible to member_pub — i.e. rooms it has been admitted to. Membership
- * is a property of the MEMBER ROOT, not a device or session key.
+ * Rooms visible to member_pub: every room it was admitted to (joined), plus the
+ * discoverable rooms of every space it is a member of (unjoined). Visibility is
+ * a property of the MEMBER ROOT, not a device or session key.
  *
  * @generated from message cairn.v1.ListRoomsRequest
  */
@@ -638,6 +658,26 @@ export enum EventType {
    * @generated from enum value: ROOM_CREATE = 55;
    */
   ROOM_CREATE = 55,
+
+  /**
+   * A member root admitted to a SPACE — a discovery grant, not a key handoff.
+   * It wraps no room key: space membership lets you SEE the rooms in a space
+   * (their names and visibility), and nothing more. Reading a room still
+   * requires a MEMBER_ADD that HPKE-wraps the room key to you.
+   *
+   * @generated from enum value: SPACE_MEMBER_ADD = 56;
+   */
+  SPACE_MEMBER_ADD = 56,
+
+  /**
+   * A discoverer asking to be admitted to a room they can see but have no key
+   * for. Carries the requester's member root; an existing room member turns it
+   * into a MEMBER_ADD (the only act that can wrap the key). Cleartext epoch 0 —
+   * the requester holds no room key to encrypt under.
+   *
+   * @generated from enum value: ROOM_JOIN_REQUEST = 57;
+   */
+  ROOM_JOIN_REQUEST = 57,
 
   /**
    * Identity (live in the household identity log; fetched by hash)

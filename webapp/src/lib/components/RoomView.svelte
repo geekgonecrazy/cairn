@@ -9,6 +9,8 @@
   import { app } from '../state.svelte'
   import { ui } from '../ui.svelte'
   import { roomStore } from '../rooms.svelte'
+  import { identity } from '../identity.svelte'
+  import { hex } from '../api'
 
 
   const room = $derived(roomStore.find(app.currentRoomId))
@@ -17,7 +19,22 @@
   // Reads app.hasRoomKey (reactive) rather than localStorage directly, so a key
   // arriving via member_add re-enables the composer without a reload.
   const canPost = $derived(app.hasRoomKey)
+  // A discoverable room we can see but haven't joined — we can ask in, versus a
+  // room we belong to but hold no key for (an edge state: wait for the wrap).
+  const discoverable = $derived(!!room && !room.joined)
+  const myHex = $derived(identity.current ? hex(identity.current.memberPub) : '')
+  const alreadyRequested = $derived(app.joinRequests.some((r) => r.pubHex === myHex))
+  let requesting = $state(false)
   let showMembers = $state(false)
+
+  async function requestJoin() {
+    requesting = true
+    try {
+      await app.requestJoin()
+    } finally {
+      requesting = false
+    }
+  }
 </script>
 
 <section class="room">
@@ -69,11 +86,26 @@
            Never silently mint one — that is what produced phantom rooms. -->
       <div class="empty">
         <div class="empty-mark"><Icon name="lock" size={22} /></div>
-        <h2>You're not a member of this room</h2>
-        <p>
-          You don't hold a key for it, so its messages stay unreadable and you can't post.
-          Someone already in the room has to add your member key.
-        </p>
+        {#if discoverable}
+          <h2>You can see this room, but you're not in it</h2>
+          <p>
+            It's discoverable through your space, so you know it exists — but you hold no key,
+            so its messages stay unreadable. Ask to join and an existing member can add you.
+          </p>
+          {#if alreadyRequested}
+            <p class="muted">Request sent. A member of the room can now add your key.</p>
+          {:else}
+            <button class="join-btn" onclick={requestJoin} disabled={requesting}>
+              {requesting ? 'Sending…' : 'Ask to join'}
+            </button>
+          {/if}
+        {:else}
+          <h2>You're not a member of this room</h2>
+          <p>
+            You don't hold a key for it, so its messages stay unreadable and you can't post.
+            Someone already in the room has to add your member key.
+          </p>
+        {/if}
       </div>
     {:else if app.messages.length === 0}
       <div class="empty">
@@ -187,4 +219,17 @@
   .empty h2 { margin: 0 0 8px; font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
   .empty p { margin: 0 0 8px; color: var(--text-2); line-height: 1.6; }
   .empty .muted { font-family: var(--font-mono); font-size: 12px; color: var(--text-3); }
+  .join-btn {
+    margin-top: 6px;
+    padding: 9px 16px;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    border: 0;
+    border-radius: 8px;
+    background: var(--accent, #2563eb);
+    color: #fff;
+    cursor: pointer;
+  }
+  .join-btn:disabled { opacity: 0.6; cursor: default; }
 </style>

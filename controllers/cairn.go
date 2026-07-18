@@ -10,6 +10,7 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/geekgonecrazy/cairn/core"
+	"github.com/geekgonecrazy/cairn/identity"
 	cairnv1 "github.com/geekgonecrazy/cairn/proto/cairnv1"
 	"github.com/geekgonecrazy/cairn/proto/cairnv1/cairnv1connect"
 )
@@ -26,9 +27,29 @@ func (CairnController) SendEvent(_ context.Context, req *connect.Request[cairnv1
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("missing event"))
 	}
 	if err := core.SubmitEvent(ev); err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		return nil, connect.NewError(submitErrorCode(err), err)
 	}
 	return connect.NewResponse(&cairnv1.SendEventResponse{EventId: ev.GetEventId()}), nil
+}
+
+// submitErrorCode classifies a SubmitEvent failure so the client knows whether to
+// retry. FailedPrecondition is RECOVERABLE — the carrier lacks identity objects
+// it can be given (the household isn't founded here yet, or a chain link hasn't
+// been pushed); the client publishes its identity and retries. PermissionDenied
+// is TERMINAL — the sender is revoked, expired, or from an untrusted household;
+// retrying changes nothing. InvalidArgument is a malformed/forged event.
+func submitErrorCode(err error) connect.Code {
+	switch {
+	case errors.Is(err, core.ErrAwaitingFounding), errors.Is(err, identity.ErrUnknownObject):
+		return connect.CodeFailedPrecondition
+	case errors.Is(err, identity.ErrRevoked),
+		errors.Is(err, identity.ErrUntrustedRoot),
+		errors.Is(err, identity.ErrExpired),
+		errors.Is(err, identity.ErrBadSignature):
+		return connect.CodePermissionDenied
+	default:
+		return connect.CodeInvalidArgument
+	}
 }
 
 // Sync returns the subgraph the client is missing plus the server's heads.
