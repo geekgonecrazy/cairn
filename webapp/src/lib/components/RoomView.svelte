@@ -2,11 +2,13 @@
   import Icon from '../Icon.svelte'
   import MessageRow from './MessageRow.svelte'
   import Composer from './Composer.svelte'
+  import MembersModal from './MembersModal.svelte'
   import { app } from '../state.svelte'
   import { findRoom, roomGlyph } from '../data'
 
   const room = $derived(findRoom(app.currentRoomId))
   const glyph = $derived(room ? roomGlyph(room.kind) : { icon: 'hash' })
+  let showMembers = $state(false)
 </script>
 
 <section class="room">
@@ -19,11 +21,17 @@
       </div>
     </div>
     <div class="actions">
-      <button class="icon-btn" title="Members" aria-label="Members"><Icon name="users" /></button>
+      <button class="icon-btn" title="Members & keys" aria-label="Members and keys" onclick={() => (showMembers = true)}>
+        <Icon name="users" />
+      </button>
       <button class="icon-btn" title="Info" aria-label="Info"><Icon name="info" /></button>
       <button class="icon-btn" title="More" aria-label="More"><Icon name="kebab" /></button>
     </div>
   </header>
+
+  {#if showMembers}
+    <MembersModal onclose={() => (showMembers = false)} />
+  {/if}
 
   <div class="room-body">
     {#if app.messages.length === 0}

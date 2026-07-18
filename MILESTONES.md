@@ -50,10 +50,14 @@ loses no history; message states reflect real delivery
       interop with Go for each type.
 - [x] Local DAG cache in IndexedDB (offline-first render) + **bidirectional frontier sync**
       (pull the server's missing subgraph AND push what it lacks — the dual walk, §6).
-- [ ] Remaining Phase 1 surface: `member_add`/`room_key_rotate` (real multi-device key
-      handoff via HPKE — currently a per-room key shared same-origin / by `#rk=` link),
-      **presence** + quote UI, missing-parent backfill (§6.4), two-*browser* (not two-tab)
-      run, and an automated crypto-conformance vector test.
+- [x] `member_add` / `room_key_rotate` via **HPKE** — real multi-device key handoff.
+      Ed25519→X25519 conversion (identity key doubles as the KEM key); DHKEM(X25519,
+      HKDF-SHA256)/HKDF-SHA256/AES-256-GCM (circl ↔ hpke-js, interop verified both ways).
+      Per-epoch room keys; pre-join history opaque; members panel (show my key / add by
+      key / rotate / share key-link). Verified end-to-end: a browser member_add's wrapped
+      epoch key unwraps on Go and decrypts the new epoch.
+- [ ] Remaining Phase 1 surface: **presence** + quote UI, missing-parent backfill (§6.4),
+      a real two-*browser* run, and an automated crypto-conformance vector test.
 
 ## Phase 2 — Agents native + files + inlays
 

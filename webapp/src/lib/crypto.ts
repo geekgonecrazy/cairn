@@ -12,6 +12,7 @@
 import { blake3 } from '@noble/hashes/blake3.js'
 import { ed25519 } from '@noble/curves/ed25519.js'
 import { create } from '@bufbuild/protobuf'
+import { CipherSuite, DhkemX25519HkdfSha256, HkdfSha256, Aes256Gcm } from '@hpke/core'
 import { encode as cborEncode, decode as cborDecode, type CborValue } from './cbor'
 import { EventSchema, EventType, type Event } from '../gen/cairn_pb'
 
@@ -55,6 +56,10 @@ function utf8(s: string): Uint8Array {
 // but TS types them as ArrayBufferLike. Narrow at the call boundary.
 function bs(u: Uint8Array): BufferSource {
   return u as unknown as BufferSource
+}
+// hpke-js KEM importKey/enc want a real ArrayBuffer, not a view — copy out.
+function ab(u: Uint8Array): ArrayBuffer {
+  return u.buffer.slice(u.byteOffset, u.byteOffset + u.byteLength) as ArrayBuffer
 }
 
 // uvarint (LEB128 unsigned) — matches Go encoding/binary.Uvarint.
@@ -131,46 +136,70 @@ export function sessionPub(): Uint8Array {
   return ed25519.getPublicKey(sessionSecret())
 }
 
-// ---- room key (per room, shared across tabs) ----
-const cryptoKeyCache = new Map<string, Promise<CryptoKey>>()
+// ---- room keys (per room, per epoch) ----
+// Each room has a room key per epoch (PROTOCOL.md §5). Membership changes
+// (member_add / room_key_rotate) mint a new epoch and HPKE-wrap the fresh key to
+// each member. Pre-join history stays opaque: a member only holds the epochs they
+// were given. Keys live in localStorage (shared across same-origin tabs).
+const cryptoKeyCache = new Map<string, Promise<CryptoKey>>() // `${room}:${epoch}`
 
-function roomKeyStorageId(roomIdStr: string): string {
-  return 'cairn-rk:' + roomIdStr
+const rkId = (room: string, epoch: number) => `cairn-rk:${room}:${epoch}`
+const epochId = (room: string) => `cairn-epoch:${room}`
+
+export function currentEpoch(room: string): number {
+  return Number(localStorage.getItem(epochId(room)) ?? '1')
+}
+function setEpoch(room: string, epoch: number) {
+  if (epoch > currentEpoch(room)) localStorage.setItem(epochId(room), String(epoch))
 }
 
-function rawRoomKey(roomIdStr: string): Uint8Array {
-  const id = roomKeyStorageId(roomIdStr)
-  const stored = localStorage.getItem(id)
-  if (stored) return b64ToBytes(stored)
-  const raw = crypto.getRandomValues(new Uint8Array(32))
-  localStorage.setItem(id, bytesToB64(raw))
-  return raw
+function rawRoomKey(room: string, epoch: number): Uint8Array | null {
+  const s = localStorage.getItem(rkId(room, epoch))
+  return s ? b64ToBytes(s) : null
+}
+function storeRoomKey(room: string, epoch: number, raw: Uint8Array) {
+  localStorage.setItem(rkId(room, epoch), bytesToB64(raw))
+  cryptoKeyCache.delete(`${room}:${epoch}`)
 }
 
-function roomCryptoKey(roomIdStr: string): Promise<CryptoKey> {
-  let p = cryptoKeyCache.get(roomIdStr)
+// The room key for the current epoch, bootstrapping epoch 1 on first use so a
+// brand-new room is immediately usable (real membership arrives via member_add).
+function ensureCurrentKey(room: string): { epoch: number; raw: Uint8Array } {
+  const epoch = currentEpoch(room)
+  let raw = rawRoomKey(room, epoch)
+  if (!raw) {
+    raw = crypto.getRandomValues(new Uint8Array(32))
+    storeRoomKey(room, epoch, raw)
+  }
+  return { epoch, raw }
+}
+
+function roomCryptoKey(room: string, epoch: number): Promise<CryptoKey> | null {
+  const raw = rawRoomKey(room, epoch)
+  if (!raw) return null
+  const k = `${room}:${epoch}`
+  let p = cryptoKeyCache.get(k)
   if (!p) {
-    p = crypto.subtle.importKey('raw', bs(rawRoomKey(roomIdStr)), { name: 'AES-GCM' }, false, [
-      'encrypt',
-      'decrypt',
-    ])
-    cryptoKeyCache.set(roomIdStr, p)
+    p = crypto.subtle.importKey('raw', bs(raw), { name: 'AES-GCM' }, false, ['encrypt', 'decrypt'])
+    cryptoKeyCache.set(k, p)
   }
   return p
 }
 
-/** Export the current room key as a shareable link fragment (dev key handoff). */
-export function roomKeyLink(roomIdStr: string): string {
-  const raw = rawRoomKey(roomIdStr)
-  return `${location.origin}${import.meta.env.BASE_URL}#rk=${roomIdStr}:${bytesToB64(raw)}`
+/** Export the current-epoch room key as a shareable link fragment (dev handoff). */
+export function roomKeyLink(room: string): string {
+  const { epoch, raw } = ensureCurrentKey(room)
+  return `${location.origin}${import.meta.env.BASE_URL}#rk=${room}:${epoch}:${bytesToB64(raw)}`
 }
 
-/** Import a room key from a #rk=room:base64 fragment, if present. */
+/** Import a room key from a #rk=room:epoch:base64 fragment, if present. */
 export function importRoomKeyFromHash() {
-  const m = location.hash.match(/#rk=([^:]+):(.+)$/)
+  const m = location.hash.match(/#rk=([^:]+):(\d+):(.+)$/)
   if (!m) return
-  localStorage.setItem(roomKeyStorageId(decodeURIComponent(m[1])), m[2])
-  cryptoKeyCache.delete(decodeURIComponent(m[1]))
+  const room = decodeURIComponent(m[1])
+  const epoch = Number(m[2])
+  storeRoomKey(room, epoch, b64ToBytes(m[3]))
+  setEpoch(room, epoch)
   history.replaceState(null, '', location.pathname + location.search)
 }
 
@@ -244,10 +273,20 @@ export type Decoded =
   | { kind: 'reaction'; target: Uint8Array; emoji: string[] }
   | { kind: 'edit'; target: Uint8Array; text: string }
   | { kind: 'delete'; target: Uint8Array; by: string }
+  | { kind: 'system'; text: string }
   | { kind: 'other' }
 
 /** Decrypt + decode any supported event payload, or null if undecryptable. */
 export async function openEvent(ev: Event): Promise<Decoded | null> {
+  // Key-material events are cleartext (epoch 0) — decode without a room key.
+  if (ev.type === EventType.MEMBER_ADD || ev.type === EventType.ROOM_KEY_ROTATE) {
+    try {
+      cborDecode(readUvarint(ev.payload).rest)
+      return { kind: 'system', text: ev.type === EventType.MEMBER_ADD ? 'added a member' : 'rotated the room key' }
+    } catch {
+      return { kind: 'other' }
+    }
+  }
   try {
     const obj = cborDecode(await open(ev)) as Record<string, unknown>
     switch (ev.type) {
@@ -296,7 +335,8 @@ async function seal(
   type: number,
   plaintext: Uint8Array,
 ): Promise<Uint8Array> {
-  const key = await roomCryptoKey(roomIdStr)
+  const { epoch } = ensureCurrentKey(roomIdStr)
+  const key = await roomCryptoKey(roomIdStr, epoch)!
   const nonce = crypto.getRandomValues(new Uint8Array(12))
   const aad = buildAAD(senderPub, roomId, ts, type)
   const ct = new Uint8Array(
@@ -306,14 +346,16 @@ async function seal(
       bs(plaintext),
     ),
   )
-  return concat(putUvarint(1), nonce, ct)
+  return concat(putUvarint(epoch), nonce, ct)
 }
 
 async function open(ev: Event): Promise<Uint8Array> {
   const roomIdStr = new TextDecoder().decode(ev.roomId)
-  const key = await roomCryptoKey(roomIdStr)
   const { value: epoch, rest } = readUvarint(ev.payload)
   if (epoch === 0) throw new Error('not room-encrypted')
+  const keyP = roomCryptoKey(roomIdStr, epoch)
+  if (!keyP) throw new Error(`no room key for epoch ${epoch}`) // pre-join / not yet handed
+  const key = await keyP
   const nonce = rest.subarray(0, 12)
   const ct = rest.subarray(12)
   const aad = buildAAD(ev.senderPub, ev.roomId, ev.ts, ev.type)
@@ -331,4 +373,139 @@ function prune(o: Record<string, CborValue | undefined>): { [k: string]: CborVal
   const out: { [k: string]: CborValue } = {}
   for (const [k, v] of Object.entries(o)) if (v !== undefined) out[k] = v
   return out
+}
+
+// ---- HPKE room-key wrap/unwrap (member_add / room_key_rotate) ----
+// Suite + framing must match Go room/hpke.go: DHKEM(X25519,HKDF-SHA256)/
+// HKDF-SHA256/AES-256-GCM, info "cairn/room-key/v1", blob = uvarint(len enc)||enc||ct.
+// The recipient is addressed by its Ed25519 pubkey, converted to X25519.
+
+const HPKE_INFO = new TextEncoder().encode('cairn/room-key/v1')
+const hpke = new CipherSuite({
+  kem: new DhkemX25519HkdfSha256(),
+  kdf: new HkdfSha256(),
+  aead: new Aes256Gcm(),
+})
+
+function hexStr(b: Uint8Array): string {
+  let s = ''
+  for (let i = 0; i < b.length; i++) s += b[i].toString(16).padStart(2, '0')
+  return s
+}
+
+async function wrapKeyTo(recipientEdPub: Uint8Array, roomKey: Uint8Array): Promise<Uint8Array> {
+  const xPub = ed25519.utils.toMontgomery(recipientEdPub)
+  const rpk = await hpke.kem.importKey('raw', ab(xPub), true)
+  const sender = await hpke.createSenderContext({ recipientPublicKey: rpk, info: bs(HPKE_INFO) })
+  const ct = new Uint8Array(await sender.seal(bs(roomKey)))
+  const enc = new Uint8Array(sender.enc)
+  return concat(putUvarint(enc.length), enc, ct)
+}
+
+async function unwrapKey(blob: Uint8Array): Promise<Uint8Array> {
+  const { value: encLen, rest } = readUvarint(blob)
+  const enc = rest.subarray(0, encLen)
+  const ct = rest.subarray(encLen)
+  const xPriv = ed25519.utils.toMontgomerySecret(sessionSecret())
+  const rsk = await hpke.kem.importKey('raw', ab(xPriv), false)
+  const recip = await hpke.createRecipientContext({ recipientKey: rsk, enc: ab(enc), info: bs(HPKE_INFO) })
+  return new Uint8Array(await recip.open(bs(ct)))
+}
+
+// buildCleartext builds a signed epoch-0 (unencrypted) event — used for the
+// key-material events whose payloads carry their own HPKE-wrapped keys.
+async function buildCleartext(
+  roomIdStr: string,
+  type: number,
+  payloadMap: { [k: string]: CborValue },
+  parents: Uint8Array[],
+): Promise<Event> {
+  const senderPub = sessionPub()
+  const roomId = utf8(roomIdStr)
+  const ts = BigInt(Date.now())
+  const payload = concat(putUvarint(0), cborEncode(payloadMap)) // uvarint(0) || cbor
+  const sorted = [...parents].sort(cmpBytes)
+  const eventId = computeId(senderPub, roomId, ts, sorted, type, payload)
+  const sig = ed25519.sign(eventId, sessionSecret())
+  return create(EventSchema, { eventId, senderPub, roomId, ts, parents: sorted, type, payload, sig })
+}
+
+function dedupePubs(pubs: Uint8Array[]): Uint8Array[] {
+  const seen = new Set<string>()
+  const out: Uint8Array[] = []
+  for (const p of pubs) {
+    const h = hexStr(p)
+    if (!seen.has(h)) {
+      seen.add(h)
+      out.push(p)
+    }
+  }
+  return out
+}
+
+// mints a fresh epoch key, wraps it to every recipient, and stores it locally.
+async function mintEpoch(
+  roomIdStr: string,
+  recipients: Uint8Array[],
+): Promise<{ epoch: number; wrapped_keys: { [hex: string]: Uint8Array } }> {
+  const newKey = crypto.getRandomValues(new Uint8Array(32))
+  const epoch = currentEpoch(roomIdStr) + 1
+  const wrapped_keys: { [hex: string]: Uint8Array } = {}
+  for (const pub of dedupePubs([...recipients, sessionPub()])) {
+    wrapped_keys[hexStr(pub)] = await wrapKeyTo(pub, newKey)
+  }
+  storeRoomKey(roomIdStr, epoch, newKey)
+  setEpoch(roomIdStr, epoch)
+  return { epoch, wrapped_keys }
+}
+
+/** Add a member: mint a new epoch, wrap it to everyone, emit member_add. */
+export async function buildMemberAdd(
+  roomIdStr: string,
+  newMemberPub: Uint8Array,
+  role: string,
+  existingMemberPubs: Uint8Array[],
+  parents: Uint8Array[],
+): Promise<Event> {
+  const { epoch, wrapped_keys } = await mintEpoch(roomIdStr, [...existingMemberPubs, newMemberPub])
+  return buildCleartext(
+    roomIdStr,
+    EventType.MEMBER_ADD,
+    { member_pub: newMemberPub, role, epoch, wrapped_keys },
+    parents,
+  )
+}
+
+/** Rotate the room key for the current membership (e.g. after a removal). */
+export async function buildRoomKeyRotate(
+  roomIdStr: string,
+  memberPubs: Uint8Array[],
+  parents: Uint8Array[],
+): Promise<Event> {
+  const { epoch, wrapped_keys } = await mintEpoch(roomIdStr, memberPubs)
+  return buildCleartext(roomIdStr, EventType.ROOM_KEY_ROTATE, { epoch, wrapped_keys }, parents)
+}
+
+/** On receiving a member_add/room_key_rotate, unwrap my epoch key if present.
+ *  Returns true if a new key was installed (so pending events can re-decrypt). */
+export async function applyKeyEvent(ev: Event): Promise<boolean> {
+  if (ev.type !== EventType.MEMBER_ADD && ev.type !== EventType.ROOM_KEY_ROTATE) return false
+  const room = new TextDecoder().decode(ev.roomId)
+  try {
+    const obj = cborDecode(readUvarint(ev.payload).rest) as {
+      epoch: number
+      wrapped_keys: { [hex: string]: Uint8Array }
+    }
+    const blob = obj.wrapped_keys?.[hexStr(sessionPub())]
+    if (!blob) return false // not addressed to me
+    if (rawRoomKey(room, obj.epoch)) {
+      setEpoch(room, obj.epoch)
+      return false // already had it
+    }
+    storeRoomKey(room, obj.epoch, await unwrapKey(blob))
+    setEpoch(room, obj.epoch)
+    return true
+  } catch {
+    return false
+  }
 }

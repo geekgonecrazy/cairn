@@ -10,10 +10,15 @@ import {
   buildReaction,
   buildEdit,
   buildDelete,
+  buildMemberAdd,
+  buildRoomKeyRotate,
+  applyKeyEvent,
   openEvent,
   verifyEvent,
   importRoomKeyFromHash,
   sessionPub,
+  roomKeyLink,
+  currentEpoch,
   type Decoded,
 } from './crypto'
 import { cachePut, cacheLoad } from './idb'
@@ -192,6 +197,53 @@ class AppState {
     this.replyingTo = m
   }
 
+  /** My member public key (hex) — share it with a device you want added. */
+  myKey(): string {
+    return this.myPubHex
+  }
+
+  /** A shareable room-key link (dev handoff) for the current room + epoch. */
+  keyLink(): string {
+    return roomKeyLink(this.currentRoomId)
+  }
+
+  /** The current key epoch for the room (shown in the members panel). */
+  epoch(): number {
+    return currentEpoch(this.currentRoomId)
+  }
+
+  /** Distinct member pubkeys we've observed in this room (rough membership). */
+  private distinctSenders(): Uint8Array[] {
+    const seen = new Set<string>()
+    const out: Uint8Array[] = []
+    for (const ev of this.events) {
+      const h = hex(ev.senderPub)
+      if (!seen.has(h)) {
+        seen.add(h)
+        out.push(ev.senderPub)
+      }
+    }
+    return out
+  }
+
+  /** Add a member by their pubkey hex: mint a new epoch, wrap it to everyone. */
+  async addMember(pubHex: string) {
+    const pub = fromHex(pubHex.trim())
+    if (!pub || pub.length !== 32) throw new Error('member key must be 64 hex chars')
+    const ev = await buildMemberAdd(this.currentRoomId, pub, 'member', this.distinctSenders(), localHeads(this.events))
+    await this.ingest(ev, false)
+    this.rebuild()
+    await this.deliver(ev)
+  }
+
+  /** Rotate the room key for the current membership. */
+  async rotateKey() {
+    const ev = await buildRoomKeyRotate(this.currentRoomId, this.distinctSenders(), localHeads(this.events))
+    await this.ingest(ev, false)
+    this.rebuild()
+    await this.deliver(ev)
+  }
+
   // ---- ingest + fold ----
 
   private async deliver(ev: Event) {
@@ -222,9 +274,23 @@ class AppState {
 
     this.events.push(ev)
     this.byId.set(idHex, ev)
+
+    // Key-material events: install our epoch key first, then re-decrypt anything
+    // that was opaque for lack of it (pre-key events now become readable).
+    if (ev.type === EventType.MEMBER_ADD || ev.type === EventType.ROOM_KEY_ROTATE) {
+      if (await applyKeyEvent(ev)) await this.redecryptOpaque()
+    }
+
     this.decoded.set(idHex, await openEvent(ev))
     void cachePut(idHex, this.currentRoomId, ev) // local-first: persist for offline
     if (rebuild) this.rebuild()
+  }
+
+  private async redecryptOpaque() {
+    for (const ev of this.events) {
+      const idHex = hex(ev.eventId)
+      if (this.decoded.get(idHex) === null) this.decoded.set(idHex, await openEvent(ev))
+    }
   }
 
   private myReactions(targetIdHex: string): string[] {
@@ -334,6 +400,13 @@ class AppState {
 
 function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n - 1) + '…' : s
+}
+
+function fromHex(h: string): Uint8Array | null {
+  if (!/^[0-9a-fA-F]*$/.test(h) || h.length % 2 !== 0) return null
+  const out = new Uint8Array(h.length / 2)
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(h.slice(i * 2, i * 2 + 2), 16)
+  return out
 }
 
 export const app = new AppState()
