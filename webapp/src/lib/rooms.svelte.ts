@@ -26,6 +26,9 @@ export interface Room {
   joined: boolean
   /** "discoverable" (visible to all space members) | "hidden" (members only). */
   visibility: string
+  /** Pending join requests waiting to be admitted (only counted for rooms we're
+   *  a member of), so the sidebar can badge them. */
+  pendingRequests: number
 }
 
 export interface Space {
@@ -83,6 +86,7 @@ class RoomStore {
         createdAt: Number(r.createdAt),
         joined: r.joined,
         visibility: r.visibility || 'discoverable',
+        pendingRequests: r.pendingRequests,
       }))
       this.spaces = res.spaces.map((s) => ({
         id: dec.decode(s.spaceId),

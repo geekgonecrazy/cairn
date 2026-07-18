@@ -96,6 +96,20 @@ func TestDiscoveryThroughSubmitEvent(t *testing.T) {
 	if reqs, _ := st.ListJoinRequests([]byte("general")); len(reqs) != 1 {
 		t.Fatalf("expected one pending join request, got %d", len(reqs))
 	}
+	// The founder (a member) sees the pending count on the room so the sidebar can
+	// badge it; the newcomer (not a member) must not.
+	frooms, _, _ := VisibleRooms(founder.member.Pub)
+	for _, vr := range frooms {
+		if vr.Room.Name == "general" && vr.PendingRequests != 1 {
+			t.Fatalf("founder should see 1 pending request on general, got %d", vr.PendingRequests)
+		}
+	}
+	nrooms, _, _ := VisibleRooms(newcomer.member.Pub)
+	for _, vr := range nrooms {
+		if vr.Room.Name == "general" && vr.PendingRequests != 0 {
+			t.Fatalf("newcomer (not a member) must not see pending counts, got %d", vr.PendingRequests)
+		}
+	}
 	submitAs(t, founder, "general", next(), cairnv1.EventType_MEMBER_ADD, roomStatePayload{MemberPub: newcomer.member.Pub, Role: "member"})
 	rooms, _, _ = VisibleRooms(newcomer.member.Pub)
 	if j, _ := joinedByName(rooms, "general"); !j {

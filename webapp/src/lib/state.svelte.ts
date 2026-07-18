@@ -229,6 +229,14 @@ class AppState {
       return
     }
 
+    // A join request for a room we're not viewing: refresh so its sidebar badge
+    // appears immediately, rather than staying invisible until we open the room.
+    // (The carrier counts pending requests per room in ListRooms.)
+    if (ev.type === EventType.ROOM_JOIN_REQUEST) {
+      await roomStore.refresh()
+      return
+    }
+
     if (ev.type !== EventType.MEMBER_ADD && ev.type !== EventType.ROOM_CREATE) return
 
     if (ev.type === EventType.MEMBER_ADD) {

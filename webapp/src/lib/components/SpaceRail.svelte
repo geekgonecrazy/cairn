@@ -11,6 +11,12 @@
   // same fiction the deleted data.ts fixture told.
   const spaces = $derived(roomStore.spaces)
 
+  // Total pending join requests across a space's channels, so a space needing
+  // attention is flagged even when you're viewing a different one.
+  function pendingIn(spaceId: string): number {
+    return roomStore.inSpace(spaceId).reduce((n, r) => n + r.pendingRequests, 0)
+  }
+
   const me = $derived(identity.current)
   const initials = $derived(
     me
@@ -34,6 +40,9 @@
       onclick={() => app.selectSpace(s.id)}
     >
       {s.label}
+      {#if pendingIn(s.id) > 0}
+        <span class="rail-badge" aria-label="{pendingIn(s.id)} waiting to join">{pendingIn(s.id)}</span>
+      {/if}
     </button>
   {/each}
 
@@ -99,6 +108,23 @@
     background: var(--accent);
   }
   .space.add { color: var(--text-3); border-style: dashed; }
+  .rail-badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    display: grid;
+    place-items: center;
+    border-radius: 999px;
+    background: var(--accent, #2563eb);
+    color: var(--accent-fg, #fff);
+    font-size: 10px;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    border: 2px solid var(--surface-2);
+  }
   .grow { flex: 1; }
   .icon-rail {
     width: 32px;

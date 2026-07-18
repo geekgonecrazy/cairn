@@ -113,7 +113,9 @@
       >
         <span class="glyph"><Icon name="hash" size={14} /></span>
         <span class="name">{r.name}</span>
-        {#if !r.joined}
+        {#if r.pendingRequests > 0}
+          <span class="req-badge" title="{r.pendingRequests} waiting to join">{r.pendingRequests}</span>
+        {:else if !r.joined}
           <span class="lock" aria-label="not joined"><Icon name="lock" size={12} /></span>
         {/if}
       </button>
@@ -272,6 +274,20 @@
   .room-item.discoverable { color: var(--text-3); }
   .room-item.discoverable .glyph { opacity: 0.6; }
   .lock { color: var(--text-4); display: grid; place-items: center; }
+  /* Pending join-request count — draws the eye to a channel needing an admit. */
+  .req-badge {
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    display: grid;
+    place-items: center;
+    border-radius: 999px;
+    background: var(--accent, #2563eb);
+    color: var(--accent-fg, #fff);
+    font-size: 11px;
+    font-weight: 700;
+    font-family: var(--font-mono);
+  }
   .room-item[aria-current='true'] {
     background: var(--surface);
     color: var(--text);

@@ -206,6 +206,9 @@ message RoomInfo {
   int64 created_at = 4;
   bool joined = 5;
   string visibility = 6; // "discoverable" | "hidden"
+  // Count of pending join requests (requesters not yet admitted). Populated only
+  // for rooms the caller is a member of, so the sidebar can badge them.
+  int32 pending_requests = 7;
 }
 message SpaceInfo {
   bytes space_id = 1;

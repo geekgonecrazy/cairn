@@ -880,15 +880,18 @@ func (x *PutIdentityObjectResponse) GetHash() []byte {
 // answers. `visibility` is the room's own setting: `discoverable` rooms show to
 // every space member, `hidden` rooms show only to those a MEMBER_ADD admitted.
 type RoomInfo struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	RoomId        []byte                 `protobuf:"bytes,1,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
-	SpaceId       []byte                 `protobuf:"bytes,2,opt,name=space_id,json=spaceId,proto3" json:"space_id,omitempty"`
-	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	CreatedAt     int64                  `protobuf:"varint,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	Joined        bool                   `protobuf:"varint,5,opt,name=joined,proto3" json:"joined,omitempty"`
-	Visibility    string                 `protobuf:"bytes,6,opt,name=visibility,proto3" json:"visibility,omitempty"` // "discoverable" | "hidden"
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	RoomId     []byte                 `protobuf:"bytes,1,opt,name=room_id,json=roomId,proto3" json:"room_id,omitempty"`
+	SpaceId    []byte                 `protobuf:"bytes,2,opt,name=space_id,json=spaceId,proto3" json:"space_id,omitempty"`
+	Name       string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	CreatedAt  int64                  `protobuf:"varint,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	Joined     bool                   `protobuf:"varint,5,opt,name=joined,proto3" json:"joined,omitempty"`
+	Visibility string                 `protobuf:"bytes,6,opt,name=visibility,proto3" json:"visibility,omitempty"` // "discoverable" | "hidden"
+	// Count of pending join requests (requesters not yet admitted). Populated only
+	// for rooms the caller is a member of, so the sidebar can badge them.
+	PendingRequests int32 `protobuf:"varint,7,opt,name=pending_requests,json=pendingRequests,proto3" json:"pending_requests,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *RoomInfo) Reset() {
@@ -961,6 +964,13 @@ func (x *RoomInfo) GetVisibility() string {
 		return x.Visibility
 	}
 	return ""
+}
+
+func (x *RoomInfo) GetPendingRequests() int32 {
+	if x != nil {
+		return x.PendingRequests
+	}
+	return 0
 }
 
 type SpaceInfo struct {
@@ -1426,7 +1436,7 @@ const file_cairn_proto_rawDesc = "" +
 	"\x18PutIdentityObjectRequest\x12\x12\n" +
 	"\x04cbor\x18\x01 \x01(\fR\x04cbor\"/\n" +
 	"\x19PutIdentityObjectResponse\x12\x12\n" +
-	"\x04hash\x18\x01 \x01(\fR\x04hash\"\xa9\x01\n" +
+	"\x04hash\x18\x01 \x01(\fR\x04hash\"\xd4\x01\n" +
 	"\bRoomInfo\x12\x17\n" +
 	"\aroom_id\x18\x01 \x01(\fR\x06roomId\x12\x19\n" +
 	"\bspace_id\x18\x02 \x01(\fR\aspaceId\x12\x12\n" +
@@ -1436,7 +1446,8 @@ const file_cairn_proto_rawDesc = "" +
 	"\x06joined\x18\x05 \x01(\bR\x06joined\x12\x1e\n" +
 	"\n" +
 	"visibility\x18\x06 \x01(\tR\n" +
-	"visibility\"|\n" +
+	"visibility\x12)\n" +
+	"\x10pending_requests\x18\a \x01(\x05R\x0fpendingRequests\"|\n" +
 	"\tSpaceInfo\x12\x19\n" +
 	"\bspace_id\x18\x01 \x01(\fR\aspaceId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1d\n" +

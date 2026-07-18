@@ -155,6 +155,11 @@ func applyRoomState(ev *cairnv1.Event) error {
 type VisibleRoom struct {
 	Room   *models.Room
 	Joined bool
+	// PendingRequests is the number of ROOM_JOIN_REQUESTs for this room whose
+	// requester is not yet a member — the "waiting to be admitted" count. Only
+	// populated for rooms the caller is a member of (a discoverer must not learn
+	// who else is asking); 0 otherwise.
+	PendingRequests int
 }
 
 // VisibleRooms computes what memberPub can see, across the two membership tiers:
@@ -207,7 +212,30 @@ func VisibleRooms(memberPub []byte) ([]VisibleRoom, []*models.Space, error) {
 		if !joined && !(inMemberSpace && discoverable) {
 			continue
 		}
-		out = append(out, VisibleRoom{Room: r, Joined: joined})
+
+		// Pending join requests, but only for members — a discoverer must not see
+		// who else is asking. Pending = a request whose member is not yet admitted.
+		pending := 0
+		if joined {
+			reqs, err := st.ListJoinRequests(r.RoomID)
+			if err != nil {
+				return nil, nil, err
+			}
+			for _, rq := range reqs {
+				admitted := false
+				for _, m := range members {
+					if bytes.Equal(m.MemberPub, rq.MemberPub) {
+						admitted = true
+						break
+					}
+				}
+				if !admitted {
+					pending++
+				}
+			}
+		}
+
+		out = append(out, VisibleRoom{Room: r, Joined: joined, PendingRequests: pending})
 		if len(r.SpaceID) > 0 {
 			visibleSpaces[string(r.SpaceID)] = true
 		}

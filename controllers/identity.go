@@ -154,12 +154,13 @@ func (CairnController) ListRooms(
 	out := &cairnv1.ListRoomsResponse{}
 	for _, vr := range rooms {
 		out.Rooms = append(out.Rooms, &cairnv1.RoomInfo{
-			RoomId:     vr.Room.RoomID,
-			SpaceId:    vr.Room.SpaceID,
-			Name:       vr.Room.Name,
-			CreatedAt:  vr.Room.CreatedAt,
-			Joined:     vr.Joined,
-			Visibility: vr.Room.Visibility,
+			RoomId:          vr.Room.RoomID,
+			SpaceId:         vr.Room.SpaceID,
+			Name:            vr.Room.Name,
+			CreatedAt:       vr.Room.CreatedAt,
+			Joined:          vr.Joined,
+			Visibility:      vr.Room.Visibility,
+			PendingRequests: int32(vr.PendingRequests),
 		})
 	}
 	for _, sp := range spaces {

@@ -58,8 +58,16 @@
     </div>
     {#if app.currentRoomId}
       <div class="actions">
-        <button class="icon-btn" title="Members & keys" aria-label="Members and keys" onclick={() => (showMembers = true)}>
+        <button
+          class="icon-btn"
+          title={app.joinRequests.length > 0 ? `Members & keys — ${app.joinRequests.length} waiting to join` : 'Members & keys'}
+          aria-label="Members and keys"
+          onclick={() => (showMembers = true)}
+        >
           <Icon name="users" />
+          {#if app.joinRequests.length > 0}
+            <span class="req-dot" aria-hidden="true">{app.joinRequests.length}</span>
+          {/if}
         </button>
         <button class="icon-btn" title="Info" aria-label="Info"><Icon name="info" /></button>
         <button class="icon-btn" title="More" aria-label="More"><Icon name="kebab" /></button>
@@ -162,6 +170,7 @@
   .odot { width: 6px; height: 6px; border-radius: 50%; background: var(--pos); }
   .actions { display: flex; gap: 4px; }
   .icon-btn {
+    position: relative;
     width: 32px;
     height: 32px;
     display: grid;
@@ -173,6 +182,23 @@
     cursor: pointer;
   }
   .icon-btn:hover { background: var(--surface-2); color: var(--text); border-color: var(--border); }
+  /* Pending join-request count on the members button. */
+  .req-dot {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    display: grid;
+    place-items: center;
+    border-radius: 999px;
+    background: var(--accent, #2563eb);
+    color: var(--accent-fg, #fff);
+    font-size: 10px;
+    font-weight: 700;
+    font-family: var(--font-mono);
+  }
 
   /* The drawer toggle only exists below the breakpoint, where the rail and
      room list are no longer on screen. */
