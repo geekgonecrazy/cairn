@@ -1,6 +1,7 @@
 <script lang="ts">
   import Icon from '../Icon.svelte'
   import MessageRow from './MessageRow.svelte'
+  import ApprovalInlay from './ApprovalInlay.svelte'
   import Composer from './Composer.svelte'
   import MembersModal from './MembersModal.svelte'
   import { app } from '../state.svelte'
@@ -51,7 +52,11 @@
       </div>
     {:else}
       {#each app.messages as msg (msg.idHex)}
-        <MessageRow {msg} />
+        {#if msg.approval}
+          <ApprovalInlay {msg} />
+        {:else}
+          <MessageRow {msg} />
+        {/if}
       {/each}
     {/if}
   </div>

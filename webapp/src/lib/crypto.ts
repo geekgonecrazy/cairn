@@ -136,6 +136,19 @@ export function sessionPub(): Uint8Array {
   return ed25519.getPublicKey(sessionSecret())
 }
 
+/** Sign arbitrary bytes with the session key. Used for portable approval
+ *  artifacts, which are signed over their own canonical bytes rather than an
+ *  event envelope — so they verify outside Cairn. */
+export function signWithSession(msg: Uint8Array): Uint8Array {
+  return ed25519.sign(msg, sessionSecret())
+}
+
+/** The session key as a Signer (for approval artifacts). At Phase 5 this becomes
+ *  a passkey ceremony — same shape, biometric gesture behind it. */
+export function sessionSigner(): { pub: Uint8Array; sign: (m: Uint8Array) => Uint8Array } {
+  return { pub: sessionPub(), sign: signWithSession }
+}
+
 // ---- room keys (per room, per epoch) ----
 // Each room has a room key per epoch (PROTOCOL.md §5). Membership changes
 // (member_add / room_key_rotate) mint a new epoch and HPKE-wrap the fresh key to
@@ -220,17 +233,27 @@ export interface ChatBody {
 
 // sealAndSign is the shared build path for every event type: encode the payload
 // map, room-encrypt it, hash the canonical content, and sign.
-async function sealAndSign(
+function sealAndSign(
   roomIdStr: string,
   type: number,
   payloadMap: { [k: string]: CborValue },
+  parents: Uint8Array[],
+): Promise<Event> {
+  return sealAndSignRaw(roomIdStr, type, cborEncode(payloadMap), parents)
+}
+
+// sealAndSignRaw takes already-encoded plaintext (e.g. a pre-signed portable
+// approval artifact, which must not be re-encoded or its signature breaks).
+async function sealAndSignRaw(
+  roomIdStr: string,
+  type: number,
+  plaintext: Uint8Array,
   parents: Uint8Array[],
 ): Promise<Event> {
   const senderPub = sessionPub()
   const roomId = utf8(roomIdStr)
   const ts = BigInt(Date.now())
 
-  const plaintext = cborEncode(payloadMap)
   const payload = await seal(roomIdStr, senderPub, roomId, ts, type, plaintext)
 
   const sorted = [...parents].sort(cmpBytes)
@@ -257,6 +280,18 @@ export function buildChat(roomIdStr: string, body: ChatBody, parents: Uint8Array
  *  the server broadcasts it without persisting. */
 export function buildPresence(roomIdStr: string, state: 'online' | 'away'): Promise<Event> {
   return sealAndSign(roomIdStr, EventType.PRESENCE, { state }, [])
+}
+
+/** Carry a pre-signed portable approval artifact as an event payload. The room
+ *  encrypts it for DELIVERY; the artifact's own signature is what the external
+ *  broker verifies, so it survives leaving the room. */
+export function buildApprovalEvent(
+  roomIdStr: string,
+  type: number,
+  artifactCbor: Uint8Array,
+  parents: Uint8Array[],
+): Promise<Event> {
+  return sealAndSignRaw(roomIdStr, type, artifactCbor, parents)
 }
 
 /** REACTION carries the sender's COMPLETE current emoji set for a target (CRDT). */
@@ -297,6 +332,12 @@ export type Decoded =
   | { kind: 'delete'; target: Uint8Array; by: string }
   | { kind: 'presence'; state: string }
   | { kind: 'system'; text: string }
+  // Approval artifacts travel as raw CBOR payloads; the caller decodes them via
+  // the approval module (kept out of here to avoid a circular import).
+  | { kind: 'approval_request'; raw: Uint8Array }
+  | { kind: 'approval_grant'; raw: Uint8Array }
+  | { kind: 'approval_deny'; raw: Uint8Array }
+  | { kind: 'credential_minted'; raw: Uint8Array }
   | { kind: 'other' }
 
 /** Decrypt + decode any supported event payload, or null if undecryptable. */
@@ -311,7 +352,22 @@ export async function openEvent(ev: Event): Promise<Decoded | null> {
     }
   }
   try {
-    const obj = cborDecode(await open(ev)) as Record<string, unknown>
+    const pt = await open(ev)
+
+    // Approval artifacts are self-signed portable CBOR — hand back the exact
+    // bytes so the artifact signature stays intact for the external broker.
+    switch (ev.type) {
+      case EventType.APPROVAL_REQUEST:
+        return { kind: 'approval_request', raw: pt }
+      case EventType.APPROVAL_GRANT:
+        return { kind: 'approval_grant', raw: pt }
+      case EventType.APPROVAL_DENY:
+        return { kind: 'approval_deny', raw: pt }
+      case EventType.CREDENTIAL_MINTED:
+        return { kind: 'credential_minted', raw: pt }
+    }
+
+    const obj = cborDecode(pt) as Record<string, unknown>
     switch (ev.type) {
       case EventType.CHAT: {
         if (typeof obj.text !== 'string') return null

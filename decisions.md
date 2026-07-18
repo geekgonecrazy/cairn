@@ -22,6 +22,22 @@ Companion to [`plan.md`](./plan.md) (the build plan) and the design mockup in
   `proto/cairn.proto` and the payload schemas without versioning, change the SQLite schema in place,
   and **wipe the database at will**. **No migrations.** Backward-compat, additive-only wire changes,
   stable enum numbers, and real migrations begin **only** once we flip the real-users switch.
+- **The capability broker is NOT a Cairn component.** Corrected 2026-07-18 (earlier drafts of
+  `plan.md` wrongly listed a `broker/` package inside Cairn). The broker is a **Capsule
+  workload in the agents system** that mints attenuated, time-boxed **JWTs**
+  (`systems/agents/README.md`, `systems/agents/framework.md` §"Approval = the credential
+  broker", `systems/identity/README.md`); it is a *peer* of Cairn, and currently unbuilt.
+  **Cairn's role** is delivery + the human signature: carry the `approval_*` event family,
+  render the request as an inlay with capability and scope visible, let the human sign a
+  grant **with their own key**, and hand back a **portable signed artifact** the agent takes
+  out-of-band to the broker to exchange for a token. Cairn never verifies policy, mints
+  credentials, or keeps a consumed-id cache. Two consequences:
+  - Artifacts are signed over **their own canonical det-CBOR**, not merely the room envelope,
+    so they verify standalone outside Cairn with no room key.
+  - The earlier worry about a non-member broker reading E2EE payloads was **moot** — the
+    *agent* is a room member, decrypts, and carries the artifact directly. Per
+    `framework.md`: *"the room is the delivery medium, not the capability boundary."*
+    Room payloads stay fully E2EE; no cleartext authority payloads needed.
 - **Unary API binding = ConnectRPC.** Decided 2026-07-18. `buf` + `connect-go` (Go server stubs) +
   `connect-es` (TS client) generated from `proto/cairn.proto`; the `CairnService` service defs are the
   typed surface (`SendEvent`, `Sync`, `History`, `GetIdentityObject`). Diverges from the reference

@@ -62,6 +62,9 @@ var detCBOR = func() cbor.EncMode {
 // Marshal encodes v as deterministic CBOR (exported for reuse by event/room).
 func Marshal(v any) ([]byte, error) { return detCBOR.Marshal(v) }
 
+// Unmarshal decodes CBOR into v (the counterpart to Marshal).
+func Unmarshal(b []byte, v any) error { return cbor.Unmarshal(b, v) }
+
 // Hash returns the BLAKE3-256 content address of the deterministic-CBOR
 // encoding of v. This is how identity-log objects are named and fetched.
 func Hash(v any) ([32]byte, error) {

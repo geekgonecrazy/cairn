@@ -51,7 +51,13 @@ cairn/
     mesh/              #   Meshtastic (LoRa)        (Phase 3)
     ble/               #   BLE GATT                 (Phase 5)
     iroh/              #   iroh                     (Phase 5)
-  broker/              # capability broker (pure verifier) + consumed-id cache
+  approval/            # portable signed capability artifacts (request/grant/deny)
+                       #   NOTE: the capability BROKER is NOT a Cairn component —
+                       #   it is a Capsule workload in the agents system that mints
+                       #   attenuated JWTs (systems/agents/README.md, identity/README.md).
+                       #   Cairn delivers the request, captures the human's signature,
+                       #   and hands back a portable artifact. It never verifies policy,
+                       #   mints credentials, or holds a consumed-id cache.
   blobs/               # iroh-store client (file_ref: add/get/get-range/pin/has)
   store/               # store.Store interface (store.go)
     sqlite/            #   impl: sqlite.go, migrations.go, one file per entity (events.go, rooms.go, frontier.go…)
@@ -119,8 +125,16 @@ no history; message states reflect real delivery.
 
 ### Phase 2 — Agents native + files + inlays  *(vision Phase 2)*
 **Goal:** structured agent interaction and content.
-- [ ] `broker`: pure verifier — verifies `approval_request` + `approval_grant` pair +
-  policy + consumed-id cache → `credential_minted`. `task_*` / `approval_*` wired.
+- [ ] `approval`: **portable signed artifacts**. Cairn delivers a capability request to
+  the human, the human signs it with their own key, and the result is a self-contained
+  artifact (signed over its own canonical bytes, not just the room envelope) that the
+  agent carries **out of Cairn** to the capability broker to exchange for a token.
+  Grant binds `request_id` + `capability_hash` + `agent_pub` + `expires_at`.
+  `task_*` / `approval_*` wired; `credential_minted` accepted back into the room.
+  **The broker is external** — a Capsule workload in the agents system minting
+  attenuated JWTs (`systems/agents/framework.md` §"Approval = the credential broker",
+  `systems/agents/README.md`). Cairn is the delivery medium + the human-signature
+  surface: *"the room is the delivery medium, not the capability boundary."*
 - [ ] `blobs`: `iroh-store` gRPC client; `file_ref` = encrypt (per-file AES key) → add →
   BLAKE3 hash → pin → envelope `{hash, wrapped_key, mime, size, thumb_hash?}`.
 - [ ] `webapp` inlay engine: **declared-inlay role renderer** — the primitive vocabulary (`text`,
@@ -133,9 +147,12 @@ no history; message states reflect real delivery.
   states** (`available` / `pending — no fat link` / `downloading` / `broken`), composer
   attachment chips, **per-room declaration allowlist** (default-deny admin surface).
 
-**Exit:** agent `approval_request` → human approve → broker mints credential (end-to-end);
-a novel declared inlay renders from primitives + degrades to its text line; files send/receive
-with honest retrieval states.
+**Exit:** a capability request is delivered into a room, rendered as an inlay with its
+capability and scope **visible**, the human approves, and the client emits a **portable
+signed grant** that verifies standalone — outside Cairn, with no room key — ready for the
+agent to present to the broker. (Minting itself belongs to the external broker.)
+A novel declared inlay renders from primitives + degrades to its text line; files
+send/receive with honest retrieval states.
 
 ### Phase 3 — Meshtastic transport + **demonstration**  *(vision Phase 3)*
 **Goal:** the bridge-tax payoff, in running code.

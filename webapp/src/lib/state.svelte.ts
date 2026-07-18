@@ -11,6 +11,7 @@ import {
   buildEdit,
   buildDelete,
   buildPresence,
+  buildApprovalEvent,
   buildMemberAdd,
   buildRoomKeyRotate,
   applyKeyEvent,
@@ -18,11 +19,23 @@ import {
   verifyEvent,
   importRoomKeyFromHash,
   sessionPub,
+  sessionSigner,
   roomKeyLink,
   currentEpoch,
   type Decoded,
 } from './crypto'
 import { cachePut, cacheLoad } from './idb'
+import {
+  decodeRequest,
+  decodeGrant,
+  decodeDeny,
+  decodeMinted,
+  signGrant,
+  signDeny,
+  encodeGrant,
+  encodeDeny,
+  type Request as ApprovalRequest,
+} from './approval'
 import { EventType, type Event } from '../gen/cairn_pb'
 
 export type DeliveryState = 'sending' | 'sent' | 'delivered' | 'queued'
@@ -38,12 +51,26 @@ export interface Quote {
   author: string
 }
 
+/** An approval request folded with whatever resolved it. */
+export interface ApprovalView {
+  request: ApprovalRequest
+  requestIdHex: string
+  capability: string
+  scope: string
+  params: string
+  state: 'pending' | 'approved' | 'denied' | 'expired' | 'minted'
+  approver?: string
+  reason?: string
+  expiresAt: number
+}
+
 export interface Msg {
   ev: Event
   idHex: string
   mine: boolean
   author: string
   ts: number
+  approval?: ApprovalView // set when this row is an approval request
   body: string // current (possibly edited) text; '' when deleted
   opaque: boolean // couldn't decrypt
   edited: boolean
@@ -92,6 +119,11 @@ class AppState {
   private byId = new Map<string, Event>()
   private decoded = new Map<string, Decoded | null>()
   private states = new Map<string, DeliveryState>()
+  private approvalFold: {
+    grants: Map<string, { approver: string }>
+    denies: Map<string, { approver: string; reason?: string }>
+    minted: Set<string>
+  } = { grants: new Map(), denies: new Map(), minted: new Set() }
 
   init() {
     if (this.stopSSE) return
@@ -267,6 +299,37 @@ class AppState {
     await this.deliver(ev)
   }
 
+  /** Approve a capability request — signs the grant WITH YOUR KEY, right here in
+   *  the UI, and emits it into the room. The agent picks the artifact up and
+   *  carries it to the capability broker; Cairn mints nothing. */
+  async approveRequest(req: ApprovalRequest, ttlMs = 30 * 60 * 1000) {
+    const grant = signGrant(req, Date.now() + ttlMs, sessionSigner())
+    const ev = await buildApprovalEvent(
+      this.currentRoomId,
+      EventType.APPROVAL_GRANT,
+      encodeGrant(grant),
+      localHeads(this.events),
+    )
+    await this.ingest(ev, false)
+    this.rebuild()
+    await this.deliver(ev)
+  }
+
+  /** Deny a capability request — also a signed artifact, so the refusal is
+   *  attributable and the agent can stop waiting. */
+  async denyRequest(req: ApprovalRequest, reason = '') {
+    const deny = signDeny(req, reason, sessionSigner())
+    const ev = await buildApprovalEvent(
+      this.currentRoomId,
+      EventType.APPROVAL_DENY,
+      encodeDeny(deny),
+      localHeads(this.events),
+    )
+    await this.ingest(ev, false)
+    this.rebuild()
+    await this.deliver(ev)
+  }
+
   setReplyTo(m: Msg | null) {
     this.replyingTo = m
     if (m) this.quotingTo = null
@@ -402,6 +465,27 @@ class AppState {
 
   /** Fold the raw DAG into the rendered message list. */
   private rebuild() {
+    // Approval fold: a request is pending until a grant/deny/minted with the
+    // same request_id lands. Resolution is by request_id, not causal position,
+    // because the artifacts are portable and may arrive by any path.
+    const grants = new Map<string, { approver: string }>()
+    const denies = new Map<string, { approver: string; reason?: string }>()
+    const minted = new Set<string>()
+    for (const ev of this.events) {
+      const d = this.decoded.get(hex(ev.eventId))
+      if (d?.kind === 'approval_grant') {
+        const g = decodeGrant(d.raw)
+        if (g) grants.set(hex(g.request_id), { approver: hex(g.approver_pub) })
+      } else if (d?.kind === 'approval_deny') {
+        const dn = decodeDeny(d.raw)
+        if (dn) denies.set(hex(dn.request_id), { approver: hex(dn.approver_pub), reason: dn.reason })
+      } else if (d?.kind === 'credential_minted') {
+        const m = decodeMinted(d.raw)
+        if (m) minted.add(hex(m.request_id))
+      }
+    }
+    this.approvalFold = { grants, denies, minted }
+
     const latestEdit = new Map<string, { ev: Event; text: string }>()
     const deleted = new Set<string>()
     // target -> sender -> { ev, emoji }
@@ -430,6 +514,51 @@ class AppState {
     for (const ev of this.events) {
       const idHex = hex(ev.eventId)
       const d = this.decoded.get(idHex)
+      // An approval request renders as its own inlay row, folded with whatever
+      // resolved it.
+      if (d?.kind === 'approval_request') {
+        const req = decodeRequest(d.raw)
+        if (!req) continue
+        const ridHex = hex(req.request_id)
+        const g = this.approvalFold.grants.get(ridHex)
+        const dn = this.approvalFold.denies.get(ridHex)
+        let aState: ApprovalView['state'] = 'pending'
+        if (this.approvalFold.minted.has(ridHex)) aState = 'minted'
+        else if (g) aState = 'approved'
+        else if (dn) aState = 'denied'
+        else if (req.expires_at && Date.now() > req.expires_at) aState = 'expired'
+
+        msgs.push({
+          ev,
+          idHex,
+          mine: hex(ev.senderPub) === this.myPubHex,
+          author: 'cairn:' + hex(ev.senderPub).slice(0, 6),
+          ts: Number(ev.ts),
+          body: '',
+          opaque: false,
+          edited: false,
+          deleted: false,
+          reactions: [],
+          state: this.states.get(idHex) ?? 'delivered',
+          approval: {
+            request: req,
+            requestIdHex: ridHex,
+            capability: req.capability.name,
+            scope: req.capability.scope ?? '',
+            params: req.capability.params
+              ? Object.entries(req.capability.params)
+                  .map(([k, v]) => `${k}=${v}`)
+                  .join(' · ')
+              : '',
+            state: aState,
+            approver: g?.approver ?? dn?.approver,
+            reason: dn?.reason,
+            expiresAt: req.expires_at,
+          },
+        })
+        continue
+      }
+
       // Only chats render as message rows; edits/reactions/deletes fold into them
       // above. An undecryptable CHAT still gets a row (shown opaque/locked).
       const isChat = d?.kind === 'chat'
