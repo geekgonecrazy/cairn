@@ -46,6 +46,8 @@ type Store interface {
 	ListSpaces() ([]*models.Space, error)
 	PutMember(*models.Member) error
 	ListMembers(roomID []byte) ([]*models.Member, error)
+	// DeleteMember removes a member root from a room (folded from MEMBER_REMOVE).
+	DeleteMember(roomID, memberPub []byte) error
 	// Space membership — the discovery tier (no key). SpaceMembershipsFor is the
 	// pubkey-keyed entry point ListRooms uses to decide which spaces' rooms a
 	// caller may see.

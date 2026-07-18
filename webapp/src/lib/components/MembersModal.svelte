@@ -52,6 +52,27 @@
     }
   }
 
+  async function remove(pubHex: string) {
+    const name = directory.memberName(pubHex) || `cairn:${pubHex.slice(0, 6)}`
+    if (
+      !confirm(
+        `Remove ${name} from this channel?\n\n` +
+          `This rotates the key so they can't read anything sent from now on. ` +
+          `It does NOT take back messages they can already read — keys can't be un-shared.`,
+      )
+    )
+      return
+    error = ''
+    busy = true
+    try {
+      await app.removeMember(pubHex)
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'could not remove member'
+    } finally {
+      busy = false
+    }
+  }
+
   // Admit a pending requester: the same add-by-key path, so it mints an epoch and
   // wraps the key to them. History is not shared on an admit-from-request —
   // sharing the backlog stays the deliberate, checkbox-gated act it is above.
@@ -101,7 +122,20 @@
                 {/if}
                 {#if m.role === 'admin'}<span class="role">admin</span>{/if}
               </span>
-              <code class="fpr">{fingerprint(m.pub)}</code>
+              <span class="right">
+                <code class="fpr">{fingerprint(m.pub)}</code>
+                {#if !m.mine}
+                  <button
+                    class="rm"
+                    title="Remove from channel (rotates the key)"
+                    aria-label="Remove {directory.memberName(m.pubHex) || m.pubHex.slice(0, 6)} from channel"
+                    disabled={busy}
+                    onclick={() => remove(m.pubHex)}
+                  >
+                    <Icon name="x" size={13} />
+                  </button>
+                {/if}
+              </span>
             </li>
           {:else}
             <li class="none">No members folded yet — the room's history may still be syncing.</li>
@@ -226,6 +260,21 @@
     font-size: 11px;
     color: var(--text-3);
   }
+  .right { display: flex; align-items: center; gap: 8px; }
+  .rm {
+    width: 24px;
+    height: 24px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-3);
+    border-radius: 6px;
+    cursor: pointer;
+    flex: 0 0 auto;
+  }
+  .rm:hover:not(:disabled) { color: var(--neg, #dc2626); border-color: var(--neg, #dc2626); }
+  .rm:disabled { opacity: 0.5; cursor: default; }
   .count {
     font-family: var(--font-mono, monospace);
     color: var(--text-3);

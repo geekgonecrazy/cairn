@@ -16,6 +16,7 @@ import {
   buildFileRef,
   roomKeyBytes,
   buildMemberAdd,
+  buildMemberRemove,
   buildRoomCreate,
   buildSpaceCreate,
   buildSpaceMemberAdd,
@@ -234,6 +235,15 @@ class AppState {
     // (The carrier counts pending requests per room in ListRooms.)
     if (ev.type === EventType.ROOM_JOIN_REQUEST) {
       await roomStore.refresh()
+      return
+    }
+
+    // A removal (from a room or a space) can change what we can see — if it's us,
+    // the room drops off or reverts to discoverable. Re-list and re-read our key
+    // state so the sidebar reflects it without a reload.
+    if (ev.type === EventType.MEMBER_REMOVE || ev.type === EventType.SPACE_MEMBER_REMOVE) {
+      await roomStore.refresh()
+      this.refreshKeyState()
       return
     }
 
@@ -577,29 +587,29 @@ class AppState {
     return this.foldMembers().map((m) => m.pub)
   }
 
-  /** Fold member_add events into the current roster (last role wins). */
+  /** Fold member_add / member_remove into the current roster. Applied in
+   *  timestamp order (event-id tiebreak) so an add → remove → re-add sequence
+   *  converges deterministically regardless of sync arrival order. */
   private foldMembers(): { pubHex: string; pub: Uint8Array; role: string; mine: boolean }[] {
     const byKey = new Map<string, { pubHex: string; pub: Uint8Array; role: string; mine: boolean }>()
     const myMember = identity.current ? hex(identity.current.memberPub) : ''
-    for (const ev of this.events) {
-      if (ev.type !== EventType.MEMBER_ADD) continue
+    const evs = this.events
+      .filter((e) => e.type === EventType.MEMBER_ADD || e.type === EventType.MEMBER_REMOVE)
+      .sort((a, b) => Number(a.ts - b.ts) || (hex(a.eventId) < hex(b.eventId) ? -1 : 1))
+    for (const ev of evs) {
       try {
         // Room-state events are epoch 0: a single 0x00 frame byte, then CBOR.
-        const obj = cborDecode(ev.payload.subarray(1)) as {
-          member_pub?: Uint8Array
-          role?: string
-        }
+        const obj = cborDecode(ev.payload.subarray(1)) as { member_pub?: Uint8Array; role?: string }
         const pub = obj.member_pub
         if (!pub || pub.length !== 32) continue
         const pubHex = hex(pub)
-        byKey.set(pubHex, {
-          pubHex,
-          pub,
-          role: obj.role || 'member',
-          mine: pubHex === myMember,
-        })
+        if (ev.type === EventType.MEMBER_REMOVE) {
+          byKey.delete(pubHex)
+          continue
+        }
+        byKey.set(pubHex, { pubHex, pub, role: obj.role || 'member', mine: pubHex === myMember })
       } catch {
-        /* not a foldable member_add */
+        /* not a foldable membership event */
       }
     }
     return [...byKey.values()]
@@ -744,6 +754,41 @@ class AppState {
     await this.ingest(ev, false)
     this.rebuild()
     await this.deliver(ev)
+  }
+
+  /**
+   * Remove a member from the CURRENT room and cut off their future access:
+   *   1. Rotate the room key to the REMAINING members — a new epoch the removed
+   *      member holds no key for, so they can't read anything sent after this.
+   *   2. Emit MEMBER_REMOVE so the roster drops them.
+   *
+   * This must be run by a room MEMBER: only a key-holder can mint the new epoch.
+   * It does NOT claw back pre-removal history the member already holds — keys
+   * can't be un-shared — so removal stops future reading, not past.
+   */
+  async removeMember(pubHex: string) {
+    const me = identity.current
+    if (!me) throw new Error('create an identity first')
+    if (!this.currentRoomId) return
+    if (pubHex === hex(me.memberPub)) throw new Error('you cannot remove yourself')
+    if (!haveRoomKey(this.currentRoomId)) throw new Error('only a member can remove members')
+
+    const remaining = this.roomMemberPubs().filter((p) => hex(p) !== pubHex)
+
+    // 1. New epoch, wrapped to everyone who stays (never the removed member).
+    const rot = await buildRoomKeyRotate(this.currentRoomId, remaining, localHeads(this.events))
+    await this.ingest(rot, false)
+    this.rebuild()
+    await this.deliver(rot)
+
+    // 2. Drop them from the roster.
+    const pub = fromHex(pubHex)
+    if (!pub) throw new Error('bad member key')
+    const rem = await buildMemberRemove(this.currentRoomId, pub, localHeads(this.events))
+    await this.ingest(rem, false)
+    this.rebuild()
+    await this.deliver(rem)
+    await roomStore.refresh()
   }
 
   // ---- ingest + fold ----

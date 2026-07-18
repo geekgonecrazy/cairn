@@ -817,6 +817,26 @@ export async function buildSpaceMemberRemove(
   )
 }
 
+/**
+ * Remove a member from a ROOM. Cleartext epoch 0 — it just drops them from the
+ * roster. To actually cut off access the caller pairs this with a
+ * ROOM_KEY_ROTATE wrapped to the REMAINING members (see state.removeMember), so
+ * the removed member holds no key for the new epoch. Pre-removal history they
+ * already hold stays readable — keys cannot be un-shared.
+ */
+export async function buildMemberRemove(
+  roomIdStr: string,
+  memberPub: Uint8Array,
+  parents: Uint8Array[] = [],
+): Promise<Event> {
+  return buildCleartext(
+    roomIdStr,
+    EventType.MEMBER_REMOVE,
+    { member_pub: memberPub },
+    parents,
+  )
+}
+
 /** Every epoch key we hold for a room, oldest first. */
 function heldEpochs(room: string): { epoch: number; raw: Uint8Array }[] {
   const out: { epoch: number; raw: Uint8Array }[] = []

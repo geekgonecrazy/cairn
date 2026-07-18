@@ -252,6 +252,43 @@ func TestRoomVisibilityDefault(t *testing.T) {
 	}
 }
 
+// TestMemberRemove: MEMBER_REMOVE drops a member from a room's roster, and
+// VisibleRooms then no longer reports them as joined.
+func TestMemberRemove(t *testing.T) {
+	setTestStore(t)
+	admin, _ := identity.GenerateKey()
+	other, _ := identity.GenerateKey()
+
+	const space = "sp-hh"
+	fold(t, admin, space, cairnv1.EventType_SPACE_CREATE, roomStatePayload{SpaceName: "H"})
+	fold(t, admin, space, cairnv1.EventType_SPACE_MEMBER_ADD, roomStatePayload{MemberPub: other.Pub, Role: "member"})
+	fold(t, admin, "general", cairnv1.EventType_ROOM_CREATE, roomStatePayload{Name: "general", SpaceID: []byte(space), Visibility: "discoverable"})
+	fold(t, admin, "general", cairnv1.EventType_MEMBER_ADD, roomStatePayload{MemberPub: admin.Pub, Role: "admin"})
+	fold(t, admin, "general", cairnv1.EventType_MEMBER_ADD, roomStatePayload{MemberPub: other.Pub, Role: "member"})
+
+	// `other` is joined.
+	rooms, _, _ := VisibleRooms(other.Pub)
+	if j, _ := joinedByName(rooms, "general"); !j {
+		t.Fatal("other should be joined before removal")
+	}
+
+	// Remove them.
+	fold(t, admin, "general", cairnv1.EventType_MEMBER_REMOVE, roomStatePayload{MemberPub: other.Pub})
+	if ms, _ := st.ListMembers([]byte("general")); len(ms) != 1 {
+		t.Fatalf("roster should have 1 member after remove, got %d", len(ms))
+	}
+	// They still SEE the room (space member + discoverable) but no longer joined.
+	rooms, _, _ = VisibleRooms(other.Pub)
+	if j, present := joinedByName(rooms, "general"); !present || j {
+		t.Fatalf("after removal, general should be discoverable-not-joined, got joined=%v present=%v", j, present)
+	}
+	// The admin is untouched.
+	arooms, _, _ := VisibleRooms(admin.Pub)
+	if j, _ := joinedByName(arooms, "general"); !j {
+		t.Fatal("admin should still be joined")
+	}
+}
+
 // TestSpaceUpdateAndMemberRemove: SPACE_UPDATE renames a space (and rewrites its
 // admit policy), and SPACE_MEMBER_REMOVE revokes a discovery grant.
 func TestSpaceUpdateAndMemberRemove(t *testing.T) {

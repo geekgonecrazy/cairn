@@ -110,6 +110,16 @@ func applyRoomState(ev *cairnv1.Event) error {
 			AddedEvent: ev.EventId,
 		})
 
+	case cairnv1.EventType_MEMBER_REMOVE:
+		// Drops the member from the room roster. The remover pairs this with a
+		// ROOM_KEY_ROTATE wrapped to the REMAINING members, so the removed member
+		// cannot read the new epoch — but pre-removal history they already hold
+		// stays readable (keys cannot be un-shared).
+		if len(p.MemberPub) != 32 {
+			return fmt.Errorf("core: member_remove without a valid member_pub")
+		}
+		return st.DeleteMember(ev.RoomId, p.MemberPub)
+
 	case cairnv1.EventType_SPACE_MEMBER_ADD:
 		// A space_member_add names the space in room_id, exactly as space_create
 		// does. It grants discovery only — no key rides it.
@@ -262,6 +272,7 @@ func isRoomStateEvent(t cairnv1.EventType) bool {
 		cairnv1.EventType_SPACE_UPDATE,
 		cairnv1.EventType_ROOM_CREATE,
 		cairnv1.EventType_MEMBER_ADD,
+		cairnv1.EventType_MEMBER_REMOVE,
 		cairnv1.EventType_SPACE_MEMBER_ADD,
 		cairnv1.EventType_SPACE_MEMBER_REMOVE,
 		cairnv1.EventType_ROOM_JOIN_REQUEST:

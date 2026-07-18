@@ -295,6 +295,19 @@ join; the recovery flow is gated and unskippable.
       > **Honest gap surfaced in the UI:** admit policy is **recorded but not yet enforced** — the
       > carrier does not gate a `SPACE_MEMBER_ADD` on it. The modal says so. Peer-household admission
       > (origin = specific roots, the `PeerJoinModal` flow) is deliberately deferred.
+- [x] **Channel member removal that cuts off access.** Wired `MEMBER_REMOVE` (enum 51, previously
+      unfolded) → `DeleteMember`. The Members & keys roster gets a per-member **remove** (non-self);
+      `state.removeMember` **rotates the room key to the REMAINING members** and then emits the
+      remove, so the removed member holds no key for the new epoch and can't read anything sent after.
+      Only a room member can do it — minting the new epoch needs the current key. `foldMembers` now
+      applies add/remove in timestamp order so add→remove→re-add converges; `MEMBER_REMOVE` /
+      `SPACE_MEMBER_REMOVE` are handled live (the removed member's sidebar updates without a reload,
+      closing the space-remove live gap). `core/rooms_test.go` covers the fold + the `joined` flip.
+      > **Honest limits:** it does **not** claw back pre-removal history the member already holds
+      > (keys can't be un-shared), and the system does not yet **reject** an old-epoch post a removed
+      > member could still craft with a key they retain, nor is removal admin-gated — the same
+      > authorization-not-enforced class as the chain gate's deferred tightening. Forward-secrecy
+      > enforcement (accept only the latest epoch from current members) is a separate item.
 
 **Not yet — the rest of Phase 4:**
 
