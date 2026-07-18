@@ -17,18 +17,22 @@ Companion to [`plan.md`](./plan.md) (the build plan) and the design mockup in
   for the mobile app. (See `plan.md` §1 for how these compose.)
 - **Sources of truth:** the `claude-design/` mockup is the UI source of truth (React files are a
   *picture, not a blueprint*); the vision repo at `/root/code/vision` is the architecture source.
+- **NATS / JetStream — not now, kept on the table.** Not adopting it for now; revisit if a concrete
+  need appears. Reasoning from the discussion: the outbox ("track what hasn't been delivered") is
+  better modeled as a **per-peer frontier/cursor over the signed DAG** than a queue — "undelivered to
+  X" = DAG − X's acked frontier — because the DAG already provides the durability (the payload can't
+  be lost), so a queue would re-store what the DAG already holds. The frontier is the durable truth;
+  the active "push now, retry on failure" work-loop is the only genuinely queue-shaped piece.
+  **Kept as a candidate for later** if we want: (a) an off-the-shelf engine for that retry work-loop
+  (ack / redelivery / backoff), (b) durable intra-host workload⇄workload delivery across restarts /
+  live-migration, or (c) convergence with the already-chosen **home-automation NATS bus** (NATS
+  speaking MQTT). Guardrails if ever adopted: per-host / additive only (never a global bus), never the
+  source of truth or trust path, short / interest-based retention.
 
 ---
 
 ## Open — questioned / proposed, NOT yet decided
 
-- **NATS / JetStream — QUESTIONED, not decided.** The user asked *whether* it's needed. My
-  recommendation (a recommendation only, no decision made): Cairn *core* probably doesn't need it,
-  because the per-room signed event DAG already is a durable, ordered, verifiable log (so JetStream
-  would be a second, weaker source of truth), and household-scale realtime fan-out is a small
-  in-process hub. Where NATS *does* already appear in the vision: the **home-automation device bus**
-  (NATS speaking MQTT). If it turns out useful, an embedded in-memory NATS as the WS fan-out hub is a
-  style option. **→ Decision still to be made by the user.**
 - **RPC library:** ConnectRPC (my proposal) vs. the vision's literal "gRPC + grpc-web gateway." Not
   decided.
 - **SQLite driver:** `modernc.org/sqlite` (pure-Go, no cgo) is my recommendation for clean
