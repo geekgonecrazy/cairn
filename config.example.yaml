@@ -1,0 +1,31 @@
+# Cairn server (cairnd) configuration.
+# All values shown are the defaults — cairnd runs fine with no config file at all.
+# Copy to config.yaml and pass it:  go run ./cmd/cairnd -configFile config.yaml
+
+# HTTP listen address: Connect API + SSE realtime + blob gateway + the SPA.
+address: ":8099"
+
+# Storage backend. Only "sqlite" exists today.
+store: "sqlite"
+
+# SQLite database file. Dev phase has NO migrations — to reset, stop the server
+# and delete this file (plus the -wal/-shm siblings) and blobDir.
+sqlitePath: "cairn.db"
+
+# Built SPA to serve at /__hub/ . Produced by `cd webapp && npm run build`.
+# If the directory is absent, cairnd serves the API only and logs a note.
+webappDir: "webapp/dist"
+
+# Local blob store directory (the data plane). Holds ENCRYPTED, content-addressed
+# objects only — never plaintext, never keys.
+# NOTE: this is the local stand-in for iroh-store; see decisions.md §Deviations.
+blobDir: "cairn-blobs"
+
+# Hex-encoded household root public keys this node recognizes.
+#
+# EMPTY (the default) means no identity gate: any well-formed, correctly signed
+# event is accepted. That is fine for development. Once you list roots here,
+# every sender must chain back to one of them
+# (session key → device key → member root → household root) or be rejected.
+trustedRoots: []
+#   - "3f1a...."
