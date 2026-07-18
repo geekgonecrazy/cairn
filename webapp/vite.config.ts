@@ -10,6 +10,9 @@ export default defineConfig({
   base: '/__hub/',
   plugins: [svelte()],
   server: {
+    // Bind explicitly rather than relying on `localhost` resolving.
+    host: '127.0.0.1',
+    port: 5173,
     proxy: {
       '/cairn.v1.CairnService': { target: API_TARGET, changeOrigin: true },
       '/v1': { target: API_TARGET, changeOrigin: true },
