@@ -26,33 +26,57 @@ custom Go protocol (per-room signed event DAG, Ed25519 identities, pluggable tra
 
 ---
 
-## 2. Repo layout (monorepo)
+## 2. Repo layout & Go conventions
+
+Follows the conventions in `geekgonecrazy/rfd-tool` and `fidetechsolutions/flockledger`:
+**flat top-level packages named by concern, no `internal/`**, a `store` interface with a
+`store/sqlite` implementation, a `core` package that wires everything via `Setup()`, tiny
+`cmd/<binary>/main.go` entrypoints, the Svelte app in `webapp/`, and a `PROJECT.md` overview.
+Module path: **`github.com/geekgonecrazy/cairn`**. Cairn's extra subsystems (crypto, DAG,
+transports, broker) live as **sibling top-level packages** — the same way `rfd-tool` has
+`renderer/`, `webhook/`, `utils/` beside `core/`.
 
 ```
 cairn/
-  proto/               # protobuf wire schema + Connect service defs — THE contract
-  core/                # Go shared libraries (used by cairnd AND the Wails3 node)
-    identity/          #   Ed25519 chain: root → member → device → session; delegations
-    event/             #   Event envelope, per-room signed DAG, causal parents, tiebreak
-    room/              #   per-room E2EE (room key, AES-GCM), key rotation, membership
-    store/             #   SQLite store (modernc): events, rooms, members, keys, last-seen
-    transport/         #   plugin iface + impls: lan, mesh (LoRa), ble, iroh
-    broker/            #   pure-verifier capability broker + consumed-id cache
-    blobs/             #   iroh-store gRPC client (add/get/get-range/pin/has/export)
   cmd/
-    cairnd/            # Go server binary (Capsule workload): Connect API + WS realtime
-  web/                 # Svelte frontend (PWA + shared UI) — ports claude-design/
-    src/lib/design/    #   design system: CSS vars, primitives, chips, buttons (from mockup)
-    src/lib/inlay/     #   declared-inlay role renderer + standard-library cards
-    src/lib/net/       #   Connect client, WS subscribe, local store (OPFS/IDB)
-  native/              # Wails3 wrapper: embeds core as the on-device node + platform APIs
-  claude-design/       # existing mockup — UI reference, not shipped
-  plan.md              # this file
+    cairnd/            # server binary: config.Load → core.Setup → router.Run (nothing else)
+  config/              # config.Load(path); package var config.Config (yaml+json tags; Store selects backend)
+  models/              # domain types (Room, Member, Identity, view models) — one file per entity
+  proto/               # protobuf wire schema + Connect service defs; generated Go + TS — THE contract
+  identity/            # Ed25519 chain: household→member→device(passkey)→session; delegations, verify
+  event/               # Event envelope, signing, per-room signed DAG, parents, event_id, tiebreak, sync
+  room/                # per-room E2EE (room key, AES-GCM), membership, key rotation
+  transport/           # Transport interface + impls as siblings (mirrors store/sqlite):
+    lan/               #   LAN gRPC/Connect        (Phase 1)
+    mesh/              #   Meshtastic (LoRa)        (Phase 3)
+    ble/               #   BLE GATT                 (Phase 5)
+    iroh/              #   iroh                     (Phase 5)
+  broker/              # capability broker (pure verifier) + consumed-id cache
+  blobs/               # iroh-store client (file_ref: add/get/get-range/pin/has)
+  store/               # store.Store interface (store.go)
+    sqlite/            #   impl: sqlite.go, migrations.go, one file per entity (events.go, rooms.go, frontier.go…)
+  controllers/         # Connect/gRPC service handlers + realtime stream
+  router/              # server setup + middleware
+  core/                # wires it all: core.Setup() + unexported package-level state (rfd-tool/flockledger style)
+  native/              # Wails3 wrapper — embeds the same packages as an on-device node (Phase 5)
+  webapp/              # Svelte + Vite PWA — the claude-design mockup, ported
+  claude-design/       # existing React mockup — UI reference, not shipped
+  PROJECT.md           # project overview (their convention) · plan.md · decisions.md
+  config.example.yaml · Dockerfile · docker-compose.yml · Makefile · .github/workflows/build.yml
 ```
+
+**Conventions to match (from the two repos):**
+- **No `internal/`.**
+- `config`: `config.Load(path)` + package var `config.Config`; a `Store` field selects the backend (default `sqlite`).
+- `store`: interface in `store/store.go`; `sqlite.New()` in `store/sqlite`; `CheckDb()`, `migrations.go`.
+- `core`: `core.Setup()` initializes and holds unexported package-level state; `switch` on `config.Config.Store`.
+- `cmd/cairnd/main.go`: `config.Load → core.Setup → router.Run`, nothing else.
+- **Realtime:** their precedent is **SSE** (`flockledger/controllers/sse.go`); ConnectRPC server-streaming gives the
+  same shape over HTTP — **reconcile with the vision's "WebSocket only"** (open item in §5 / `decisions.md`).
 
 **Define the Phase-3 demonstration criteria before Phase 1** (vision requirement): e.g.
 *"two devices converge a 24h, N-event history across LAN↔mesh; broker approval end-to-end;
-no crypto regressions."* Put it in `proto/` or a `MILESTONES.md`.
+no crypto regressions."* Put it in `PROJECT.md` or a `MILESTONES.md`.
 
 ---
 
@@ -69,8 +93,8 @@ phased plan; 0 and 6 bracket it.
   `inlay`, `inlay_update`, `interaction`, `signaling_offer/answer/ice`, `call_ring`,
   `call_bye`, `space_create/update`. (Reserve the ones later phases implement.)
 - [ ] Connect service defs: `RoomService`, `RealtimeService.Subscribe` (WS), `BrokerService`.
-- [ ] `core/identity`: Ed25519 keygen, delegation-chain sign/verify (root→member→device→session).
-- [ ] `core/store`: SQLite schema + migrations (`modernc.org/sqlite`).
+- [ ] `identity`: Ed25519 keygen, delegation-chain sign/verify (root→member→device→session).
+- [ ] `store`: SQLite schema + migrations (`modernc.org/sqlite`).
 - [ ] `web/`: Svelte+Vite PWA scaffold, SPA base path, port the design system (CSS vars,
   `Icon`, primitives, chips, buttons, modal shell) from the mockup into Svelte components.
 - [ ] `MILESTONES.md` with the Phase-3 demonstration criteria.
@@ -80,12 +104,12 @@ an empty room with the design system.
 
 ### Phase 1 — MVP: LAN chat + verified history  *(vision Phase 1)*
 **Goal:** the "in-house on Wi-Fi" baseline.
-- [ ] `core/event`: per-room signed DAG (causal parents, tiebreak = lower `event_id` hash),
+- [ ] `event`: per-room signed DAG (causal parents, tiebreak = lower `event_id` hash),
   local-first write, incremental sync.
-- [ ] `core/room`: per-room key, AES-GCM payloads, `member_*`, `room_key_rotate`
+- [ ] `room`: per-room key, AES-GCM payloads, `member_*`, `room_key_rotate`
   (new member gets current key; **pre-join history opaque** — state the rule).
 - [ ] `core/transport/lan` (gRPC) + `cmd/cairnd` (Connect API + WS realtime subscribe).
-- [ ] `web`: Spaces / rooms / DMs, composer, message list with **honest states**
+- [ ] `webapp`: Spaces / rooms / DMs, composer, message list with **honest states**
   (`sending → sent → queued (no route) → delivered (path unknown)`), reactions, reply,
   quote, edit, delete (tombstone), presence. Local DAG cache in OPFS/IDB + session key.
 - [ ] Route (accept, no UI): `signaling_*`, `call_ring`, `call_bye`.
@@ -95,16 +119,16 @@ no history; message states reflect real delivery.
 
 ### Phase 2 — Agents native + files + inlays  *(vision Phase 2)*
 **Goal:** structured agent interaction and content.
-- [ ] `core/broker`: pure verifier — verifies `approval_request` + `approval_grant` pair +
+- [ ] `broker`: pure verifier — verifies `approval_request` + `approval_grant` pair +
   policy + consumed-id cache → `credential_minted`. `task_*` / `approval_*` wired.
-- [ ] `core/blobs`: `iroh-store` gRPC client; `file_ref` = encrypt (per-file AES key) → add →
+- [ ] `blobs`: `iroh-store` gRPC client; `file_ref` = encrypt (per-file AES key) → add →
   BLAKE3 hash → pin → envelope `{hash, wrapped_key, mime, size, thumb_hash?}`.
-- [ ] `web/inlay`: **declared-inlay role renderer** — the primitive vocabulary (`text`,
+- [ ] `webapp` inlay engine: **declared-inlay role renderer** — the primitive vocabulary (`text`,
   `number`, `progress_fraction`, `status_enum`, `timestamp`, `image_cid`, `series`,
   `action_ref`, `input`/`select`, `record`/`list`/`group`/`inlay_ref`) + standard-library
   cards (poll, approval, task_list, agent_panel) + **text fallback** + **widget placeholder**.
   Port from `claude-design/cairn-primitives.jsx`.
-- [ ] `web`: agent panel, approval inlay + broker flow, capabilities card (+ **policy chip**
+- [ ] `webapp`: agent panel, approval inlay + broker flow, capabilities card (+ **policy chip**
   `auto`/`human-gated`/`forbidden`), signed audit log, **file/image cards with retrieval
   states** (`available` / `pending — no fat link` / `downloading` / `broken`), composer
   attachment chips, **per-room declaration allowlist** (default-deny admin surface).
@@ -115,11 +139,11 @@ with honest retrieval states.
 
 ### Phase 3 — Meshtastic transport + **demonstration**  *(vision Phase 3)*
 **Goal:** the bridge-tax payoff, in running code.
-- [ ] `core/transport`: generalize the plugin iface (`Available()`, framing); `mesh` (LoRa)
+- [ ] `transport`: generalize the plugin iface (`Available()`, framing); `mesh` (LoRa)
   via serial/MQTT bridge; proto `Event` framed for the ~200 B LoRa MTU; per-event-type
   routing defaults (chatty types off mesh); **mesh queue: ordering + dedup across gaps**.
 - [ ] Auto path selection LAN ↔ mesh; `file_ref` **envelope only** over mesh (never bytes).
-- [ ] `web`: transport mode switcher (auto/home/field/mesh-only), per-message hint,
+- [ ] `webapp`: transport mode switcher (auto/home/field/mesh-only), per-message hint,
   "via mesh" / "pending — no route" surfacing, transports settings + **link-radio wizard**
   (from `claude-design/cairn-settings.jsx`).
 
@@ -128,12 +152,12 @@ broker approval works over mesh, no crypto regressions vs. Phase 1.
 
 ### Phase 4 — Multi-device delegations + identity/trust surfaces  *(vision Phase 4)*
 **Goal:** many devices = one identity; Spaces as policy.
-- [ ] `core/identity`: **self-DAG** for `device_delegation` / `device_revoke`; **household-root
+- [ ] `identity`: **self-DAG** for `device_delegation` / `device_revoke`; **household-root
   bootstrap** + member provisioning; **24-word recovery** (member/household root, in no
   authenticator).
 - [ ] QR **device pairing** (new device generates key → QR → trusted device signs delegation +
   wraps room keys).
-- [ ] `web`: onboarding / pairing / recovery / parent-sets-up-kid (from
+- [ ] `webapp`: onboarding / pairing / recovery / parent-sets-up-kid (from
   `claude-design/cairn-settings.jsx`); identity & devices settings (paired list, revoke);
   **Space settings + admit-policy** (kind + origin) and **peer-household join** (paste key /
   QR / signed invite → origin-fingerprint review → cross-household flip) from
@@ -152,7 +176,7 @@ recovery flow gated and unskippable.
   one passkey ceremony issues the session key; **passkey gesture on capability grants**
   (`approval_grant`, `member_add`, `room_key_rotate`, component-install); RP-ID via an owned
   domain + **DNS-01 Let's Encrypt** cert (or native wrapper); syncable-vs-device-bound policy.
-- [ ] `web`: **biometric beat** on capability-bound actions (approval inlay, cap-actions).
+- [ ] `webapp`: **biometric beat** on capability-bound actions (approval inlay, cap-actions).
 
 **Exit:** native iOS app (simulator) with durable storage + passkey pairing; BLE presence
 between two devices; approving a capability triggers a biometric ceremony.
@@ -160,7 +184,7 @@ between two devices; approving a capability triggers a biometric ceremony.
 ### Phase 6 — Video / calls / vidmail  *(uses Phase-1 reserved signaling)*
 **Goal:** live and async video, substrate-native. Tracks the vision **video** component.
 - [ ] Pion/WebRTC over the reserved `signaling_*` / `call_ring` / `call_bye` events.
-- [ ] `web`: voice + **video call** surfaces, **incoming-call** surface (aggressive all-transport
+- [ ] `webapp`: voice + **video call** surfaces, **incoming-call** surface (aggressive all-transport
   broadcast, locked), watch party (from `claude-design/cairn-video.jsx`), **vidmail**
   (`file_ref` recorded video with retrieval states).
 
@@ -222,7 +246,7 @@ From `protocol.md` (carry these forward):
 ## 7. Suggested first steps
 
 1. Stand up `proto/` with the full event enum + Connect defs; generate Go + TS.
-2. `core/identity` + `core/event` + `core/store` (SQLite) with unit tests for chain-verify and
+2. `identity` + `event` + `store` (SQLite) with unit tests for chain-verify and
    DAG convergence.
 3. `cmd/cairnd` LAN + WS; `web/` shell talking to it — hit the **Phase 1 exit** (two browsers,
    one verified history) before widening scope.

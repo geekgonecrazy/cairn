@@ -17,6 +17,12 @@ Companion to [`plan.md`](./plan.md) (the build plan) and the design mockup in
   for the mobile app. (See `plan.md` §1 for how these compose.)
 - **Sources of truth:** the `claude-design/` mockup is the UI source of truth (React files are a
   *picture, not a blueprint*); the vision repo at `/root/code/vision` is the architecture source.
+- **Code structure follows `geekgonecrazy/rfd-tool` + `fidetechsolutions/flockledger`.** Flat
+  top-level Go packages by concern, **no `internal/`**; `store` interface + `store/sqlite` impl;
+  a `core` package wired via `core.Setup()` with unexported package-level state; `config.Load` +
+  `config.Config`; tiny `cmd/<binary>/main.go`; `models/`; Svelte app in `webapp/`; a `PROJECT.md`
+  overview. Module path `github.com/geekgonecrazy/cairn`. Full layout in `plan.md` §2. (Note: their
+  realtime precedent is **SSE**, not WebSocket — reconcile with the vision under "RPC library" below.)
 - **NATS / JetStream — not now, kept on the table.** Not adopting it for now; revisit if a concrete
   need appears. Reasoning from the discussion: the outbox ("track what hasn't been delivered") is
   better modeled as a **per-peer frontier/cursor over the signed DAG** than a queue — "undelivered to
