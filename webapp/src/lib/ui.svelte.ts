@@ -31,6 +31,20 @@ class UIState {
   closeIdentity() {
     this.identityOpen = false
   }
+
+  /** Create-space modal, opened from the rail's "+". Space creation is a
+   *  deliberate act (a named policy boundary), so it gets its own surface rather
+   *  than being a side effect of creating a channel. */
+  createSpaceOpen = $state(false)
+
+  openCreateSpace() {
+    this.createSpaceOpen = true
+    this.navOpen = false
+  }
+
+  closeCreateSpace() {
+    this.createSpaceOpen = false
+  }
 }
 
 export const ui = new UIState()

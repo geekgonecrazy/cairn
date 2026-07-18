@@ -5,6 +5,7 @@
   import RoomView from './lib/components/RoomView.svelte'
   import Onboarding from './lib/components/Onboarding.svelte'
   import DevicesModal from './lib/components/DevicesModal.svelte'
+  import CreateSpaceModal from './lib/components/CreateSpaceModal.svelte'
   import { app } from './lib/state.svelte'
   import { ui } from './lib/ui.svelte'
   import { identity } from './lib/identity.svelte'
@@ -45,10 +46,15 @@
   <DevicesModal onclose={() => ui.closeIdentity()} />
 {/if}
 
+{#if ui.createSpaceOpen}
+  <CreateSpaceModal />
+{/if}
+
 <svelte:window
   onkeydown={(e) => {
     if (e.key !== 'Escape') return
-    if (ui.identityOpen) ui.closeIdentity()
+    if (ui.createSpaceOpen) ui.closeCreateSpace()
+    else if (ui.identityOpen) ui.closeIdentity()
     else ui.closeNav()
   }}
 />

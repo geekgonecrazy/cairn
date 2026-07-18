@@ -51,18 +51,15 @@ class RoomStore {
   loaded = $state(false)
   error = $state('')
 
-  /** Rooms in a space (all rooms when spaceId is empty). */
+  /** Channels in a space. An empty spaceId means "no space" (a fresh household
+   *  before any space exists), so it matches nothing — never the whole list. */
   inSpace(spaceId: string): Room[] {
-    return this.rooms.filter((r) => !spaceId || r.spaceId === spaceId)
+    if (!spaceId) return []
+    return this.rooms.filter((r) => r.spaceId === spaceId)
   }
 
   find(id: string): Room | undefined {
     return this.rooms.find((r) => r.id === id)
-  }
-
-  /** Whether this member is in any room at all. */
-  get isEmpty(): boolean {
-    return this.loaded && this.rooms.length === 0
   }
 
   async refresh() {
@@ -109,18 +106,6 @@ class RoomStore {
 
 export const roomStore = new RoomStore()
 
-/**
- * The space id for a household — derived from its root pubkey so EVERY member
- * computes the same value.
- *
- * Previously the id came from the creating member's display name, which meant a
- * second member creating a room founded a second space inside one household.
- * A space is a property of the household, not of whoever got there first.
- */
-export function householdSpaceId(householdPub: Uint8Array): string {
-  return 'hh-' + hex(householdPub).slice(0, 16)
-}
-
 /** Room ids are UTF-8 strings on the wire; keep them URL/­display safe. */
 export function slugify(name: string): string {
   const base = name
@@ -133,6 +118,29 @@ export function slugify(name: string): string {
   // on a shared carrier; room ids are global, names are not.
   const rand = hex(crypto.getRandomValues(new Uint8Array(4)))
   return `${base || 'room'}-${rand}`
+}
+
+/**
+ * A space id for a NEWLY created space — a unique id, not derived from the
+ * household. A space is a named policy boundary the creator makes deliberately,
+ * and a household may hold several (Family, Ops, …); the id is carried in the
+ * signed SPACE_CREATE and folded by every member, so everyone converges on the
+ * same space without recomputing an id from shared inputs.
+ *
+ * (Earlier this was derived from the household root to force exactly one space
+ * per household — an anti-accidental-forking measure from when a room silently
+ * created its space. Explicit creation makes that unnecessary: forking a space
+ * is now a deliberate act, and convergence comes from folding the same event.)
+ */
+export function newSpaceId(name: string): string {
+  const base = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 24)
+  const rand = hex(crypto.getRandomValues(new Uint8Array(6)))
+  return `sp-${base || 'space'}-${rand}`
 }
 
 export { utf8 }

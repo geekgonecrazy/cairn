@@ -11,13 +11,18 @@
   let newHidden = $state(false)
   let createError = $state('')
 
-  const space = $derived(roomStore.spaces[0])
-  // Falling back to your own display name implied you were in a household of
-  // your own. Until you're in a room, you legitimately know of no space.
-  const spaceName = $derived(space?.name ?? 'Cairn')
+  // The space the sidebar is showing. A brand-new household has none — the rail
+  // starts empty and a space is created deliberately, so there is legitimately
+  // no space to name until then.
+  const space = $derived(roomStore.spaces.find((s) => s.id === app.activeSpaceId))
+  const hasSpace = $derived(!!space)
+  const spaceName = $derived(space?.name ?? 'No space')
 
+  // Channels are scoped to the active space — never a flat list across spaces.
   const rooms = $derived(
-    roomStore.rooms.filter((r) => r.name.toLowerCase().includes(query.toLowerCase())),
+    roomStore
+      .inSpace(app.activeSpaceId)
+      .filter((r) => r.name.toLowerCase().includes(query.toLowerCase())),
   )
 
   async function create() {
@@ -42,41 +47,55 @@
     <div class="meta">local-first · e2ee</div>
   </div>
 
-  <div class="search">
-    <Icon name="search" size={14} />
-    <input placeholder="Search rooms" bind:value={query} />
-  </div>
-
-  <div class="section-label">
-    Rooms <span class="count">{rooms.length}</span>
-    <button class="add" title="Create a room" aria-label="Create a room" onclick={() => (creating = !creating)}>
-      <Icon name="plus" size={13} />
-    </button>
-  </div>
-
-  {#if creating}
-    <div class="create">
-      <!-- svelte-ignore a11y_autofocus -->
-      <input
-        autofocus
-        bind:value={newName}
-        placeholder="Room name"
-        maxlength="40"
-        onkeydown={(e) => {
-          if (e.key === 'Enter') create()
-          if (e.key === 'Escape') creating = false
-        }}
-      />
-      <button class="go" onclick={create} disabled={!newName.trim()}>Create</button>
+  {#if hasSpace}
+    <div class="search">
+      <Icon name="search" size={14} />
+      <input placeholder="Search channels" bind:value={query} />
     </div>
-    <label class="hidden-opt" title="Hidden rooms don't show to space members until they're added">
-      <input type="checkbox" bind:checked={newHidden} />
-      <span>Hidden — only invited members can see it</span>
-    </label>
-    {#if createError}<p class="err" role="alert">{createError}</p>{/if}
+
+    <div class="section-label">
+      Channels <span class="count">{rooms.length}</span>
+      <button class="add" title="Create a channel" aria-label="Create a channel" onclick={() => (creating = !creating)}>
+        <Icon name="plus" size={13} />
+      </button>
+    </div>
+
+    {#if creating}
+      <div class="create">
+        <!-- svelte-ignore a11y_autofocus -->
+        <input
+          autofocus
+          bind:value={newName}
+          placeholder="Channel name"
+          maxlength="40"
+          onkeydown={(e) => {
+            if (e.key === 'Enter') create()
+            if (e.key === 'Escape') creating = false
+          }}
+        />
+        <button class="go" onclick={create} disabled={!newName.trim()}>Create</button>
+      </div>
+      <label class="hidden-opt" title="Hidden channels don't show to space members until they're added">
+        <input type="checkbox" bind:checked={newHidden} />
+        <span>Hidden — only invited members can see it</span>
+      </label>
+      {#if createError}<p class="err" role="alert">{createError}</p>{/if}
+    {/if}
   {/if}
 
   <div class="rooms">
+    {#if !hasSpace}
+      <!-- No space selected/created yet. Channels live inside a space, so there
+           is nothing to create until one exists. -->
+      <p class="empty">
+        {#if identity.current}
+          No space yet. Create one with <strong>+</strong> on the left rail — then you can add
+          channels inside it. Or ask someone in your household to add you to theirs.
+        {:else}
+          No space yet.
+        {/if}
+      </p>
+    {/if}
     {#each rooms as r (r.id)}
       <button
         class="room-item"
@@ -93,16 +112,11 @@
       </button>
     {/each}
 
-    {#if roomStore.isEmpty && !query}
-      <!-- An empty household is the CORRECT first state, not a loading gap:
-           rooms exist only because someone created them. -->
+    {#if hasSpace && rooms.length === 0 && !query}
+      <!-- A space with no channels is a normal first state: channels exist only
+           because someone created them. -->
       <p class="empty">
-        {#if identity.current}
-          No rooms yet. Create one to start talking — or ask someone in your household to
-          add you to theirs.
-        {:else}
-          No rooms yet.
-        {/if}
+        No channels in {spaceName} yet. Create one with <strong>+</strong> above.
       </p>
     {:else if roomStore.error}
       <p class="empty">Can't reach the server, so this list may be out of date.</p>

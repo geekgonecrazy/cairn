@@ -1,19 +1,15 @@
 <script lang="ts">
   import Icon from '../Icon.svelte'
+  import { app } from '../state.svelte'
   import { roomStore } from '../rooms.svelte'
   import { identity } from '../identity.svelte'
   import { ui } from '../ui.svelte'
 
-  // Only REAL spaces. A member who has not been added to any room is in no
-  // space and must see none — inventing a placeholder from their own display
-  // name made every newcomer look like they had founded their own household,
-  // which is the same fiction the deleted data.ts fixture told.
+  // Only REAL spaces. A member who has not been added to any space is in none
+  // and must see none — inventing a placeholder from their own display name made
+  // every newcomer look like they had founded their own household, which is the
+  // same fiction the deleted data.ts fixture told.
   const spaces = $derived(roomStore.spaces)
-
-  // Derived, not $state: spaces load asynchronously, so capturing spaces[0] at
-  // init would pin an empty household's placeholder forever (and crash when
-  // there are none).
-  const activeSpace = $derived(spaces[0]?.id ?? '')
 
   const me = $derived(identity.current)
   const initials = $derived(
@@ -33,14 +29,15 @@
   {#each spaces as s (s.id)}
     <button
       class="space"
-      aria-current={activeSpace === s.id}
+      aria-current={app.activeSpaceId === s.id}
       title={s.name}
+      onclick={() => app.selectSpace(s.id)}
     >
       {s.label}
     </button>
   {/each}
 
-  <button class="space add" title="Add space" aria-label="Add space">
+  <button class="space add" title="Create a space" aria-label="Create a space" onclick={() => ui.openCreateSpace()}>
     <Icon name="plus" size={16} />
   </button>
 

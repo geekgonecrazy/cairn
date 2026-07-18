@@ -176,6 +176,25 @@ that is not yet a member must still be able to fold them. `core/rooms_test.go` p
 matrix — founder sees all, a space-only member discovers just the discoverable rooms, a room-only
 member sees no siblings, a stranger sees nothing.
 
+**Amendment (later 2026-07-18) — spaces are first-class and multiple; channels live inside one.**
+The initial cut kept exactly one space per household, id derived from the household root
+(`householdSpaceId`), auto-created as a side effect of making the first room. That was an
+anti-accidental-forking measure from when a room silently minted its space. Per
+`claude-design/cairn-spaces.jsx` a space is a *named policy boundary* and a household may hold several
+("Family", "Ops"), so:
+
+- Space creation is now a **deliberate act** (`createSpace` → `SPACE_CREATE` + `SPACE_MEMBER_ADD(self,
+  admin)`), and a space id is **unique per creation** (`newSpaceId`), not derived from the household.
+  Convergence still holds because everyone folds the *same* signed `SPACE_CREATE` — the derived id was
+  only ever a way to make independent members compute the same value, which explicit creation makes
+  unnecessary.
+- **A channel cannot exist without a space.** `createRoom` requires an active space and no longer
+  auto-creates one; a brand-new household shows an empty rail whose only affordance is "Create a
+  space". This reverses the "found the household space on demand" behaviour above — founding no longer
+  implies a space.
+- The anti-forking concern is preserved in spirit: forking a space is now a *deliberate* act, not an
+  accident of two members each creating a room, so nothing is silently duplicated.
+
 ### Typed identity-log objects and approval artifacts — decided 2026-07-18
 
 Every identity-log object (`identity/`) and portable approval artifact (`approval/`) now carries

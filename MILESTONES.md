@@ -266,6 +266,25 @@ join; the recovery flow is gated and unskippable.
       > unknown link). `cmd/agent`/`cmd/smoke` now establish a self-household (`identity.SelfHousehold`)
       > so they pass the gate; the agent↔human demo (two households) needs both roots pinned.
 
+### First-class spaces: create a space, then channels inside it — done 2026-07-18
+
+- [x] **Spaces are created deliberately, and channels live inside one.** Replaced the single
+      household-derived space (`householdSpaceId`, one per household, auto-created as a side effect
+      of making a room) with **multiple named spaces**, each a policy boundary that holds channels —
+      matching `claude-design/cairn-spaces.jsx` ("Family", "Ops" are policy, not built-in kinds) and
+      the two-step create flow in `cairn-create-modals.jsx`. A space id is now unique per creation
+      (`newSpaceId`), carried in the signed `SPACE_CREATE` and folded by every member, so everyone
+      converges without recomputing an id — the anti-forking reason for the derived id is moot once
+      creation is an explicit act.
+- [x] **You cannot create a channel without a space.** `createRoom` requires an active space and no
+      longer auto-creates one; the sidebar's channel "+" only appears once a space is active, and a
+      brand-new household shows an empty rail whose only affordance is "Create a space". `createSpace`
+      emits `SPACE_CREATE` + `SPACE_MEMBER_ADD(self, admin)`; the rail's "+" opens a `CreateSpaceModal`.
+- [x] **Space selection.** Rail spaces are now clickable (`app.selectSpace`), the room list is scoped
+      to the active space (`inSpace`), and inviting a member (`addSpaceMember`) grants discovery of
+      the **active** space's channels. Closes the "every space is hardcoded Household / not nameable"
+      gap.
+
 **Not yet — the rest of Phase 4:**
 
 - [ ] Camera QR capture (`getUserMedia`); today pairing is copy/paste of the same payload.
@@ -275,8 +294,6 @@ join; the recovery flow is gated and unskippable.
       `SPACE_MEMBER_ADD`, and there is no space-settings surface. A space admin adds members by
       key today, mirroring room add-by-key.)
 - [ ] Parent-sets-up-kid provisioning flow (`claude-design/cairn-settings.jsx` §B).
-- [ ] Space naming — every space is hardcoded `"Household"` since the id became
-      household-derived. It should be nameable at founding or in space settings.
 - [ ] `approval_deny` carries a `reason` field that the UI never collects — a refusal reaches
       the agent and the audit log as a bare no.
 - [ ] `cmd/agent` is not idempotent: re-running for an existing room mints a fresh key at the

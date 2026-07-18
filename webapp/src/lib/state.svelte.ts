@@ -33,7 +33,7 @@ import {
 import { cachePut, cacheLoad } from './idb'
 import { identity } from './identity.svelte'
 import { directory } from './directory.svelte'
-import { roomStore, slugify, householdSpaceId } from './rooms.svelte'
+import { roomStore, slugify, newSpaceId } from './rooms.svelte'
 import { decode as cborDecode } from './cbor'
 import {
   decodeRequest,
@@ -117,6 +117,10 @@ class AppState {
   // No room until one is loaded — a household starts empty and 'general' was a
   // fixture that manufactured membership nobody had established.
   currentRoomId = $state<string>('')
+  // The space whose channels the sidebar is showing. Empty until a space exists
+  // and is selected — a brand-new household has none, and channels can only be
+  // created inside a space.
+  activeSpaceId = $state<string>('')
   messages = $state<Msg[]>([])
   connected = $state<boolean>(false)
   replyingTo = $state<Msg | null>(null)
@@ -181,8 +185,27 @@ class AppState {
    *  no rooms stays on the empty state rather than opening a phantom one. */
   private async openFirstRoom() {
     await roomStore.refresh()
+    this.ensureActiveSpace()
     const first = roomStore.rooms[0]
     if (first) await this.selectRoom(first.id)
+  }
+
+  /** Point the sidebar at a real space: keep the current one if it still exists,
+   *  else fall back to the first space we can see (or none). Called after every
+   *  refresh so a stale/emptied active space never leaves the rail pointing at
+   *  nothing that exists. */
+  private ensureActiveSpace() {
+    if (this.activeSpaceId && roomStore.spaces.some((s) => s.id === this.activeSpaceId)) return
+    this.activeSpaceId = roomStore.spaces[0]?.id ?? ''
+  }
+
+  /** Switch which space the sidebar shows. Drops into that space's first channel
+   *  (if any); an empty space shows the "no channels yet" state. */
+  async selectSpace(id: string) {
+    this.activeSpaceId = id
+    const first = roomStore.inSpace(id)[0]
+    if (first) await this.selectRoom(first.id)
+    else this.currentRoomId = ''
   }
 
   /**
@@ -200,6 +223,7 @@ class AppState {
     // space we share (a no-op refresh, cheap).
     if (ev.type === EventType.SPACE_MEMBER_ADD) {
       await roomStore.refresh()
+      this.ensureActiveSpace()
       return
     }
 
@@ -261,6 +285,10 @@ class AppState {
   async selectRoom(id: string) {
     if (!id) return
     this.currentRoomId = id
+    // Keep the rail in sync: opening a room (e.g. jumping to one we were just
+    // admitted to) makes its space the active one.
+    const room = roomStore.find(id)
+    if (room?.spaceId) this.activeSpaceId = room.spaceId
     this.refreshKeyState()
     this.replyingTo = null
     this.quotingTo = null
@@ -568,8 +596,28 @@ class AppState {
   }
 
   /**
-   * Create a room: space (if this is the first), room + its first key, then a
-   * member_add naming our own member root.
+   * Create a SPACE — a named policy boundary that holds channels. This is a
+   * deliberate act (the rail's "+"), not a side effect of making a channel: the
+   * creating member becomes the space's first member (admin) via a signed
+   * SPACE_MEMBER_ADD, so their discovery tier reflects it exactly like everyone
+   * they later invite. Returns the new space id, which becomes active.
+   */
+  async createSpace(name: string): Promise<string> {
+    const me = identity.current
+    if (!me) throw new Error('create an identity first')
+    const spaceId = newSpaceId(name)
+    await this.deliver(await buildSpaceCreate(spaceId, name.trim() || 'Space'))
+    await this.deliver(await buildSpaceMemberAdd(spaceId, me.memberPub, 'admin'))
+    await roomStore.refresh()
+    this.activeSpaceId = spaceId
+    return spaceId
+  }
+
+  /**
+   * Create a channel INSIDE the active space: room + its first key, then a
+   * member_add naming our own member root. A channel cannot exist without a
+   * space — there is no auto-created space anymore; the caller must have one
+   * active first.
    *
    * The creator is admitted by an explicit signed event rather than inferred
    * from authorship, so membership always has an auditable act behind it.
@@ -577,19 +625,8 @@ class AppState {
   async createRoom(name: string, visibility: 'discoverable' | 'hidden' = 'discoverable'): Promise<string> {
     const me = identity.current
     if (!me) throw new Error('create an identity first')
-
-    // The space id is derived from the HOUSEHOLD ROOT, not from whoever happens
-    // to create the first room. Deriving it from a display name meant the second
-    // member to create a room forked a second space inside one household.
-    // Everyone in a household computes the same id, so their rooms land together.
-    const spaceId = householdSpaceId(me.householdPub)
-    if (!roomStore.spaces.some((sp) => sp.id === spaceId)) {
-      await this.deliver(await buildSpaceCreate(spaceId, 'Household'))
-      // Founding the space also makes the founder its first member, so their
-      // sidebar reflects space membership like everyone they later invite — the
-      // discovery tier is not a thing only newcomers have.
-      await this.deliver(await buildSpaceMemberAdd(spaceId, me.memberPub, 'admin'))
-    }
+    const spaceId = this.activeSpaceId
+    if (!spaceId) throw new Error('create or select a space first')
 
     const roomId = slugify(name)
     await this.deliver(await buildRoomCreate(roomId, name.trim() || roomId, spaceId, visibility))
@@ -602,21 +639,16 @@ class AppState {
   }
 
   /**
-   * Grant SPACE membership to a member root — the discovery tier. This is what
-   * an inviter emits so a newcomer lands with the household's discoverable rooms
-   * visible (locked) instead of an empty sidebar. It wraps no key: it does not
-   * grant read access to any room, only the ability to see them and ask in.
+   * Grant SPACE membership to a member root in the active space — the discovery
+   * tier. This is what an inviter emits so a newcomer lands with that space's
+   * discoverable channels visible (locked) instead of a blank sidebar. It wraps
+   * no key: it grants the ability to see and ask in, not to read anything.
    */
   async addSpaceMember(memberPub: Uint8Array, role = 'member') {
     const me = identity.current
     if (!me) throw new Error('create an identity first')
-    const spaceId = householdSpaceId(me.householdPub)
-    // Found the space on demand if this member is inviting before creating any
-    // room, so the newcomer has a space to be a member of.
-    if (!roomStore.spaces.some((sp) => sp.id === spaceId)) {
-      await this.deliver(await buildSpaceCreate(spaceId, 'Household'))
-      await this.deliver(await buildSpaceMemberAdd(spaceId, me.memberPub, 'admin'))
-    }
+    const spaceId = this.activeSpaceId
+    if (!spaceId) throw new Error('create or select a space first')
     await this.deliver(await buildSpaceMemberAdd(spaceId, memberPub, role))
     await roomStore.refresh()
   }
