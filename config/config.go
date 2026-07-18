@@ -21,6 +21,9 @@ type Configuration struct {
 	SqlitePath string `yaml:"sqlitePath" json:"sqlitePath"`
 	// WebappDir, if set, is served as the SPA at / (built webapp/dist).
 	WebappDir string `yaml:"webappDir" json:"webappDir"`
+	// BlobDir is the local blob backend's directory (the dev stand-in for
+	// iroh-store — see decisions.md §Deviations).
+	BlobDir string `yaml:"blobDir" json:"blobDir"`
 	// TrustedRoots are hex-encoded household root pubkeys this node recognizes.
 	// Empty during early dev = accept any well-formed signed event (no chain
 	// gate); once set, senders must chain to one of these roots.
@@ -36,6 +39,7 @@ func defaults() Configuration {
 		Store:      "sqlite",
 		SqlitePath: "cairn.db",
 		WebappDir:  "webapp/dist",
+		BlobDir:    "cairn-blobs",
 	}
 }
 
@@ -64,6 +68,9 @@ func Load(path string) error {
 	}
 	if Config.SqlitePath == "" {
 		Config.SqlitePath = d.SqlitePath
+	}
+	if Config.BlobDir == "" {
+		Config.BlobDir = d.BlobDir
 	}
 	return nil
 }

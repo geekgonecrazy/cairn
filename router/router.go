@@ -30,6 +30,11 @@ func Start() error {
 	// Realtime SSE (decided transport).
 	mux.HandleFunc("/v1/subscribe", controllers.SubscribeSSE)
 
+	// Blob gateway (data plane). Stores opaque encrypted bytes by content
+	// address; never sees plaintext. Local backend standing in for iroh-store.
+	mux.HandleFunc("/v1/blob", controllers.PutBlobHandler)
+	mux.HandleFunc("/v1/blob/", controllers.GetBlobHandler)
+
 	// Static SPA (built webapp), if present. The app is built with base /__hub/
 	// (so the same bundle is hostable by the Wails3 native app, which claims
 	// /wails/). Serve it under /__hub/ and bounce / there. Unknown /__hub/* paths
@@ -94,7 +99,7 @@ func withCORS(next http.Handler) http.Handler {
 			h.Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 			h.Set("Access-Control-Allow-Headers", strings.Join([]string{
 				"Content-Type", "Connect-Protocol-Version", "Connect-Timeout-Ms",
-				"Grpc-Timeout", "X-Grpc-Web", "X-User-Agent", "Authorization",
+				"Grpc-Timeout", "X-Grpc-Web", "X-User-Agent", "Authorization", "Range",
 			}, ", "))
 			h.Set("Access-Control-Expose-Headers", strings.Join([]string{
 				"Grpc-Status", "Grpc-Message", "Grpc-Status-Details-Bin",

@@ -135,8 +135,11 @@ no history; message states reflect real delivery.
   attenuated JWTs (`systems/agents/framework.md` §"Approval = the credential broker",
   `systems/agents/README.md`). Cairn is the delivery medium + the human-signature
   surface: *"the room is the delivery medium, not the capability boundary."*
-- [ ] `blobs`: `iroh-store` gRPC client; `file_ref` = encrypt (per-file AES key) → add →
-  BLAKE3 hash → pin → envelope `{hash, wrapped_key, mime, size, thumb_hash?}`.
+- [ ] `blobs`: `file_ref` = encrypt (per-file AES key) → add → BLAKE3 hash → pin → envelope
+  `{hash, wrapped_key, mime, size, thumb_hash?}`.
+  > ⚠️ **DEVIATION (see `decisions.md` §Deviations):** built as a `Backend` interface with a
+  > **local filesystem** implementation, *not* an `iroh-store` gRPC client — no iroh-store
+  > daemon exists in this environment. `blobs/iroh` drops in behind the same interface later.
 - [ ] `webapp` inlay engine: **declared-inlay role renderer** — the primitive vocabulary (`text`,
   `number`, `progress_fraction`, `status_enum`, `timestamp`, `image_cid`, `series`,
   `action_ref`, `input`/`select`, `record`/`list`/`group`/`inlay_ref`) + standard-library

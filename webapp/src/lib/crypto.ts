@@ -15,6 +15,7 @@ import { create } from '@bufbuild/protobuf'
 import { CipherSuite, DhkemX25519HkdfSha256, HkdfSha256, Aes256Gcm } from '@hpke/core'
 import { encode as cborEncode, decode as cborDecode, type CborValue } from './cbor'
 import type { InlayInstance } from './inlay/types'
+import type { FileRef } from './files'
 import { EventSchema, EventType, type Event } from '../gen/cairn_pb'
 
 // ---- byte utils ----
@@ -200,6 +201,11 @@ function roomCryptoKey(room: string, epoch: number): Promise<CryptoKey> | null {
   return p
 }
 
+/** The current-epoch room key bytes — needed to wrap per-file keys (data plane). */
+export function roomKeyBytes(room: string): Uint8Array {
+  return ensureCurrentKey(room).raw
+}
+
 /** Export the current-epoch room key as a shareable link fragment (dev handoff). */
 export function roomKeyLink(room: string): string {
   const { epoch, raw } = ensureCurrentKey(room)
@@ -283,6 +289,24 @@ export function buildPresence(roomIdStr: string, state: 'online' | 'away'): Prom
   return sealAndSign(roomIdStr, EventType.PRESENCE, { state }, [])
 }
 
+/** Post a file_ref: the tiny envelope rides chat, the bytes ride the data plane.
+ *  Mesh never carries the bytes — only this. */
+export function buildFileRef(
+  roomIdStr: string,
+  ref: FileRef,
+  caption: string,
+  parents: Uint8Array[],
+): Promise<Event> {
+  const file: { [k: string]: CborValue } = {
+    hash: ref.hash,
+    wrapped_key: ref.wrapped_key,
+    mime: ref.mime,
+    size: ref.size,
+  }
+  if (ref.name) file.name = ref.name
+  return sealAndSign(roomIdStr, EventType.FILE_REF, prune({ file, caption: caption || undefined }), parents)
+}
+
 /** Post a declared inlay: a decl_cid + bindings + the MANDATORY text fallback. */
 export function buildInlay(
   roomIdStr: string,
@@ -352,6 +376,7 @@ export type Decoded =
   | { kind: 'delete'; target: Uint8Array; by: string }
   | { kind: 'presence'; state: string }
   | { kind: 'inlay'; instance: InlayInstance }
+  | { kind: 'file'; ref: FileRef; caption?: string }
   | { kind: 'system'; text: string }
   // Approval artifacts travel as raw CBOR payloads; the caller decodes them via
   // the approval module (kept out of here to avoid a circular import).
@@ -406,6 +431,21 @@ export async function openEvent(ev: Event): Promise<Decoded | null> {
       }
       case EventType.PRESENCE:
         return { kind: 'presence', state: String(obj.state ?? 'online') }
+      case EventType.FILE_REF: {
+        const f = obj.file as Record<string, unknown> | undefined
+        if (!f?.hash || !f?.wrapped_key) return null
+        return {
+          kind: 'file',
+          ref: {
+            hash: f.hash as Uint8Array,
+            wrapped_key: f.wrapped_key as Uint8Array,
+            mime: String(f.mime ?? 'application/octet-stream'),
+            size: Number(f.size ?? 0),
+            name: f.name as string | undefined,
+          },
+          caption: obj.caption as string | undefined,
+        }
+      }
       case EventType.INLAY:
         // text is mandatory — without it there is nothing to degrade to.
         return typeof obj.text === 'string'

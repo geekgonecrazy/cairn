@@ -3,6 +3,7 @@
   import MessageRow from './MessageRow.svelte'
   import ApprovalInlay from './ApprovalInlay.svelte'
   import InlayCard from '../inlay/InlayCard.svelte'
+  import FileCard from './FileCard.svelte'
   import Composer from './Composer.svelte'
   import MembersModal from './MembersModal.svelte'
   import { app } from '../state.svelte'
@@ -57,6 +58,8 @@
           <ApprovalInlay {msg} />
         {:else if msg.inlay}
           <InlayCard instance={msg.inlay} room={app.currentRoomId} />
+        {:else if msg.file}
+          <FileCard {msg} />
         {:else}
           <MessageRow {msg} />
         {/if}

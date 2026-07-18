@@ -14,3 +14,6 @@ webapp/.svelte-kit/
 # Editor / OS
 .DS_Store
 *.log
+
+# blob store (local data-plane stand-in)
+cairn-blobs/

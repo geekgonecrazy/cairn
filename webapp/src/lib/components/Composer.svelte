@@ -6,6 +6,17 @@
   let text = $state('')
 
   const canSend = $derived(text.trim().length > 0)
+  let fileInput: HTMLInputElement | undefined = $state()
+
+  async function onPick(e: Event) {
+    const input = e.currentTarget as HTMLInputElement
+    const file = input.files?.[0]
+    input.value = '' // allow re-picking the same file
+    if (!file) return
+    // Encrypt locally, upload ciphertext, post the envelope.
+    await app.sendFile(file, text.trim())
+    text = ''
+  }
 
   async function send() {
     if (!canSend) return
@@ -51,7 +62,10 @@
       rows="1"
     ></textarea>
     <div class="row">
-      <button class="icon-btn" title="Attach" aria-label="Attach"><Icon name="attach" /></button>
+      <input bind:this={fileInput} type="file" hidden onchange={onPick} />
+      <button class="icon-btn" title="Attach a file" aria-label="Attach a file" onclick={() => fileInput?.click()}>
+        <Icon name="attach" />
+      </button>
       <button class="icon-btn" title="Emoji" aria-label="Emoji"><Icon name="smileplus" /></button>
       <span class="spacer"></span>
       <span class="hint"><span class="hint-dot" class:on={app.connected}></span>e2ee</span>

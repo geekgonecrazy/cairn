@@ -87,7 +87,18 @@ retrieval states.
       **per-room default-deny allowlist**, mandatory text fallback, widget placeholder
       (never inline), capability-bound actions render their capability. A **novel**
       greenhouse declaration renders from primitives alone — proven by `npm run inlay-check`.
-- [ ] Files: `file_ref` envelope + blob backend + honest retrieval states.
+- [x] **Files.** `blobs/` with a pluggable `Backend` (`Put`/`Get`/`GetRange`/`Has`/`Pin`),
+      content-addressed by BLAKE3 over the **encrypted** bytes so a store is zero-knowledge.
+      `file_ref` envelope `{hash, wrapped_key, mime, size, name?}` rides chat; bytes ride the
+      data plane. File cards show **honest retrieval states** (`available` / `pending — no fat
+      link` / `downloading` / `broken`), composer attaches. Verified end-to-end: browser seals
+      + uploads → gateway holds only ciphertext → Go fetches, verifies the content address,
+      unwraps the per-file key, decrypts.
+      > ⚠️ **DEVIATION:** backed by `blobs/local` (filesystem), **not** an iroh-store gRPC
+      > client — no iroh-store exists in this environment. `blobs/iroh` drops in behind the
+      > same interface. Full rationale in `decisions.md` §Deviations.
+
+**Phase 2 complete** (modulo the deviation above).
 
 ## Phase 3 — Meshtastic transport + **THE DEMONSTRATION**
 

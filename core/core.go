@@ -8,6 +8,8 @@ import (
 	"encoding/hex"
 	"fmt"
 
+	"github.com/geekgonecrazy/cairn/blobs"
+	"github.com/geekgonecrazy/cairn/blobs/local"
 	"github.com/geekgonecrazy/cairn/config"
 	"github.com/geekgonecrazy/cairn/store"
 	"github.com/geekgonecrazy/cairn/store/sqlite"
@@ -15,6 +17,7 @@ import (
 
 var (
 	st           store.Store
+	blobStore    blobs.Backend
 	hub          *Hub
 	trustedRoots [][]byte
 )
@@ -37,6 +40,15 @@ func Setup() error {
 		return fmt.Errorf("core: unknown store backend %q", config.Config.Store)
 	}
 
+	// Data plane. NOTE: this is the local filesystem backend standing in for
+	// iroh-store — see decisions.md §Deviations. Swapping in blobs/iroh here is
+	// the only change needed above the Backend interface.
+	bs, err := local.New(config.Config.BlobDir)
+	if err != nil {
+		return err
+	}
+	blobStore = bs
+
 	hub = newHub()
 
 	trustedRoots = nil
@@ -52,3 +64,6 @@ func Setup() error {
 
 // Store exposes the live store for read-only controller use.
 func Store() store.Store { return st }
+
+// Blobs exposes the data-plane backend (the blob gateway serves it).
+func Blobs() blobs.Backend { return blobStore }

@@ -67,6 +67,31 @@ Companion to [`plan.md`](./plan.md) (the build plan) and the design mockup in
 
 ---
 
+## ⚠️ Deviations — where the build knowingly differs from `plan.md` / the vision
+
+Read this before trusting `plan.md` on these points. Each is deliberate, not an oversight.
+
+- **`blobs/` does NOT talk to `iroh-store` yet — it ships a local filesystem backend.**
+  `plan.md` §2/Phase 2 specifies `blobs/` as an **iroh-store gRPC client** (content addressed
+  by BLAKE3, verified resumable range reads, pinning). No `iroh-store` daemon exists in this
+  environment, so building against it would be unrunnable and untestable. Instead `blobs/`
+  defines a **`Backend` interface** (`Put`/`Get`/`GetRange`/`Has`/`Pin`) with a
+  **`blobs/local`** filesystem implementation for development, and `cairnd` exposes a blob
+  gateway over HTTP so the browser has somewhere to put bytes.
+  - **What this preserves:** content addressing is still **BLAKE3 over the *encrypted* bytes**,
+    so a backend never sees plaintext; the `file_ref` envelope, per-file key wrapping, range
+    reads, and the honest retrieval states are all real and exercised.
+  - **What it defers:** the actual iroh data plane — peer-to-peer fetch, verified resumable
+    streaming from multiple providers, real pinning semantics.
+  - **Migration path:** add `blobs/iroh` implementing the same `Backend` and switch the
+    backend in `core.Setup()`. Nothing above the interface changes. **The interface is the
+    contract; the local backend is the placeholder.**
+  - Mesh still never carries file bytes — envelope only. That rule is independent of backend.
+
+- **The capability broker is not built here at all** — it is an *external* component (see the
+  correction under "Decided" below). Cairn produces the human-signed grant artifact and stops.
+  `plan.md` originally listed a `broker/` package inside Cairn; that was wrong and is corrected.
+
 ## Open — questioned / proposed, NOT yet decided
 
 - **SQLite driver:** `modernc.org/sqlite` (pure-Go, no cgo) is my recommendation for clean

@@ -13,6 +13,8 @@ import {
   buildPresence,
   buildApprovalEvent,
   buildInlay,
+  buildFileRef,
+  roomKeyBytes,
   buildMemberAdd,
   buildRoomKeyRotate,
   applyKeyEvent,
@@ -39,6 +41,7 @@ import {
 } from './approval'
 import { SAMPLES } from './inlay/samples'
 import type { InlayInstance } from './inlay/types'
+import { sealFile, type FileRef } from './files'
 import { EventType, type Event } from '../gen/cairn_pb'
 
 export type DeliveryState = 'sending' | 'sent' | 'delivered' | 'queued'
@@ -75,6 +78,7 @@ export interface Msg {
   ts: number
   approval?: ApprovalView // set when this row is an approval request
   inlay?: InlayInstance // set when this row is a declared inlay
+  file?: { ref: FileRef; caption?: string } // set when this row is a file_ref
   body: string // current (possibly edited) text; '' when deleted
   opaque: boolean // couldn't decrypt
   edited: boolean
@@ -255,6 +259,22 @@ class AppState {
   }
 
   // ---- actions ----
+
+  /** Attach a file: encrypt locally, upload ciphertext, post the envelope. The
+   *  gateway never sees plaintext; the bytes never ride mesh. */
+  async sendFile(file: File, caption = '') {
+    const bytes = new Uint8Array(await file.arrayBuffer())
+    const ref = await sealFile(
+      roomKeyBytes(this.currentRoomId),
+      bytes,
+      file.type || 'application/octet-stream',
+      file.name,
+    )
+    const ev = await buildFileRef(this.currentRoomId, ref, caption, localHeads(this.events))
+    await this.ingest(ev, false)
+    this.rebuild()
+    await this.deliver(ev)
+  }
 
   /** Post a declared inlay (dev affordance: `/inlay <name>` in the composer). */
   async postInlay(name: string) {
@@ -534,6 +554,25 @@ class AppState {
     for (const ev of this.events) {
       const idHex = hex(ev.eventId)
       const d = this.decoded.get(idHex)
+      // A file_ref renders as a file card with honest retrieval states.
+      if (d?.kind === 'file') {
+        msgs.push({
+          ev,
+          idHex,
+          mine: hex(ev.senderPub) === this.myPubHex,
+          author: 'cairn:' + hex(ev.senderPub).slice(0, 6),
+          ts: Number(ev.ts),
+          body: d.caption ?? '',
+          opaque: false,
+          edited: false,
+          deleted: false,
+          reactions: [],
+          state: this.states.get(idHex) ?? 'delivered',
+          file: { ref: d.ref, caption: d.caption },
+        })
+        continue
+      }
+
       // A declared inlay renders through the role renderer (or degrades to its
       // mandatory text line).
       if (d?.kind === 'inlay') {
