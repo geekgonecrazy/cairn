@@ -25,6 +25,7 @@ export const MNEMONIC_WORDS = 24
 
 /** Domain separation label. MUST match identity/household.go. */
 const HKDF_INFO_HOUSEHOLD_ROOT = 'cairn/household-root/v1'
+const HKDF_INFO_MEMBER_ROOT = 'cairn/member-root/v1'
 
 export type Kind = 'human' | 'agent' | 'service'
 
@@ -95,6 +96,35 @@ export function householdRootFromMnemonic(mnemonic: string, passphrase = ''): Ke
   return { priv: sk, pub: ed25519.getPublicKey(sk) }
 }
 
+/**
+ * Derive a MEMBER root keypair from that member's own mnemonic — a different
+ * set of words from the household's.
+ *
+ * A member root is an offline apex, exactly like the household root: it signs
+ * the member's FIRST device delegation and is then put away, never persisted.
+ * Every device after that is paired from an existing device, which signs as
+ * parent. That is what makes device revocation meaningful (a stolen device
+ * holds no key that can admit a replacement) and why room keys wrap to DEVICE
+ * keys rather than to this one.
+ *
+ * Domain-separated from the household derivation, so the same words can never
+ * produce both and neither can forge the other.
+ */
+export function memberRootFromMnemonic(mnemonic: string, passphrase = ''): KeyPair {
+  const err = validateMnemonicPhrase(mnemonic)
+  if (err) throw new Error(err)
+  const seed = mnemonicToSeedSync(normalizeMnemonic(mnemonic), passphrase)
+  const info = new TextEncoder().encode(HKDF_INFO_MEMBER_ROOT)
+  const sk = hkdf(sha512, seed, undefined, info, 32)
+  return { priv: sk, pub: ed25519.getPublicKey(sk) }
+}
+
+/** A freshly minted member root: the words are shown ONCE and never stored. */
+export function newMemberRoot(): { mnemonic: string; keys: KeyPair } {
+  const mnemonic = newMnemonic()
+  return { mnemonic, keys: memberRootFromMnemonic(mnemonic) }
+}
+
 export interface Household {
   rootPub: Uint8Array
   mnemonic: string
@@ -122,7 +152,9 @@ export interface IdentityAttestation {
 export interface DeviceDelegation {
   type: string // always TYPE_DEVICE_DELEGATION; signed
   device_pub: Uint8Array
-  member_pub: Uint8Array
+  /** Member root for a member's FIRST device; another device key for every one
+   *  paired after that. Devices form a tree — see identity/identity.go. */
+  parent_pub: Uint8Array
   issued_at: bigint
   expires_at?: bigint // omitted when 0, matching Go's `omitempty`
   sig: Uint8Array | null
@@ -140,7 +172,9 @@ export interface SessionDelegation {
 export interface DeviceRevoke {
   type: string // always TYPE_DEVICE_REVOKE; signed
   device_pub: Uint8Array
-  member_pub: Uint8Array
+  /** Must be an ANCESTOR of device_pub for the revoke to bind. A peer or a
+   *  stranger can sign one, and every verifier will ignore it. */
+  revoker_pub: Uint8Array
   revoked_at: bigint
   sig: Uint8Array | null
 }
@@ -396,29 +430,45 @@ export function fingerprint(pub: Uint8Array): string {
   return [0, 1, 2, 3].map((i) => h(pub[i * 2]) + h(pub[i * 2 + 1])).join('-')
 }
 
-/** Issue the delegation admitting a device under a member root. */
+/** Byte equality for two public keys. */
+export function samePub(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
+  return true
+}
+
+/**
+ * Issue the delegation admitting a device under the PARENT that signs it.
+ *
+ * The parent is a member root only for a member's first device — signed from
+ * their recovery words, which are then dropped. Every later device is paired
+ * from an existing device, whose key signs as parent, so adding a device never
+ * needs a live copy of the member root (and a stolen device cannot mint itself
+ * a fresh sibling).
+ */
 export function approvePairing(
   req: PairingRequest,
-  memberPub: Uint8Array,
-  memberPriv: Uint8Array,
+  parentPub: Uint8Array,
+  parentPriv: Uint8Array,
   issuedAt: bigint,
   expiresAt: bigint = 0n,
 ): DeviceDelegation {
   if (req.devicePub.length !== 32) throw new Error('pairing request has no valid device key')
-  if (memberPub.length !== 32) throw new Error('member pubkey must be 32 bytes')
+  if (parentPub.length !== 32) throw new Error('parent pubkey must be 32 bytes')
+  if (samePub(req.devicePub, parentPub)) throw new Error('a device cannot delegate itself')
   if (expiresAt !== 0n && expiresAt <= issuedAt) {
     throw new Error('expires_at must be after issued_at')
   }
   const obj: Record<string, unknown> = {
     type: TYPE_DEVICE_DELEGATION,
     device_pub: req.devicePub,
-    member_pub: memberPub,
+    parent_pub: parentPub,
     issued_at: issuedAt,
     sig: null,
   }
   // Go uses `omitempty` on expires_at: 0 must be ABSENT, not encoded as 0.
   if (expiresAt !== 0n) obj.expires_at = expiresAt
-  return signObject(obj, memberPriv, TYPE_DEVICE_DELEGATION) as unknown as DeviceDelegation
+  return signObject(obj, parentPriv, TYPE_DEVICE_DELEGATION) as unknown as DeviceDelegation
 }
 
 /**
@@ -450,24 +500,53 @@ export function signSessionDelegation(
   ) as unknown as SessionDelegation
 }
 
+/**
+ * Mint the revocation that retires a device. The revoker must be an ANCESTOR of
+ * the target — its parent, a grandparent, or the member root — which verifiers
+ * enforce; signing with the wrong key produces an object everyone ignores.
+ *
+ * Revoking a device also takes down every device paired FROM it, since their
+ * chains run through it. Show the caller `subtreeOf` before confirming.
+ */
 export function revokeDevice(
   devicePub: Uint8Array,
-  memberPub: Uint8Array,
-  memberPriv: Uint8Array,
+  revokerPub: Uint8Array,
+  revokerPriv: Uint8Array,
   revokedAt: bigint,
 ): DeviceRevoke {
-  if (devicePub.length !== 32 || memberPub.length !== 32) {
-    throw new Error('device and member pubkeys must be 32 bytes')
+  if (devicePub.length !== 32 || revokerPub.length !== 32) {
+    throw new Error('device and revoker pubkeys must be 32 bytes')
+  }
+  if (samePub(devicePub, revokerPub)) {
+    throw new Error('a device cannot revoke itself (a revoke binds only from an ancestor)')
   }
   return signObject(
     {
       type: TYPE_DEVICE_REVOKE,
       device_pub: devicePub,
-      member_pub: memberPub,
+      revoker_pub: revokerPub,
       revoked_at: revokedAt,
       sig: null,
     },
-    memberPriv,
+    revokerPriv,
     TYPE_DEVICE_REVOKE,
   ) as unknown as DeviceRevoke
+}
+
+/** Verify a device delegation against the parent it names. Proves only that the
+ *  parent admitted this device — NOT that the parent had standing to. Placing
+ *  the parent in a tree that reaches a trusted household root is the chain
+ *  walk's job (see directory.svelte.ts). */
+export function verifyDeviceDelegation(dd: DeviceDelegation): boolean {
+  const sig = dd.sig
+  if (!sig || sig.length !== 64 || dd.parent_pub?.length !== 32) return false
+  try {
+    return ed25519.verify(
+      sig,
+      signingBytes(dd as unknown as Record<string, unknown>, TYPE_DEVICE_DELEGATION),
+      dd.parent_pub,
+    )
+  } catch {
+    return false
+  }
 }

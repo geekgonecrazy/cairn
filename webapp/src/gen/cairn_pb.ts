@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file cairn.proto.
  */
 export const file_cairn: GenFile = /*@__PURE__*/
-  fileDesc("CgtjYWlybi5wcm90bxIIY2Fpcm4udjEisQEKBUV2ZW50EhAKCGV2ZW50X2lkGAEgASgMEhIKCnNlbmRlcl9wdWIYAiABKAwSDwoHcm9vbV9pZBgDIAEoDBIKCgJ0cxgEIAEoAxIPCgdwYXJlbnRzGAUgAygMEiEKBHR5cGUYBiABKA4yEy5jYWlybi52MS5FdmVudFR5cGUSDwoHcGF5bG9hZBgHIAEoDBILCgNzaWcYCCABKAwSEwoLYXJyaXZlZF92aWEYDyABKAkiWQoQU2VuZEV2ZW50UmVxdWVzdBIeCgVldmVudBgBIAEoCzIPLmNhaXJuLnYxLkV2ZW50EiUKBGhpbnQYAiABKA4yFy5jYWlybi52MS5UcmFuc3BvcnRIaW50IiUKEVNlbmRFdmVudFJlc3BvbnNlEhAKCGV2ZW50X2lkGAEgASgMIjIKC1N5bmNSZXF1ZXN0Eg8KB3Jvb21faWQYASABKAwSEgoKaGF2ZV9oZWFkcxgCIAMoDCI/CgxTeW5jUmVzcG9uc2USIAoHbWlzc2luZxgBIAMoCzIPLmNhaXJuLnYxLkV2ZW50Eg0KBWhlYWRzGAIgAygMIkAKDkhpc3RvcnlSZXF1ZXN0Eg8KB3Jvb21faWQYASABKAwSDgoGYmVmb3JlGAIgASgMEg0KBWxpbWl0GAMgASgNIjIKD0hpc3RvcnlSZXNwb25zZRIfCgZldmVudHMYASADKAsyDy5jYWlybi52MS5FdmVudCIoChhHZXRJZGVudGl0eU9iamVjdFJlcXVlc3QSDAoEaGFzaBgBIAEoDCIpChlHZXRJZGVudGl0eU9iamVjdFJlc3BvbnNlEgwKBGNib3IYASABKAwiKAoYUHV0SWRlbnRpdHlPYmplY3RSZXF1ZXN0EgwKBGNib3IYASABKAwiKQoZUHV0SWRlbnRpdHlPYmplY3RSZXNwb25zZRIMCgRoYXNoGAEgASgMIo0BCghSb29tSW5mbxIPCgdyb29tX2lkGAEgASgMEhAKCHNwYWNlX2lkGAIgASgMEgwKBG5hbWUYAyABKAkSEgoKY3JlYXRlZF9hdBgEIAEoAxIOCgZqb2luZWQYBSABKAgSEgoKdmlzaWJpbGl0eRgGIAEoCRIYChBwZW5kaW5nX3JlcXVlc3RzGAcgASgFImQKCVNwYWNlSW5mbxIQCghzcGFjZV9pZBgBIAEoDBIMCgRuYW1lGAIgASgJEhIKCmFkbWl0X2tpbmQYAyABKAkSFAoMYWRtaXRfb3JpZ2luGAQgASgJEg0KBW93bmVyGAUgASgMIiYKEExpc3RSb29tc1JlcXVlc3QSEgoKbWVtYmVyX3B1YhgBIAEoDCJbChFMaXN0Um9vbXNSZXNwb25zZRIhCgVyb29tcxgBIAMoCzISLmNhaXJuLnYxLlJvb21JbmZvEiMKBnNwYWNlcxgCIAMoCzITLmNhaXJuLnYxLlNwYWNlSW5mbyIzCg9TcGFjZU1lbWJlckluZm8SEgoKbWVtYmVyX3B1YhgBIAEoDBIMCgRyb2xlGAIgASgJIisKF0xpc3RTcGFjZU1lbWJlcnNSZXF1ZXN0EhAKCHNwYWNlX2lkGAEgASgMIkYKGExpc3RTcGFjZU1lbWJlcnNSZXNwb25zZRIqCgdtZW1iZXJzGAEgAygLMhkuY2Fpcm4udjEuU3BhY2VNZW1iZXJJbmZvIioKFFJlc29sdmVTZW5kZXJSZXF1ZXN0EhIKCnNlbmRlcl9wdWIYASABKAwiegoVUmVzb2x2ZVNlbmRlclJlc3BvbnNlEhoKEnNlc3Npb25fZGVsZWdhdGlvbhgBIAEoDBIZChFkZXZpY2VfZGVsZWdhdGlvbhgCIAEoDBITCgthdHRlc3RhdGlvbhgDIAEoDBIVCg1kZXZpY2VfcmV2b2tlGAQgASgMKpIFCglFdmVudFR5cGUSGgoWRVZFTlRfVFlQRV9VTlNQRUNJRklFRBAAEggKBENIQVQQARIMCghGSUxFX1JFRhACEgwKCFBSRVNFTkNFEAMSDAoIUkVBQ1RJT04QBBIICgRFRElUEAUSCgoGREVMRVRFEAYSEAoMVEFTS19SRVFVRVNUEAoSDwoLVEFTS19VUERBVEUQCxIKCgZOT1RJRlkQDBILCgdDT01NQU5EEA0SFAoQQVBQUk9WQUxfUkVRVUVTVBAUEhIKDkFQUFJPVkFMX0dSQU5UEBUSEQoNQVBQUk9WQUxfREVOWRAWEhUKEUNSRURFTlRJQUxfTUlOVEVEEBcSCQoFSU5MQVkQHhIQCgxJTkxBWV9VUERBVEUQHxIPCgtJTkxBWV9VTlBJThAgEg8KC0lOVEVSQUNUSU9OECESEwoPU0lHTkFMSU5HX09GRkVSECgSFAoQU0lHTkFMSU5HX0FOU1dFUhApEhEKDVNJR05BTElOR19JQ0UQKhINCglDQUxMX1JJTkcQKxIMCghDQUxMX0JZRRAsEg4KCk1FTUJFUl9BREQQMhIRCg1NRU1CRVJfUkVNT1ZFEDMSEwoPUk9PTV9LRVlfUk9UQVRFEDQSEAoMU1BBQ0VfQ1JFQVRFEDUSEAoMU1BBQ0VfVVBEQVRFEDYSDwoLUk9PTV9DUkVBVEUQNxIUChBTUEFDRV9NRU1CRVJfQUREEDgSFQoRUk9PTV9KT0lOX1JFUVVFU1QQORIXChNTUEFDRV9NRU1CRVJfUkVNT1ZFEDoSGAoUSURFTlRJVFlfQVRURVNUQVRJT04QPBIVChFERVZJQ0VfREVMRUdBVElPThA9EhEKDURFVklDRV9SRVZPS0UQPiqQAQoNVHJhbnNwb3J0SGludBIeChpUUkFOU1BPUlRfSElOVF9VTlNQRUNJRklFRBAAEhYKElRSQU5TUE9SVF9ISU5UX0xBThABEhcKE1RSQU5TUE9SVF9ISU5UX01FU0gQAhIWChJUUkFOU1BPUlRfSElOVF9CTEUQAxIWChJUUkFOU1BPUlRfSElOVF9BTEwQBDL6BAoMQ2Fpcm5TZXJ2aWNlEkQKCVNlbmRFdmVudBIaLmNhaXJuLnYxLlNlbmRFdmVudFJlcXVlc3QaGy5jYWlybi52MS5TZW5kRXZlbnRSZXNwb25zZRI1CgRTeW5jEhUuY2Fpcm4udjEuU3luY1JlcXVlc3QaFi5jYWlybi52MS5TeW5jUmVzcG9uc2USPgoHSGlzdG9yeRIYLmNhaXJuLnYxLkhpc3RvcnlSZXF1ZXN0GhkuY2Fpcm4udjEuSGlzdG9yeVJlc3BvbnNlElwKEUdldElkZW50aXR5T2JqZWN0EiIuY2Fpcm4udjEuR2V0SWRlbnRpdHlPYmplY3RSZXF1ZXN0GiMuY2Fpcm4udjEuR2V0SWRlbnRpdHlPYmplY3RSZXNwb25zZRJcChFQdXRJZGVudGl0eU9iamVjdBIiLmNhaXJuLnYxLlB1dElkZW50aXR5T2JqZWN0UmVxdWVzdBojLmNhaXJuLnYxLlB1dElkZW50aXR5T2JqZWN0UmVzcG9uc2USUAoNUmVzb2x2ZVNlbmRlchIeLmNhaXJuLnYxLlJlc29sdmVTZW5kZXJSZXF1ZXN0Gh8uY2Fpcm4udjEuUmVzb2x2ZVNlbmRlclJlc3BvbnNlEkQKCUxpc3RSb29tcxIaLmNhaXJuLnYxLkxpc3RSb29tc1JlcXVlc3QaGy5jYWlybi52MS5MaXN0Um9vbXNSZXNwb25zZRJZChBMaXN0U3BhY2VNZW1iZXJzEiEuY2Fpcm4udjEuTGlzdFNwYWNlTWVtYmVyc1JlcXVlc3QaIi5jYWlybi52MS5MaXN0U3BhY2VNZW1iZXJzUmVzcG9uc2VCNlo0Z2l0aHViLmNvbS9nZWVrZ29uZWNyYXp5L2NhaXJuL3Byb3RvL2NhaXJudjE7Y2Fpcm52MWIGcHJvdG8z");
+  fileDesc("CgtjYWlybi5wcm90bxIIY2Fpcm4udjEisQEKBUV2ZW50EhAKCGV2ZW50X2lkGAEgASgMEhIKCnNlbmRlcl9wdWIYAiABKAwSDwoHcm9vbV9pZBgDIAEoDBIKCgJ0cxgEIAEoAxIPCgdwYXJlbnRzGAUgAygMEiEKBHR5cGUYBiABKA4yEy5jYWlybi52MS5FdmVudFR5cGUSDwoHcGF5bG9hZBgHIAEoDBILCgNzaWcYCCABKAwSEwoLYXJyaXZlZF92aWEYDyABKAkiWQoQU2VuZEV2ZW50UmVxdWVzdBIeCgVldmVudBgBIAEoCzIPLmNhaXJuLnYxLkV2ZW50EiUKBGhpbnQYAiABKA4yFy5jYWlybi52MS5UcmFuc3BvcnRIaW50IiUKEVNlbmRFdmVudFJlc3BvbnNlEhAKCGV2ZW50X2lkGAEgASgMIjIKC1N5bmNSZXF1ZXN0Eg8KB3Jvb21faWQYASABKAwSEgoKaGF2ZV9oZWFkcxgCIAMoDCI/CgxTeW5jUmVzcG9uc2USIAoHbWlzc2luZxgBIAMoCzIPLmNhaXJuLnYxLkV2ZW50Eg0KBWhlYWRzGAIgAygMIkAKDkhpc3RvcnlSZXF1ZXN0Eg8KB3Jvb21faWQYASABKAwSDgoGYmVmb3JlGAIgASgMEg0KBWxpbWl0GAMgASgNIjIKD0hpc3RvcnlSZXNwb25zZRIfCgZldmVudHMYASADKAsyDy5jYWlybi52MS5FdmVudCIoChhHZXRJZGVudGl0eU9iamVjdFJlcXVlc3QSDAoEaGFzaBgBIAEoDCIpChlHZXRJZGVudGl0eU9iamVjdFJlc3BvbnNlEgwKBGNib3IYASABKAwiKAoYUHV0SWRlbnRpdHlPYmplY3RSZXF1ZXN0EgwKBGNib3IYASABKAwiKQoZUHV0SWRlbnRpdHlPYmplY3RSZXNwb25zZRIMCgRoYXNoGAEgASgMIo0BCghSb29tSW5mbxIPCgdyb29tX2lkGAEgASgMEhAKCHNwYWNlX2lkGAIgASgMEgwKBG5hbWUYAyABKAkSEgoKY3JlYXRlZF9hdBgEIAEoAxIOCgZqb2luZWQYBSABKAgSEgoKdmlzaWJpbGl0eRgGIAEoCRIYChBwZW5kaW5nX3JlcXVlc3RzGAcgASgFImQKCVNwYWNlSW5mbxIQCghzcGFjZV9pZBgBIAEoDBIMCgRuYW1lGAIgASgJEhIKCmFkbWl0X2tpbmQYAyABKAkSFAoMYWRtaXRfb3JpZ2luGAQgASgJEg0KBW93bmVyGAUgASgMIiYKEExpc3RSb29tc1JlcXVlc3QSEgoKbWVtYmVyX3B1YhgBIAEoDCJbChFMaXN0Um9vbXNSZXNwb25zZRIhCgVyb29tcxgBIAMoCzISLmNhaXJuLnYxLlJvb21JbmZvEiMKBnNwYWNlcxgCIAMoCzITLmNhaXJuLnYxLlNwYWNlSW5mbyIzCg9TcGFjZU1lbWJlckluZm8SEgoKbWVtYmVyX3B1YhgBIAEoDBIMCgRyb2xlGAIgASgJIisKF0xpc3RTcGFjZU1lbWJlcnNSZXF1ZXN0EhAKCHNwYWNlX2lkGAEgASgMIkYKGExpc3RTcGFjZU1lbWJlcnNSZXNwb25zZRIqCgdtZW1iZXJzGAEgAygLMhkuY2Fpcm4udjEuU3BhY2VNZW1iZXJJbmZvIioKFFJlc29sdmVTZW5kZXJSZXF1ZXN0EhIKCnNlbmRlcl9wdWIYASABKAwiqgEKFVJlc29sdmVTZW5kZXJSZXNwb25zZRIaChJzZXNzaW9uX2RlbGVnYXRpb24YASABKAwSEwoLYXR0ZXN0YXRpb24YAyABKAwSGgoSZGV2aWNlX2RlbGVnYXRpb25zGAUgAygMEhYKDmRldmljZV9yZXZva2VzGAYgAygMSgQIAhADSgQIBBAFUhFkZXZpY2VfZGVsZWdhdGlvblINZGV2aWNlX3Jldm9rZSIuChhMaXN0TWVtYmVyRGV2aWNlc1JlcXVlc3QSEgoKbWVtYmVyX3B1YhgBIAEoDCIwChlMaXN0TWVtYmVyRGV2aWNlc1Jlc3BvbnNlEhMKC2RldmljZV9wdWJzGAEgAygMKpIFCglFdmVudFR5cGUSGgoWRVZFTlRfVFlQRV9VTlNQRUNJRklFRBAAEggKBENIQVQQARIMCghGSUxFX1JFRhACEgwKCFBSRVNFTkNFEAMSDAoIUkVBQ1RJT04QBBIICgRFRElUEAUSCgoGREVMRVRFEAYSEAoMVEFTS19SRVFVRVNUEAoSDwoLVEFTS19VUERBVEUQCxIKCgZOT1RJRlkQDBILCgdDT01NQU5EEA0SFAoQQVBQUk9WQUxfUkVRVUVTVBAUEhIKDkFQUFJPVkFMX0dSQU5UEBUSEQoNQVBQUk9WQUxfREVOWRAWEhUKEUNSRURFTlRJQUxfTUlOVEVEEBcSCQoFSU5MQVkQHhIQCgxJTkxBWV9VUERBVEUQHxIPCgtJTkxBWV9VTlBJThAgEg8KC0lOVEVSQUNUSU9OECESEwoPU0lHTkFMSU5HX09GRkVSECgSFAoQU0lHTkFMSU5HX0FOU1dFUhApEhEKDVNJR05BTElOR19JQ0UQKhINCglDQUxMX1JJTkcQKxIMCghDQUxMX0JZRRAsEg4KCk1FTUJFUl9BREQQMhIRCg1NRU1CRVJfUkVNT1ZFEDMSEwoPUk9PTV9LRVlfUk9UQVRFEDQSEAoMU1BBQ0VfQ1JFQVRFEDUSEAoMU1BBQ0VfVVBEQVRFEDYSDwoLUk9PTV9DUkVBVEUQNxIUChBTUEFDRV9NRU1CRVJfQUREEDgSFQoRUk9PTV9KT0lOX1JFUVVFU1QQORIXChNTUEFDRV9NRU1CRVJfUkVNT1ZFEDoSGAoUSURFTlRJVFlfQVRURVNUQVRJT04QPBIVChFERVZJQ0VfREVMRUdBVElPThA9EhEKDURFVklDRV9SRVZPS0UQPiqQAQoNVHJhbnNwb3J0SGludBIeChpUUkFOU1BPUlRfSElOVF9VTlNQRUNJRklFRBAAEhYKElRSQU5TUE9SVF9ISU5UX0xBThABEhcKE1RSQU5TUE9SVF9ISU5UX01FU0gQAhIWChJUUkFOU1BPUlRfSElOVF9CTEUQAxIWChJUUkFOU1BPUlRfSElOVF9BTEwQBDLYBQoMQ2Fpcm5TZXJ2aWNlEkQKCVNlbmRFdmVudBIaLmNhaXJuLnYxLlNlbmRFdmVudFJlcXVlc3QaGy5jYWlybi52MS5TZW5kRXZlbnRSZXNwb25zZRI1CgRTeW5jEhUuY2Fpcm4udjEuU3luY1JlcXVlc3QaFi5jYWlybi52MS5TeW5jUmVzcG9uc2USPgoHSGlzdG9yeRIYLmNhaXJuLnYxLkhpc3RvcnlSZXF1ZXN0GhkuY2Fpcm4udjEuSGlzdG9yeVJlc3BvbnNlElwKEUdldElkZW50aXR5T2JqZWN0EiIuY2Fpcm4udjEuR2V0SWRlbnRpdHlPYmplY3RSZXF1ZXN0GiMuY2Fpcm4udjEuR2V0SWRlbnRpdHlPYmplY3RSZXNwb25zZRJcChFQdXRJZGVudGl0eU9iamVjdBIiLmNhaXJuLnYxLlB1dElkZW50aXR5T2JqZWN0UmVxdWVzdBojLmNhaXJuLnYxLlB1dElkZW50aXR5T2JqZWN0UmVzcG9uc2USUAoNUmVzb2x2ZVNlbmRlchIeLmNhaXJuLnYxLlJlc29sdmVTZW5kZXJSZXF1ZXN0Gh8uY2Fpcm4udjEuUmVzb2x2ZVNlbmRlclJlc3BvbnNlEkQKCUxpc3RSb29tcxIaLmNhaXJuLnYxLkxpc3RSb29tc1JlcXVlc3QaGy5jYWlybi52MS5MaXN0Um9vbXNSZXNwb25zZRJZChBMaXN0U3BhY2VNZW1iZXJzEiEuY2Fpcm4udjEuTGlzdFNwYWNlTWVtYmVyc1JlcXVlc3QaIi5jYWlybi52MS5MaXN0U3BhY2VNZW1iZXJzUmVzcG9uc2USXAoRTGlzdE1lbWJlckRldmljZXMSIi5jYWlybi52MS5MaXN0TWVtYmVyRGV2aWNlc1JlcXVlc3QaIy5jYWlybi52MS5MaXN0TWVtYmVyRGV2aWNlc1Jlc3BvbnNlQjZaNGdpdGh1Yi5jb20vZ2Vla2dvbmVjcmF6eS9jYWlybi9wcm90by9jYWlybnYxO2NhaXJudjFiBnByb3RvMw");
 
 /**
  * @generated from message cairn.v1.Event
@@ -553,25 +553,31 @@ export type ResolveSenderResponse = Message<"cairn.v1.ResolveSenderResponse"> & 
   sessionDelegation: Uint8Array;
 
   /**
-   * CBOR, empty if unknown
-   *
-   * @generated from field: bytes device_delegation = 2;
-   */
-  deviceDelegation: Uint8Array;
-
-  /**
-   * CBOR, empty if unknown
+   * CBOR of the member root's attestation, empty if unknown
    *
    * @generated from field: bytes attestation = 3;
    */
   attestation: Uint8Array;
 
   /**
-   * CBOR, empty if not revoked
+   * The device delegation chain, LEAF FIRST: the sender's own device, then the
+   * device that paired it, and so on up to the one a member root signed.
+   * Devices pair devices, so this is a walk of unbounded length rather than the
+   * single hop it used to be, and the client needs every link to verify any of
+   * them. Truncated at the server's depth limit.
    *
-   * @generated from field: bytes device_revoke = 4;
+   * @generated from field: repeated bytes device_delegations = 5;
    */
-  deviceRevoke: Uint8Array;
+  deviceDelegations: Uint8Array[];
+
+  /**
+   * Revocations for any device on that chain. A revoke of an ANCESTOR is what
+   * makes the sender invalid, so sending only the sender's own revoke would let
+   * a client accept a device whose parent was revoked underneath it.
+   *
+   * @generated from field: repeated bytes device_revokes = 6;
+   */
+  deviceRevokes: Uint8Array[];
 };
 
 /**
@@ -580,6 +586,45 @@ export type ResolveSenderResponse = Message<"cairn.v1.ResolveSenderResponse"> & 
  */
 export const ResolveSenderResponseSchema: GenMessage<ResolveSenderResponse> = /*@__PURE__*/
   messageDesc(file_cairn, 19);
+
+/**
+ * @generated from message cairn.v1.ListMemberDevicesRequest
+ */
+export type ListMemberDevicesRequest = Message<"cairn.v1.ListMemberDevicesRequest"> & {
+  /**
+   * @generated from field: bytes member_pub = 1;
+   */
+  memberPub: Uint8Array;
+};
+
+/**
+ * Describes the message cairn.v1.ListMemberDevicesRequest.
+ * Use `create(ListMemberDevicesRequestSchema)` to create a new message.
+ */
+export const ListMemberDevicesRequestSchema: GenMessage<ListMemberDevicesRequest> = /*@__PURE__*/
+  messageDesc(file_cairn, 20);
+
+/**
+ * The device keys a room key must be wrapped to for this member. Room keys seal
+ * to DEVICE keys, not the member root — the member root is offline — so a client
+ * admitting a member needs their whole device set. Revoked devices and anything
+ * paired from them are excluded.
+ *
+ * @generated from message cairn.v1.ListMemberDevicesResponse
+ */
+export type ListMemberDevicesResponse = Message<"cairn.v1.ListMemberDevicesResponse"> & {
+  /**
+   * @generated from field: repeated bytes device_pubs = 1;
+   */
+  devicePubs: Uint8Array[];
+};
+
+/**
+ * Describes the message cairn.v1.ListMemberDevicesResponse.
+ * Use `create(ListMemberDevicesResponseSchema)` to create a new message.
+ */
+export const ListMemberDevicesResponseSchema: GenMessage<ListMemberDevicesResponse> = /*@__PURE__*/
+  messageDesc(file_cairn, 21);
 
 /**
  * @generated from enum cairn.v1.EventType
@@ -904,14 +949,22 @@ export const CairnService: GenService<{
     output: typeof ListRoomsResponseSchema;
   },
   /**
-   * Realtime push is SSE (see PROTOCOL.md §API), not a proto stream.
-   *
    * @generated from rpc cairn.v1.CairnService.ListSpaceMembers
    */
   listSpaceMembers: {
     methodKind: "unary";
     input: typeof ListSpaceMembersRequestSchema;
     output: typeof ListSpaceMembersResponseSchema;
+  },
+  /**
+   * Realtime push is SSE (see PROTOCOL.md §API), not a proto stream.
+   *
+   * @generated from rpc cairn.v1.CairnService.ListMemberDevices
+   */
+  listMemberDevices: {
+    methodKind: "unary";
+    input: typeof ListMemberDevicesRequestSchema;
+    output: typeof ListMemberDevicesResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_cairn, 0);

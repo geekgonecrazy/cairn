@@ -53,6 +53,9 @@ const (
 	// CairnServiceListSpaceMembersProcedure is the fully-qualified name of the CairnService's
 	// ListSpaceMembers RPC.
 	CairnServiceListSpaceMembersProcedure = "/cairn.v1.CairnService/ListSpaceMembers"
+	// CairnServiceListMemberDevicesProcedure is the fully-qualified name of the CairnService's
+	// ListMemberDevices RPC.
+	CairnServiceListMemberDevicesProcedure = "/cairn.v1.CairnService/ListMemberDevices"
 )
 
 // CairnServiceClient is a client for the cairn.v1.CairnService service.
@@ -65,6 +68,7 @@ type CairnServiceClient interface {
 	ResolveSender(context.Context, *connect.Request[cairnv1.ResolveSenderRequest]) (*connect.Response[cairnv1.ResolveSenderResponse], error)
 	ListRooms(context.Context, *connect.Request[cairnv1.ListRoomsRequest]) (*connect.Response[cairnv1.ListRoomsResponse], error)
 	ListSpaceMembers(context.Context, *connect.Request[cairnv1.ListSpaceMembersRequest]) (*connect.Response[cairnv1.ListSpaceMembersResponse], error)
+	ListMemberDevices(context.Context, *connect.Request[cairnv1.ListMemberDevicesRequest]) (*connect.Response[cairnv1.ListMemberDevicesResponse], error)
 }
 
 // NewCairnServiceClient constructs a client for the cairn.v1.CairnService service. By default, it
@@ -126,6 +130,12 @@ func NewCairnServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(cairnServiceMethods.ByName("ListSpaceMembers")),
 			connect.WithClientOptions(opts...),
 		),
+		listMemberDevices: connect.NewClient[cairnv1.ListMemberDevicesRequest, cairnv1.ListMemberDevicesResponse](
+			httpClient,
+			baseURL+CairnServiceListMemberDevicesProcedure,
+			connect.WithSchema(cairnServiceMethods.ByName("ListMemberDevices")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -139,6 +149,7 @@ type cairnServiceClient struct {
 	resolveSender     *connect.Client[cairnv1.ResolveSenderRequest, cairnv1.ResolveSenderResponse]
 	listRooms         *connect.Client[cairnv1.ListRoomsRequest, cairnv1.ListRoomsResponse]
 	listSpaceMembers  *connect.Client[cairnv1.ListSpaceMembersRequest, cairnv1.ListSpaceMembersResponse]
+	listMemberDevices *connect.Client[cairnv1.ListMemberDevicesRequest, cairnv1.ListMemberDevicesResponse]
 }
 
 // SendEvent calls cairn.v1.CairnService.SendEvent.
@@ -181,6 +192,11 @@ func (c *cairnServiceClient) ListSpaceMembers(ctx context.Context, req *connect.
 	return c.listSpaceMembers.CallUnary(ctx, req)
 }
 
+// ListMemberDevices calls cairn.v1.CairnService.ListMemberDevices.
+func (c *cairnServiceClient) ListMemberDevices(ctx context.Context, req *connect.Request[cairnv1.ListMemberDevicesRequest]) (*connect.Response[cairnv1.ListMemberDevicesResponse], error) {
+	return c.listMemberDevices.CallUnary(ctx, req)
+}
+
 // CairnServiceHandler is an implementation of the cairn.v1.CairnService service.
 type CairnServiceHandler interface {
 	SendEvent(context.Context, *connect.Request[cairnv1.SendEventRequest]) (*connect.Response[cairnv1.SendEventResponse], error)
@@ -191,6 +207,7 @@ type CairnServiceHandler interface {
 	ResolveSender(context.Context, *connect.Request[cairnv1.ResolveSenderRequest]) (*connect.Response[cairnv1.ResolveSenderResponse], error)
 	ListRooms(context.Context, *connect.Request[cairnv1.ListRoomsRequest]) (*connect.Response[cairnv1.ListRoomsResponse], error)
 	ListSpaceMembers(context.Context, *connect.Request[cairnv1.ListSpaceMembersRequest]) (*connect.Response[cairnv1.ListSpaceMembersResponse], error)
+	ListMemberDevices(context.Context, *connect.Request[cairnv1.ListMemberDevicesRequest]) (*connect.Response[cairnv1.ListMemberDevicesResponse], error)
 }
 
 // NewCairnServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -248,6 +265,12 @@ func NewCairnServiceHandler(svc CairnServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(cairnServiceMethods.ByName("ListSpaceMembers")),
 		connect.WithHandlerOptions(opts...),
 	)
+	cairnServiceListMemberDevicesHandler := connect.NewUnaryHandler(
+		CairnServiceListMemberDevicesProcedure,
+		svc.ListMemberDevices,
+		connect.WithSchema(cairnServiceMethods.ByName("ListMemberDevices")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/cairn.v1.CairnService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case CairnServiceSendEventProcedure:
@@ -266,6 +289,8 @@ func NewCairnServiceHandler(svc CairnServiceHandler, opts ...connect.HandlerOpti
 			cairnServiceListRoomsHandler.ServeHTTP(w, r)
 		case CairnServiceListSpaceMembersProcedure:
 			cairnServiceListSpaceMembersHandler.ServeHTTP(w, r)
+		case CairnServiceListMemberDevicesProcedure:
+			cairnServiceListMemberDevicesHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -305,4 +330,8 @@ func (UnimplementedCairnServiceHandler) ListRooms(context.Context, *connect.Requ
 
 func (UnimplementedCairnServiceHandler) ListSpaceMembers(context.Context, *connect.Request[cairnv1.ListSpaceMembersRequest]) (*connect.Response[cairnv1.ListSpaceMembersResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cairn.v1.CairnService.ListSpaceMembers is not implemented"))
+}
+
+func (UnimplementedCairnServiceHandler) ListMemberDevices(context.Context, *connect.Request[cairnv1.ListMemberDevicesRequest]) (*connect.Response[cairnv1.ListMemberDevicesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cairn.v1.CairnService.ListMemberDevices is not implemented"))
 }

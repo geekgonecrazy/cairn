@@ -105,9 +105,15 @@ CREATE TABLE IF NOT EXISTS identity_log (
   hash        BLOB PRIMARY KEY,
   obj_type    TEXT NOT NULL,
   subject_pub BLOB NOT NULL,
+  -- The parent a device delegation names, denormalized out of the CBOR so the
+  -- tree can be walked DOWNWARD without decoding every row. Needed because room
+  -- keys wrap to device keys: admitting a member means finding every device
+  -- below their member root. NULL for every other object type.
+  parent_pub  BLOB,
   cbor        BLOB NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_identity_subject ON identity_log(obj_type, subject_pub);
+CREATE INDEX IF NOT EXISTS idx_identity_parent ON identity_log(obj_type, parent_pub);
 
 CREATE TABLE IF NOT EXISTS peer_frontier (
   peer_pub BLOB, room_id BLOB, head_id BLOB,

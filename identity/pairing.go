@@ -15,6 +15,7 @@ package identity
 // QR photographed by a bystander leaks a public key and nothing else.
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"encoding/base64"
 	"fmt"
@@ -118,17 +119,23 @@ func Fingerprint(pub PubKey) string {
 	return strings.Join(out, "-")
 }
 
-// ApprovePairing issues the DeviceDelegation that admits devicePub under
-// memberPriv's member root. Called on the ALREADY-TRUSTED device, after the
-// human has compared fingerprints.
+// ApprovePairing issues the DeviceDelegation that admits devicePub under the
+// PARENT that signs it. Called on the already-trusted device, after the human
+// has compared fingerprints.
+//
+// The parent is a member root only for a member's FIRST device — that signature
+// is made from the member's recovery words and the root is then put away. Every
+// later device is paired from an existing device, whose key signs as parent, so
+// no live copy of the member root is needed to add a device (and a stolen device
+// therefore cannot mint itself a fresh sibling).
 //
 // expiresAt is unix-ms; pass 0 for a non-expiring delegation. Daily-driver
 // devices are typically non-expiring and revoked explicitly (see DeviceRevoke);
 // prefer an expiry for devices you expect to be temporary.
 func ApprovePairing(
 	req *PairingRequest,
-	memberPub PubKey,
-	memberPriv ed25519.PrivateKey,
+	parentPub PubKey,
+	parentPriv ed25519.PrivateKey,
 	issuedAt, expiresAt int64,
 ) (*DeviceDelegation, error) {
 	if req == nil {
@@ -137,9 +144,12 @@ func ApprovePairing(
 	if len(req.DevicePub) != ed25519.PublicKeySize {
 		return nil, fmt.Errorf("identity: pairing request has no valid device key")
 	}
-	if len(memberPub) != ed25519.PublicKeySize {
-		return nil, fmt.Errorf("identity: member pubkey must be %d bytes, got %d",
-			ed25519.PublicKeySize, len(memberPub))
+	if len(parentPub) != ed25519.PublicKeySize {
+		return nil, fmt.Errorf("identity: parent pubkey must be %d bytes, got %d",
+			ed25519.PublicKeySize, len(parentPub))
+	}
+	if bytes.Equal(req.DevicePub, parentPub) {
+		return nil, fmt.Errorf("identity: a device cannot delegate itself")
 	}
 	if expiresAt != 0 && expiresAt <= issuedAt {
 		return nil, fmt.Errorf("identity: delegation expires_at must be after issued_at")
@@ -147,35 +157,45 @@ func ApprovePairing(
 
 	dd := &DeviceDelegation{
 		DevicePub: append([]byte(nil), req.DevicePub...),
-		MemberPub: append([]byte(nil), memberPub...),
+		ParentPub: append([]byte(nil), parentPub...),
 		IssuedAt:  issuedAt,
 		ExpiresAt: expiresAt,
 	}
-	if err := Sign(dd, memberPriv); err != nil {
+	if err := Sign(dd, parentPriv); err != nil {
 		return nil, fmt.Errorf("identity: sign device delegation: %w", err)
 	}
 	return dd, nil
 }
 
 // RevokeDevice mints the DeviceRevoke that terminates devicePub's delegation,
-// signed by the member root. Revocation is an assertion by the member root, so
-// it takes effect for any verifier that has seen this object — which is why the
-// identity log must propagate it (see DeviceLog).
+// signed by revokerPub. The revoker must be an ANCESTOR of devicePub — its
+// parent, a grandparent, or the member root — which verifiers enforce; this
+// function only mints, so a caller that signs with the wrong key produces an
+// object every verifier will ignore.
+//
+// Revoking a device also takes down every device paired FROM it, since their
+// chains run through it (see DeviceLog.Subtree, which the UI must show before
+// confirming). Revocation is an assertion that takes effect for any verifier
+// that has seen the object, which is why the identity log must propagate it.
 func RevokeDevice(
-	devicePub, memberPub PubKey,
-	memberPriv ed25519.PrivateKey,
+	devicePub, revokerPub PubKey,
+	revokerPriv ed25519.PrivateKey,
 	revokedAt int64,
 ) (*DeviceRevoke, error) {
-	if len(devicePub) != ed25519.PublicKeySize || len(memberPub) != ed25519.PublicKeySize {
-		return nil, fmt.Errorf("identity: device and member pubkeys must be %d bytes",
+	if len(devicePub) != ed25519.PublicKeySize || len(revokerPub) != ed25519.PublicKeySize {
+		return nil, fmt.Errorf("identity: device and revoker pubkeys must be %d bytes",
 			ed25519.PublicKeySize)
 	}
-	dr := &DeviceRevoke{
-		DevicePub: append([]byte(nil), devicePub...),
-		MemberPub: append([]byte(nil), memberPub...),
-		RevokedAt: revokedAt,
+	if bytes.Equal(devicePub, revokerPub) {
+		return nil, fmt.Errorf("identity: a device cannot revoke itself " +
+			"(a revoke binds only from an ancestor)")
 	}
-	if err := Sign(dr, memberPriv); err != nil {
+	dr := &DeviceRevoke{
+		DevicePub:  append([]byte(nil), devicePub...),
+		RevokerPub: append([]byte(nil), revokerPub...),
+		RevokedAt:  revokedAt,
+	}
+	if err := Sign(dr, revokerPriv); err != nil {
 		return nil, fmt.Errorf("identity: sign device revoke: %w", err)
 	}
 	return dr, nil

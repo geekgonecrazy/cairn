@@ -201,6 +201,33 @@ func (CairnController) ListSpaceMembers(
 	return connect.NewResponse(out), nil
 }
 
+// ListMemberDevices returns the device keys a room key must be wrapped to for a
+// member. Room keys seal to DEVICE keys — the member root is offline and holds
+// no live secret — so a client admitting someone needs their whole device set,
+// minus anything revoked or descended from something revoked.
+//
+// Like every other identity endpoint this is a LOOKUP, not an assertion: the
+// client can (and does) re-derive the same set from the delegations it fetches.
+// The worst a lying server can do is omit a device, which locks that device out
+// of new epochs — visible to its owner — or name an extra key, which wraps the
+// epoch key to a stranger. The latter is why a client must not wrap blindly to
+// whatever this returns for a member it has not verified.
+func (CairnController) ListMemberDevices(
+	_ context.Context,
+	req *connect.Request[cairnv1.ListMemberDevicesRequest],
+) (*connect.Response[cairnv1.ListMemberDevicesResponse], error) {
+	memberPub := req.Msg.GetMemberPub()
+	if len(memberPub) != 32 {
+		return nil, connect.NewError(connect.CodeInvalidArgument,
+			errors.New("member_pub must be 32 bytes"))
+	}
+	devices, err := core.Store().DevicesUnder(memberPub)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&cairnv1.ListMemberDevicesResponse{DevicePubs: devices}), nil
+}
+
 // ResolveSender returns every identity-log object needed to place senderPub,
 // in one round trip. Objects are returned as raw CBOR so the client verifies
 // them itself — this endpoint is a lookup, not an assertion of trust.
@@ -230,20 +257,38 @@ func (CairnController) ResolveSender(
 		devicePub = sd.DevicePub
 	}
 
+	// Climb the delegation tree, leaf first. Devices pair devices, so this is a
+	// walk: the client cannot verify the sender without every link above it.
+	// Bounded by the same depth limit the verifier uses, and by a visited set —
+	// this walks whatever a stranger managed to put in the log, so a cycle here
+	// would hang the request.
 	memberPub := []byte(nil)
-	if dd, ok := st.DeviceDelegation(devicePub); ok {
-		if b, err := identity.Marshal(dd); err == nil {
-			out.DeviceDelegation = b
+	seen := map[string]bool{}
+	cur := devicePub
+	for range identity.MaxChainDepth {
+		if seen[string(cur)] {
+			break
 		}
-		memberPub = dd.MemberPub
-	}
+		seen[string(cur)] = true
 
-	// Revocations must be reported even when the delegation is gone, so a client
-	// that only ever sees the revoke still reaches the right conclusion.
-	if dr, ok := st.DeviceRevokeFor(devicePub); ok {
-		if b, err := identity.Marshal(dr); err == nil {
-			out.DeviceRevoke = b
+		// Report a revocation whether or not the delegation survives, so a client
+		// that only ever sees the revoke still reaches the right conclusion.
+		if dr, ok := st.DeviceRevokeFor(cur); ok {
+			if b, err := identity.Marshal(dr); err == nil {
+				out.DeviceRevokes = append(out.DeviceRevokes, b)
+			}
 		}
+
+		dd, ok := st.DeviceDelegation(cur)
+		if !ok {
+			// No delegation: cur is a member root (or unknown).
+			memberPub = cur
+			break
+		}
+		if b, err := identity.Marshal(dd); err == nil {
+			out.DeviceDelegations = append(out.DeviceDelegations, b)
+		}
+		cur = dd.ParentPub
 	}
 
 	// The key may BE a member root rather than a device/session key — that is how

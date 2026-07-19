@@ -18,6 +18,10 @@ import { decode as cborDecode } from './cbor'
 import { ed25519 } from '@noble/curves/ed25519.js'
 import { encode as cborEncode, type CborValue } from './cbor'
 
+/** Mirrors identity.MaxChainDepth in Go. A chain longer than this is refused
+ *  rather than walked — it is attacker-supplied data. */
+const MAX_CHAIN_DEPTH = 8
+
 export type SenderTrust =
   | { state: 'unknown' } // not resolved yet, or the server has no chain for it
   | { state: 'verified'; name: string; memberPub: Uint8Array; householdPub: Uint8Array }
@@ -79,29 +83,66 @@ class Directory {
     }
 
     const att = dec<IdentityAttestation>(res.attestation)
-    const dd = dec<DeviceDelegation>(res.deviceDelegation)
     const sd = dec<SessionDelegation>(res.sessionDelegation)
-    const dr = dec<DeviceRevoke>(res.deviceRevoke)
+    const chain = (res.deviceDelegations ?? [])
+      .map((b) => dec<DeviceDelegation>(b))
+      .filter((d): d is DeviceDelegation => d !== null)
+    const revokes = (res.deviceRevokes ?? [])
+      .map((b) => dec<DeviceRevoke>(b))
+      .filter((d): d is DeviceRevoke => d !== null)
 
-    // Walk the chain ourselves: session → device → member → household. Every
-    // hop is checked; a break anywhere means we show no name.
+    // Walk the chain ourselves: session → device → … → device → member →
+    // household. Devices pair devices, so the device segment is a WALK; every
+    // hop is checked and a break anywhere means we show no name.
     let devicePub = senderPub
     if (sd) {
       if (!verifyDetached(sd as unknown as Record<string, unknown>, sd.device_pub)) return
       if (hex(sd.session_pub) !== key) return
+      if (sd.expires_at !== 0n && BigInt(Date.now()) > sd.expires_at) return
       devicePub = sd.device_pub
     }
-    if (!dd || !verifyDetached(dd as unknown as Record<string, unknown>, dd.member_pub)) return
-    if (hex(dd.device_pub) !== hex(devicePub)) return
-    if (!att || !verifyAttestation(att)) return
-    if (hex(att.pubkey) !== hex(dd.member_pub)) return
 
-    // Revocation wins, and must be signed by the member that holds the device.
-    if (dr && verifyDetached(dr as unknown as Record<string, unknown>, dr.member_pub)) {
-      if (hex(dr.member_pub) === hex(dd.member_pub) && hex(dr.device_pub) === hex(devicePub)) {
-        this.entries = { ...this.entries, [key]: { state: 'revoked', name: att.display_name } }
+    // The server returns the chain leaf-first, but we re-derive the order from
+    // the delegations themselves rather than trusting the array order — the
+    // server is a carrier, and a reordered array must not change who we trust.
+    const byDevice = new Map(chain.map((d) => [hex(d.device_pub), d]))
+    const path: DeviceDelegation[] = []
+    const seen = new Set<string>()
+    let cur = devicePub
+    for (let depth = 0; depth <= MAX_CHAIN_DEPTH; depth++) {
+      const curHex = hex(cur)
+      if (seen.has(curHex)) return // cycle
+      seen.add(curHex)
+      const dd = byDevice.get(curHex)
+      if (!dd) break // cur is the member root (or the chain is incomplete)
+      if (!verifyDetached(dd as unknown as Record<string, unknown>, dd.parent_pub)) return
+      if (dd.expires_at !== undefined && dd.expires_at !== 0n && BigInt(Date.now()) > dd.expires_at) {
         return
       }
+      path.push(dd)
+      if (path.length > MAX_CHAIN_DEPTH) return // too deep
+      cur = dd.parent_pub
+    }
+    if (path.length === 0) return // no delegation for the sending device
+    const memberPub = cur
+
+    if (!att || !verifyAttestation(att)) return
+    if (hex(att.pubkey) !== hex(memberPub)) return
+
+    // Revocation wins, and is checked at EVERY hop — a revoked ANCESTOR
+    // invalidates this sender too, which is what makes revoking a device take
+    // down everything paired from it. A revoke binds only when signed by an
+    // ancestor of its target; a peer's or a stranger's is ignored, since
+    // otherwise anyone could permanently lock out any device.
+    for (let i = 0; i < path.length; i++) {
+      const target = path[i]
+      const dr = revokes.find((r) => hex(r.device_pub) === hex(target.device_pub))
+      if (!dr) continue
+      if (!verifyDetached(dr as unknown as Record<string, unknown>, dr.revoker_pub)) continue
+      const ancestors = [...path.slice(i + 1).map((d) => hex(d.device_pub)), hex(memberPub)]
+      if (!ancestors.includes(hex(dr.revoker_pub))) continue
+      this.entries = { ...this.entries, [key]: { state: 'revoked', name: att.display_name } }
+      return
     }
 
     // The chain is internally sound — but soundness is not membership. An

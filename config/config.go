@@ -5,8 +5,11 @@
 package config
 
 import (
+	"encoding/hex"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -71,6 +74,51 @@ func Load(path string) error {
 	}
 	if Config.BlobDir == "" {
 		Config.BlobDir = d.BlobDir
+	}
+	return loadTrustedRootsFile(path)
+}
+
+// loadTrustedRootsFile merges roots from `trusted-roots.txt` beside the config
+// into TrustedRoots.
+//
+// It is a separate file because `cairnctl init` WRITES it: rewriting config.yaml
+// would destroy the hand-written comments in it, and YAML round-tripping with
+// comments is a trap. Keeping the machine-managed list apart also makes "what
+// does this node trust" a small file you can read at a glance.
+//
+// Absent file = no roots from here, which is not an error: a node that has never
+// been founded is a normal state (the chain gate then refuses events until it is).
+func loadTrustedRootsFile(configPath string) error {
+	path := filepath.Join(filepath.Dir(configPath), "trusted-roots.txt")
+	b, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("config: read %s: %w", path, err)
+	}
+	seen := map[string]bool{}
+	for _, r := range Config.TrustedRoots {
+		seen[strings.ToLower(strings.TrimSpace(r))] = true
+	}
+	for i, line := range strings.Split(string(b), "\n") {
+		// Strip comments: the file carries a header explaining itself, and
+		// `init -name` annotates each root with which household it is.
+		if i := strings.IndexByte(line, '#'); i >= 0 {
+			line = line[:i]
+		}
+		root := strings.ToLower(strings.TrimSpace(line))
+		if root == "" {
+			continue
+		}
+		if _, err := hex.DecodeString(root); err != nil || len(root) != 64 {
+			return fmt.Errorf("config: %s line %d: not a 32-byte hex household root: %q",
+				path, i+1, root)
+		}
+		if !seen[root] {
+			seen[root] = true
+			Config.TrustedRoots = append(Config.TrustedRoots, root)
+		}
 	}
 	return nil
 }

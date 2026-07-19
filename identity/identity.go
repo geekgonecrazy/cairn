@@ -136,12 +136,19 @@ type IdentityAttestation struct {
 	Sig         []byte `cbor:"sig"`
 }
 
-// DeviceDelegation authorizes a device/instance key under a member root.
-// Signed by the member root.
+// DeviceDelegation authorizes a device/instance key under its PARENT, which is
+// either a member root (the member's first device) or another device key (any
+// device paired from an existing one). Signed by the parent.
+//
+// Devices therefore form a TREE per member, not a flat list under the member
+// root. That is what lets the member root stay offline — it signs the first
+// delegation and is then put away — and what makes revocation cascade: a walk
+// from a leaf passes through every ancestor, so revoking one device invalidates
+// everything paired from it without naming any descendant.
 type DeviceDelegation struct {
 	Type      string `cbor:"type"` // always TypeDeviceDelegation; signed
 	DevicePub []byte `cbor:"device_pub"`
-	MemberPub []byte `cbor:"member_pub"`
+	ParentPub []byte `cbor:"parent_pub"` // member root, or the device that paired this one
 	IssuedAt  int64  `cbor:"issued_at"`            // unix ms
 	ExpiresAt int64  `cbor:"expires_at,omitempty"` // unix ms; 0 = no expiry
 	Sig       []byte `cbor:"sig"`
@@ -159,13 +166,20 @@ type SessionDelegation struct {
 	Sig        []byte `cbor:"sig"`
 }
 
-// DeviceRevoke revokes a device delegation. Signed by the member root.
+// DeviceRevoke revokes a device delegation, signed by RevokerPub.
+//
+// A revoke binds only if the revoker is an ANCESTOR of the revoked device — its
+// parent, its grandparent, or the member root at the top. Peers cannot revoke
+// each other: otherwise a stolen phone could revoke the laptop above it, which
+// would destroy the owner's access permanently (revoked keys can never be
+// re-paired) while the thief kept theirs. A compromised device may damage only
+// what it was already responsible for. VerifySender enforces this.
 type DeviceRevoke struct {
-	Type      string `cbor:"type"` // always TypeDeviceRevoke; signed
-	DevicePub []byte `cbor:"device_pub"`
-	MemberPub []byte `cbor:"member_pub"`
-	RevokedAt int64  `cbor:"revoked_at"` // unix ms
-	Sig       []byte `cbor:"sig"`
+	Type       string `cbor:"type"` // always TypeDeviceRevoke; signed
+	DevicePub  []byte `cbor:"device_pub"`
+	RevokerPub []byte `cbor:"revoker_pub"` // must be an ancestor of DevicePub
+	RevokedAt  int64  `cbor:"revoked_at"`  // unix ms
+	Sig        []byte `cbor:"sig"`
 }
 
 // signable is any identity-log object that carries a detached Ed25519 signature
@@ -291,10 +305,13 @@ func VerifyAttestation(a *IdentityAttestation) bool {
 	return a != nil && verifySig(a, a.Origin, a.Sig)
 }
 
-// VerifyDeviceDelegation checks a delegation against the member root that
-// issued it.
+// VerifyDeviceDelegation checks a delegation against the parent that issued it
+// — a member root for a first device, another device key otherwise. A valid
+// signature means "this parent admitted this device", not "this parent had
+// standing to"; placing the parent in a tree that reaches a trusted household
+// root is VerifySender's job.
 func VerifyDeviceDelegation(d *DeviceDelegation) bool {
-	return d != nil && verifySig(d, d.MemberPub, d.Sig)
+	return d != nil && verifySig(d, d.ParentPub, d.Sig)
 }
 
 // VerifySessionDelegation checks a session delegation against its device key.
@@ -302,9 +319,13 @@ func VerifySessionDelegation(s *SessionDelegation) bool {
 	return s != nil && verifySig(s, s.DevicePub, s.Sig)
 }
 
-// VerifyDeviceRevoke checks a revocation against the member root that issued it.
+// VerifyDeviceRevoke checks a revocation against the key that issued it. This
+// proves only that the named revoker signed it — NOT that the revoker had any
+// standing to revoke this device. Authority (the revoker must be an ancestor of
+// the target) can only be decided against the delegation tree, which is why
+// VerifySender re-checks and why a carrier must not treat storage as endorsement.
 func VerifyDeviceRevoke(d *DeviceRevoke) bool {
-	return d != nil && verifySig(d, d.MemberPub, d.Sig)
+	return d != nil && verifySig(d, d.RevokerPub, d.Sig)
 }
 
 // verifySig checks obj.Sig against signerPub over the object's signing bytes.

@@ -1337,11 +1337,19 @@ func (x *ResolveSenderRequest) GetSenderPub() []byte {
 type ResolveSenderResponse struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	SessionDelegation []byte                 `protobuf:"bytes,1,opt,name=session_delegation,json=sessionDelegation,proto3" json:"session_delegation,omitempty"` // CBOR, empty if the sender is a device key
-	DeviceDelegation  []byte                 `protobuf:"bytes,2,opt,name=device_delegation,json=deviceDelegation,proto3" json:"device_delegation,omitempty"`    // CBOR, empty if unknown
-	Attestation       []byte                 `protobuf:"bytes,3,opt,name=attestation,proto3" json:"attestation,omitempty"`                                      // CBOR, empty if unknown
-	DeviceRevoke      []byte                 `protobuf:"bytes,4,opt,name=device_revoke,json=deviceRevoke,proto3" json:"device_revoke,omitempty"`                // CBOR, empty if not revoked
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	Attestation       []byte                 `protobuf:"bytes,3,opt,name=attestation,proto3" json:"attestation,omitempty"`                                      // CBOR of the member root's attestation, empty if unknown
+	// The device delegation chain, LEAF FIRST: the sender's own device, then the
+	// device that paired it, and so on up to the one a member root signed.
+	// Devices pair devices, so this is a walk of unbounded length rather than the
+	// single hop it used to be, and the client needs every link to verify any of
+	// them. Truncated at the server's depth limit.
+	DeviceDelegations [][]byte `protobuf:"bytes,5,rep,name=device_delegations,json=deviceDelegations,proto3" json:"device_delegations,omitempty"`
+	// Revocations for any device on that chain. A revoke of an ANCESTOR is what
+	// makes the sender invalid, so sending only the sender's own revoke would let
+	// a client accept a device whose parent was revoked underneath it.
+	DeviceRevokes [][]byte `protobuf:"bytes,6,rep,name=device_revokes,json=deviceRevokes,proto3" json:"device_revokes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ResolveSenderResponse) Reset() {
@@ -1381,13 +1389,6 @@ func (x *ResolveSenderResponse) GetSessionDelegation() []byte {
 	return nil
 }
 
-func (x *ResolveSenderResponse) GetDeviceDelegation() []byte {
-	if x != nil {
-		return x.DeviceDelegation
-	}
-	return nil
-}
-
 func (x *ResolveSenderResponse) GetAttestation() []byte {
 	if x != nil {
 		return x.Attestation
@@ -1395,9 +1396,108 @@ func (x *ResolveSenderResponse) GetAttestation() []byte {
 	return nil
 }
 
-func (x *ResolveSenderResponse) GetDeviceRevoke() []byte {
+func (x *ResolveSenderResponse) GetDeviceDelegations() [][]byte {
 	if x != nil {
-		return x.DeviceRevoke
+		return x.DeviceDelegations
+	}
+	return nil
+}
+
+func (x *ResolveSenderResponse) GetDeviceRevokes() [][]byte {
+	if x != nil {
+		return x.DeviceRevokes
+	}
+	return nil
+}
+
+type ListMemberDevicesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MemberPub     []byte                 `protobuf:"bytes,1,opt,name=member_pub,json=memberPub,proto3" json:"member_pub,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListMemberDevicesRequest) Reset() {
+	*x = ListMemberDevicesRequest{}
+	mi := &file_cairn_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListMemberDevicesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListMemberDevicesRequest) ProtoMessage() {}
+
+func (x *ListMemberDevicesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_cairn_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListMemberDevicesRequest.ProtoReflect.Descriptor instead.
+func (*ListMemberDevicesRequest) Descriptor() ([]byte, []int) {
+	return file_cairn_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *ListMemberDevicesRequest) GetMemberPub() []byte {
+	if x != nil {
+		return x.MemberPub
+	}
+	return nil
+}
+
+// The device keys a room key must be wrapped to for this member. Room keys seal
+// to DEVICE keys, not the member root — the member root is offline — so a client
+// admitting a member needs their whole device set. Revoked devices and anything
+// paired from them are excluded.
+type ListMemberDevicesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	DevicePubs    [][]byte               `protobuf:"bytes,1,rep,name=device_pubs,json=devicePubs,proto3" json:"device_pubs,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListMemberDevicesResponse) Reset() {
+	*x = ListMemberDevicesResponse{}
+	mi := &file_cairn_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListMemberDevicesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListMemberDevicesResponse) ProtoMessage() {}
+
+func (x *ListMemberDevicesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_cairn_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListMemberDevicesResponse.ProtoReflect.Descriptor instead.
+func (*ListMemberDevicesResponse) Descriptor() ([]byte, []int) {
+	return file_cairn_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *ListMemberDevicesResponse) GetDevicePubs() [][]byte {
+	if x != nil {
+		return x.DevicePubs
 	}
 	return nil
 }
@@ -1479,12 +1579,18 @@ const file_cairn_proto_rawDesc = "" +
 	"\amembers\x18\x01 \x03(\v2\x19.cairn.v1.SpaceMemberInfoR\amembers\"5\n" +
 	"\x14ResolveSenderRequest\x12\x1d\n" +
 	"\n" +
-	"sender_pub\x18\x01 \x01(\fR\tsenderPub\"\xba\x01\n" +
+	"sender_pub\x18\x01 \x01(\fR\tsenderPub\"\xec\x01\n" +
 	"\x15ResolveSenderResponse\x12-\n" +
-	"\x12session_delegation\x18\x01 \x01(\fR\x11sessionDelegation\x12+\n" +
-	"\x11device_delegation\x18\x02 \x01(\fR\x10deviceDelegation\x12 \n" +
-	"\vattestation\x18\x03 \x01(\fR\vattestation\x12#\n" +
-	"\rdevice_revoke\x18\x04 \x01(\fR\fdeviceRevoke*\x92\x05\n" +
+	"\x12session_delegation\x18\x01 \x01(\fR\x11sessionDelegation\x12 \n" +
+	"\vattestation\x18\x03 \x01(\fR\vattestation\x12-\n" +
+	"\x12device_delegations\x18\x05 \x03(\fR\x11deviceDelegations\x12%\n" +
+	"\x0edevice_revokes\x18\x06 \x03(\fR\rdeviceRevokesJ\x04\b\x02\x10\x03J\x04\b\x04\x10\x05R\x11device_delegationR\rdevice_revoke\"9\n" +
+	"\x18ListMemberDevicesRequest\x12\x1d\n" +
+	"\n" +
+	"member_pub\x18\x01 \x01(\fR\tmemberPub\"<\n" +
+	"\x19ListMemberDevicesResponse\x12\x1f\n" +
+	"\vdevice_pubs\x18\x01 \x03(\fR\n" +
+	"devicePubs*\x92\x05\n" +
 	"\tEventType\x12\x1a\n" +
 	"\x16EVENT_TYPE_UNSPECIFIED\x10\x00\x12\b\n" +
 	"\x04CHAT\x10\x01\x12\f\n" +
@@ -1531,7 +1637,7 @@ const file_cairn_proto_rawDesc = "" +
 	"\x12TRANSPORT_HINT_LAN\x10\x01\x12\x17\n" +
 	"\x13TRANSPORT_HINT_MESH\x10\x02\x12\x16\n" +
 	"\x12TRANSPORT_HINT_BLE\x10\x03\x12\x16\n" +
-	"\x12TRANSPORT_HINT_ALL\x10\x042\xfa\x04\n" +
+	"\x12TRANSPORT_HINT_ALL\x10\x042\xd8\x05\n" +
 	"\fCairnService\x12D\n" +
 	"\tSendEvent\x12\x1a.cairn.v1.SendEventRequest\x1a\x1b.cairn.v1.SendEventResponse\x125\n" +
 	"\x04Sync\x12\x15.cairn.v1.SyncRequest\x1a\x16.cairn.v1.SyncResponse\x12>\n" +
@@ -1540,7 +1646,8 @@ const file_cairn_proto_rawDesc = "" +
 	"\x11PutIdentityObject\x12\".cairn.v1.PutIdentityObjectRequest\x1a#.cairn.v1.PutIdentityObjectResponse\x12P\n" +
 	"\rResolveSender\x12\x1e.cairn.v1.ResolveSenderRequest\x1a\x1f.cairn.v1.ResolveSenderResponse\x12D\n" +
 	"\tListRooms\x12\x1a.cairn.v1.ListRoomsRequest\x1a\x1b.cairn.v1.ListRoomsResponse\x12Y\n" +
-	"\x10ListSpaceMembers\x12!.cairn.v1.ListSpaceMembersRequest\x1a\".cairn.v1.ListSpaceMembersResponseB6Z4github.com/geekgonecrazy/cairn/proto/cairnv1;cairnv1b\x06proto3"
+	"\x10ListSpaceMembers\x12!.cairn.v1.ListSpaceMembersRequest\x1a\".cairn.v1.ListSpaceMembersResponse\x12\\\n" +
+	"\x11ListMemberDevices\x12\".cairn.v1.ListMemberDevicesRequest\x1a#.cairn.v1.ListMemberDevicesResponseB6Z4github.com/geekgonecrazy/cairn/proto/cairnv1;cairnv1b\x06proto3"
 
 var (
 	file_cairn_proto_rawDescOnce sync.Once
@@ -1555,7 +1662,7 @@ func file_cairn_proto_rawDescGZIP() []byte {
 }
 
 var file_cairn_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_cairn_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_cairn_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_cairn_proto_goTypes = []any{
 	(EventType)(0),                    // 0: cairn.v1.EventType
 	(TransportHint)(0),                // 1: cairn.v1.TransportHint
@@ -1579,6 +1686,8 @@ var file_cairn_proto_goTypes = []any{
 	(*ListSpaceMembersResponse)(nil),  // 19: cairn.v1.ListSpaceMembersResponse
 	(*ResolveSenderRequest)(nil),      // 20: cairn.v1.ResolveSenderRequest
 	(*ResolveSenderResponse)(nil),     // 21: cairn.v1.ResolveSenderResponse
+	(*ListMemberDevicesRequest)(nil),  // 22: cairn.v1.ListMemberDevicesRequest
+	(*ListMemberDevicesResponse)(nil), // 23: cairn.v1.ListMemberDevicesResponse
 }
 var file_cairn_proto_depIdxs = []int32{
 	0,  // 0: cairn.v1.Event.type:type_name -> cairn.v1.EventType
@@ -1597,16 +1706,18 @@ var file_cairn_proto_depIdxs = []int32{
 	20, // 13: cairn.v1.CairnService.ResolveSender:input_type -> cairn.v1.ResolveSenderRequest
 	15, // 14: cairn.v1.CairnService.ListRooms:input_type -> cairn.v1.ListRoomsRequest
 	18, // 15: cairn.v1.CairnService.ListSpaceMembers:input_type -> cairn.v1.ListSpaceMembersRequest
-	4,  // 16: cairn.v1.CairnService.SendEvent:output_type -> cairn.v1.SendEventResponse
-	6,  // 17: cairn.v1.CairnService.Sync:output_type -> cairn.v1.SyncResponse
-	8,  // 18: cairn.v1.CairnService.History:output_type -> cairn.v1.HistoryResponse
-	10, // 19: cairn.v1.CairnService.GetIdentityObject:output_type -> cairn.v1.GetIdentityObjectResponse
-	12, // 20: cairn.v1.CairnService.PutIdentityObject:output_type -> cairn.v1.PutIdentityObjectResponse
-	21, // 21: cairn.v1.CairnService.ResolveSender:output_type -> cairn.v1.ResolveSenderResponse
-	16, // 22: cairn.v1.CairnService.ListRooms:output_type -> cairn.v1.ListRoomsResponse
-	19, // 23: cairn.v1.CairnService.ListSpaceMembers:output_type -> cairn.v1.ListSpaceMembersResponse
-	16, // [16:24] is the sub-list for method output_type
-	8,  // [8:16] is the sub-list for method input_type
+	22, // 16: cairn.v1.CairnService.ListMemberDevices:input_type -> cairn.v1.ListMemberDevicesRequest
+	4,  // 17: cairn.v1.CairnService.SendEvent:output_type -> cairn.v1.SendEventResponse
+	6,  // 18: cairn.v1.CairnService.Sync:output_type -> cairn.v1.SyncResponse
+	8,  // 19: cairn.v1.CairnService.History:output_type -> cairn.v1.HistoryResponse
+	10, // 20: cairn.v1.CairnService.GetIdentityObject:output_type -> cairn.v1.GetIdentityObjectResponse
+	12, // 21: cairn.v1.CairnService.PutIdentityObject:output_type -> cairn.v1.PutIdentityObjectResponse
+	21, // 22: cairn.v1.CairnService.ResolveSender:output_type -> cairn.v1.ResolveSenderResponse
+	16, // 23: cairn.v1.CairnService.ListRooms:output_type -> cairn.v1.ListRoomsResponse
+	19, // 24: cairn.v1.CairnService.ListSpaceMembers:output_type -> cairn.v1.ListSpaceMembersResponse
+	23, // 25: cairn.v1.CairnService.ListMemberDevices:output_type -> cairn.v1.ListMemberDevicesResponse
+	17, // [17:26] is the sub-list for method output_type
+	8,  // [8:17] is the sub-list for method input_type
 	8,  // [8:8] is the sub-list for extension type_name
 	8,  // [8:8] is the sub-list for extension extendee
 	0,  // [0:8] is the sub-list for field type_name
@@ -1623,7 +1734,7 @@ func file_cairn_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cairn_proto_rawDesc), len(file_cairn_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   20,
+			NumMessages:   22,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

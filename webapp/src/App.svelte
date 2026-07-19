@@ -43,6 +43,17 @@
   <RoomView />
 </div>
 
+<!-- Delivery failures are shown, never swallowed. An event the carrier refused
+     used to be marked "queued" and nothing else, so a rejected space looked
+     like a space that simply never appeared. The server's own words are the
+     most useful thing we have, so they are carried through verbatim. -->
+{#if app.lastError}
+  <div class="err-banner" role="alert">
+    <div class="err-text">{app.lastError}</div>
+    <button class="err-x" aria-label="Dismiss" onclick={() => app.clearError()}>✕</button>
+  </div>
+{/if}
+
 {#if ui.identityOpen}
   <DevicesModal onclose={() => ui.closeIdentity()} />
 {/if}
@@ -82,6 +93,44 @@
   }
 
   .scrim { display: none; }
+
+  .err-banner {
+    position: fixed;
+    z-index: 90;
+    left: 50%;
+    bottom: 16px;
+    transform: translateX(-50%);
+    width: min(680px, calc(100vw - 24px));
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--r-2, 8px);
+    background: var(--danger, #b91c1c);
+    color: #fff;
+    box-shadow: 0 6px 28px rgb(0 0 0 / 0.3);
+  }
+  .err-text {
+    flex: 1;
+    font-size: 13px;
+    line-height: 1.5;
+    /* Server messages carry long hex ids; wrap rather than overflow the shell. */
+    overflow-wrap: anywhere;
+  }
+  .err-x {
+    flex: none;
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    background: transparent;
+    border: 0;
+    color: #fff;
+    font-size: 13px;
+    cursor: pointer;
+    border-radius: 6px;
+  }
+  .err-x:hover { background: rgb(255 255 255 / 0.18); }
 
   @media (max-width: 900px) {
     .shell {

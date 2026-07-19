@@ -4,7 +4,7 @@
 // events (PROTOCOL.md §4): a message's rendered text = its latest edit; a
 // deletion tombstones it; reactions = the union of each sender's latest set.
 
-import { cairn, subscribe, utf8, hex, needsIdentityPublish } from './api'
+import { cairn, subscribe, utf8, hex, needsIdentityPublish, describeSendFailure } from './api'
 import {
   buildChat,
   buildReaction,
@@ -37,6 +37,7 @@ import { cachePut, cacheLoad } from './idb'
 import { identity } from './identity.svelte'
 import { directory } from './directory.svelte'
 import { roomStore, slugify, newSpaceId } from './rooms.svelte'
+import { unread } from './unread.svelte'
 import { decode as cborDecode } from './cbor'
 import {
   decodeRequest,
@@ -203,6 +204,12 @@ class AppState {
   reidentify() {
     this.myPubHex = hex(sessionPub())
     this.rebuild()
+    // Re-enter the app as the new identity. init() ran openFirstRoom() BEFORE
+    // this device had one — during onboarding, or while a paired device was
+    // still waiting for approval — so no space was ever selected and the sidebar
+    // sat on "No space" even though the account belongs to several. Anything
+    // that changes who we are has to redo that selection.
+    void this.openFirstRoom()
   }
 
   init() {
@@ -217,7 +224,7 @@ class AppState {
 
   /** Select the first room we're actually a member of, if any. A household with
    *  no rooms stays on the empty state rather than opening a phantom one. */
-  private async openFirstRoom() {
+  async openFirstRoom() {
     await roomStore.refresh()
     this.ensureActiveSpace()
     // Coming online: drain any channel of anyone the space owner revoked while we
@@ -284,12 +291,32 @@ class AppState {
       return
     }
 
-    if (ev.type !== EventType.MEMBER_ADD && ev.type !== EventType.ROOM_CREATE) return
+    if (
+      ev.type !== EventType.MEMBER_ADD &&
+      ev.type !== EventType.ROOM_KEY_ROTATE &&
+      ev.type !== EventType.ROOM_CREATE
+    ) {
+      return
+    }
 
-    if (ev.type === EventType.MEMBER_ADD) {
-      // applyKeyEvent is a no-op unless this add wrapped a key to our member
-      // root, so it doubles as the "is this about me?" check.
-      const installed = await applyKeyEvent(ev)
+    if (ev.type === EventType.MEMBER_ADD || ev.type === EventType.ROOM_KEY_ROTATE) {
+      // applyKeyEvent is a no-op unless this event wrapped a key to US, so it
+      // doubles as the "is this about me?" check.
+      //
+      // ROOM_KEY_ROTATE belongs here, not just MEMBER_ADD. Now that keys wrap to
+      // DEVICE keys, a rotation is how a newly paired device receives every room
+      // it should be able to read — and a freshly paired device has no room open
+      // yet, so dropping rotations for non-active rooms meant it sat there
+      // reporting "you're not a member of this room" for rooms it had just been
+      // given the key to. Membership was never the problem; the key event was
+      // discarded before it could be applied.
+      let installed = false
+      try {
+        installed = await applyKeyEvent(ev)
+      } catch (e) {
+        this.lastError = e instanceof Error ? e.message : String(e)
+        return
+      }
       if (!installed) return
     }
     await roomStore.refresh()
@@ -342,6 +369,7 @@ class AppState {
   async selectRoom(id: string) {
     if (!id) return
     this.currentRoomId = id
+    unread.markRead(id) // opening a room is what "reading" it means
     // Keep the rail in sync: opening a room (e.g. jumping to one we were just
     // admitted to) makes its space the active one.
     const room = roomStore.find(id)
@@ -363,6 +391,7 @@ class AppState {
     // 2. Reconcile with the server: pull what we lack, push what it lacks.
     await this.reconcile(id)
     this.refreshKeyState()
+    this.checkRoomKey(id)
 
     // 3. Announce presence (ephemeral — the server broadcasts, never stores it).
     void this.announcePresence()
@@ -641,8 +670,8 @@ class AppState {
     const me = identity.current
     if (!me) throw new Error('create an identity first')
     const spaceId = newSpaceId(name)
-    await this.deliver(await buildSpaceCreate(spaceId, name.trim() || 'Space'))
-    await this.deliver(await buildSpaceMemberAdd(spaceId, me.memberPub, 'admin'))
+    await this.deliver(await buildSpaceCreate(spaceId, name.trim() || 'Space'), { mustLand: true })
+    await this.deliver(await buildSpaceMemberAdd(spaceId, me.memberPub, 'admin'), { mustLand: true })
     await roomStore.refresh()
     this.activeSpaceId = spaceId
     return spaceId
@@ -664,9 +693,34 @@ class AppState {
     if (!spaceId) throw new Error('create or select a space first')
 
     const roomId = slugify(name)
-    await this.deliver(await buildRoomCreate(roomId, name.trim() || roomId, spaceId, visibility))
-    // Admit ourselves. mintEpoch wraps to the member roots we pass plus our own.
-    await this.deliver(await buildMemberAdd(roomId, me.memberPub, 'admin', [], []))
+
+    // BUILD BOTH BEFORE SENDING EITHER.
+    //
+    // A room whose ROOM_CREATE landed but whose MEMBER_ADD did not is orphaned
+    // for good: it shows in every sidebar as a locked room, its creator is not a
+    // member, and nobody can ever be admitted because admitting requires holding
+    // a key that was never wrapped to anyone. There is no delete-room event, so
+    // it cannot even be cleaned up.
+    //
+    // buildMemberAdd is the part that can realistically fail — it mints the
+    // epoch and asks the carrier which devices to wrap to — so building it first
+    // means the usual failure happens while nothing has been published yet.
+    const createEv = await buildRoomCreate(roomId, name.trim() || roomId, spaceId, visibility)
+    const admitEv = await buildMemberAdd(roomId, me.memberPub, 'admin', [], [])
+
+    await this.deliver(createEv, { mustLand: true })
+    try {
+      await this.deliver(admitEv, { mustLand: true })
+    } catch (e) {
+      // The narrow window where create landed and admit did not. Say exactly
+      // what is wrong, because the sidebar is about to show a room that looks
+      // real and cannot be entered.
+      throw new Error(
+        `The room was created but you could not be added to it, so it is unusable — ` +
+          `nobody holds its key and nobody can be let in. Pick a different name and try ` +
+          `again. (${e instanceof Error ? e.message : String(e)})`,
+      )
+    }
 
     await roomStore.refresh()
     await this.selectRoom(roomId)
@@ -684,7 +738,7 @@ class AppState {
     if (!me) throw new Error('create an identity first')
     const spaceId = this.activeSpaceId
     if (!spaceId) throw new Error('create or select a space first')
-    await this.deliver(await buildSpaceMemberAdd(spaceId, memberPub, role))
+    await this.deliver(await buildSpaceMemberAdd(spaceId, memberPub, role), { mustLand: true })
     await roomStore.refresh()
   }
 
@@ -701,7 +755,7 @@ class AppState {
   async updateSpace(name: string, admitKind: string, admitOrigin: string) {
     const spaceId = this.activeSpaceId
     if (!spaceId) throw new Error('no active space')
-    await this.deliver(await buildSpaceUpdate(spaceId, name.trim() || 'Space', admitKind, admitOrigin))
+    await this.deliver(await buildSpaceUpdate(spaceId, name.trim() || 'Space', admitKind, admitOrigin), { mustLand: true })
     await roomStore.refresh()
   }
 
@@ -709,7 +763,7 @@ class AppState {
   async removeSpaceMember(memberPub: Uint8Array) {
     const spaceId = this.activeSpaceId
     if (!spaceId) throw new Error('no active space')
-    await this.deliver(await buildSpaceMemberRemove(spaceId, memberPub))
+    await this.deliver(await buildSpaceMemberRemove(spaceId, memberPub), { mustLand: true })
     await roomStore.refresh()
   }
 
@@ -769,6 +823,69 @@ class AppState {
     await roomStore.refresh()
   }
 
+  /**
+   * Re-wrap every room key we hold so a newly paired device of OURS can read.
+   *
+   * Room keys seal to device keys, so a new device starts able to decrypt
+   * nothing. Rotating each room mints a fresh epoch wrapped to the full current
+   * device set — which now includes the new one, since its delegation was
+   * published first. We can do this alone: no other member has to be online,
+   * because we already hold these keys.
+   *
+   * Only the CURRENT epoch travels this way. Backlog is deliberately not
+   * re-wrapped: pre-pairing history stays where it was, the same rule that
+   * governs a newly added member (see buildMemberAdd's share_history).
+   */
+  async rewrapForNewDevice(): Promise<{ rooms: number; failed: number }> {
+    let rooms = 0
+    let failed = 0
+    for (const r of roomStore.rooms) {
+      if (!r.joined || !haveRoomKey(r.id)) continue
+      try {
+        const events = r.id === this.currentRoomId ? this.events : (
+          await cairn.sync({ roomId: utf8(r.id), haveHeads: [] })
+        ).missing
+        await this.deliver(
+          await buildRoomKeyRotate(r.id, this.rosterOf(events), localHeads(events)),
+        )
+        rooms++
+      } catch {
+        // Offline or not permitted — the new device simply can't read this room
+        // yet. Counted so the UI can say so rather than implying success.
+        failed++
+      }
+    }
+    await roomStore.refresh()
+    return { rooms, failed }
+  }
+
+  /** Member roots currently in a room's roster, from its folded events. */
+  private rosterOf(events: Event[]): Uint8Array[] {
+    const me = identity.current
+    return foldRoster(events, me ? hex(me.memberPub) : '').map((m) => m.pub)
+  }
+
+  /**
+   * After a room is fully synced: are we a member who nonetheless holds no key?
+   *
+   * This is the honest place to ask. A single key event that is not addressed to
+   * us proves nothing — every event predating this device looks like that — but
+   * being in the roster with no key after folding everything is a real, nameable
+   * problem, and it is exactly the state a freshly paired device lands in when
+   * whoever wrapped the last epoch had a stale device list.
+   */
+  private checkRoomKey(roomId: string) {
+    const me = identity.current
+    if (!me || this.currentRoomId !== roomId) return
+    if (haveRoomKey(roomId)) return
+    const inRoster = this.members.some((m) => m.mine)
+    if (!inRoster) return // genuinely not a member; the normal locked-room state
+    this.lastError =
+      `You're a member of this room but this device has no key for it. That happens when the ` +
+      `key was last shared before this device was added. On a device that can already read it, ` +
+      `open Members & keys and hit "Rotate key" — that re-shares it to all your devices.`
+  }
+
   /** Reconcile every channel we hold a key to in a space against its roster. */
   private async reconcileSpace(spaceId: string) {
     for (const r of roomStore.rooms) {
@@ -818,11 +935,31 @@ class AppState {
   async addMember(pubHex: string, shareHistory = false) {
     const pub = fromHex(pubHex.trim())
     if (!pub || pub.length !== 32) throw new Error('member key must be 64 hex chars')
+    // A channel roster must stay within its space roster. Rather than refusing
+    // and telling the user to go somewhere else — which left them holding a
+    // pasted key in a modal that named no route to the fix — grant the space
+    // membership here when we're allowed to.
+    //
+    // Only the space OWNER may add space members (enforced at the fold), so a
+    // non-owner still gets an error; it now says who can do it instead of
+    // implying the user simply did the steps in the wrong order.
     const room = roomStore.find(this.currentRoomId)
     if (room?.spaceId) {
       const roster = await this.spaceMembers(room.spaceId)
       if (!roster.some((m) => m.pubHex === hex(pub))) {
-        throw new Error('add them to the space first — a channel member must be a member of its space')
+        const space = roomStore.spaces.find((s) => s.id === room.spaceId)
+        const me = identity.current
+        // roomStore stores owner already hex-encoded ('' when unknown).
+        const iAmOwner = !!me && !!space?.owner && space.owner === hex(me.memberPub)
+        if (!iAmOwner) {
+          throw new Error(
+            `They're not in the space "${space?.name ?? room.spaceId}" yet, and only its owner ` +
+              `can add them. Ask the person who created that space to add them, then add them here.`,
+          )
+        }
+        // Discovery only — wraps no key. Being in the space lets them SEE the
+        // space's channels; the member_add below is what grants this one.
+        await this.addSpaceMember(pub)
       }
     }
     const ev = await buildMemberAdd(
@@ -884,7 +1021,33 @@ class AppState {
 
   // ---- ingest + fold ----
 
-  private async deliver(ev: Event) {
+  /**
+   * The last delivery failure, in the server's own words. Rendered by the shell.
+   *
+   * A rejected event used to be marked `queued` and nothing else — the promise
+   * resolved normally, so callers believed they had succeeded. Creating a space
+   * against a carrier that refused it returned a space id for a space that did
+   * not exist, closed the modal, and showed nothing at all. "Queued" is honest
+   * only for something that will actually be retried; for a terminal rejection
+   * it is a lie the user cannot see through.
+   */
+  lastError = $state<string | null>(null)
+
+  clearError() {
+    this.lastError = null
+  }
+
+  /**
+   * Send an event.
+   *
+   * `mustLand` is for control-plane acts — creating a space or room, admitting
+   * or removing a member. Those are meaningless if they do not reach the
+   * carrier: nobody else can see a space that was never published, so silently
+   * queueing one produces a local ghost. Those callers get a thrown error with
+   * the server's message. Ordinary chat still queues, because offline-first is
+   * the point there — but it records the reason instead of hiding it.
+   */
+  private async deliver(ev: Event, { mustLand = false }: { mustLand?: boolean } = {}) {
     const idHex = hex(ev.eventId)
     try {
       await cairn.sendEvent({ event: ev })
@@ -895,6 +1058,7 @@ class AppState {
       // is recoverable — publish our identity (which founds the household on a
       // fresh carrier) and retry once. A terminal rejection (revoked/untrusted)
       // is NOT retried; it falls through to queued so the state stays honest.
+      let finalErr = e
       if (needsIdentityPublish(e)) {
         try {
           await identity.publish()
@@ -902,11 +1066,16 @@ class AppState {
           if (this.states.get(idHex) === 'sending') this.states.set(idHex, 'sent')
           this.rebuild()
           return
-        } catch {
-          /* still refused — fall through to queued */
+        } catch (retryErr) {
+          finalErr = retryErr // report what the RETRY said, not the first refusal
         }
       }
       this.states.set(idHex, 'queued')
+      const msg = describeSendFailure(finalErr)
+      this.lastError = msg
+      this.rebuild()
+      if (mustLand) throw new Error(msg)
+      return
     }
     this.rebuild()
   }
@@ -917,7 +1086,14 @@ class AppState {
     // Being added to a room you aren't currently viewing is the normal case —
     // dropping those events meant a newcomer sat on an empty screen until they
     // happened to reload, which looked like the invite had silently failed.
-    if (roomIdOf(ev) !== this.currentRoomId) {
+    const evRoom = roomIdOf(ev)
+    if (evRoom !== this.currentRoomId) {
+      // Activity in a room you aren't looking at is exactly what an unread
+      // badge is for — previously this path dropped it and the client never
+      // learned a message had arrived at all.
+      if (unread.note(ev, evRoom, hex(ev.senderPub) === this.myPubHex)) {
+        void roomStore.refresh() // so a room you can see badges immediately
+      }
       await this.noteOutOfRoomMembership(ev)
       return
     }
@@ -954,9 +1130,17 @@ class AppState {
     // Key-material events: install our epoch key first, then re-decrypt anything
     // that was opaque for lack of it (pre-key events now become readable).
     if (ev.type === EventType.MEMBER_ADD || ev.type === EventType.ROOM_KEY_ROTATE) {
-      if (await applyKeyEvent(ev)) {
-        await this.redecryptOpaque()
-        this.refreshKeyState()
+      try {
+        if (await applyKeyEvent(ev)) {
+          await this.redecryptOpaque()
+          this.refreshKeyState()
+        }
+      } catch (e) {
+        // A key event meant for us that we could not apply is exactly how a
+        // device ends up showing "you're not a member" of a room it was just
+        // given access to. Say so, rather than letting it look identical to
+        // never having been admitted.
+        this.lastError = e instanceof Error ? e.message : String(e)
       }
     }
 

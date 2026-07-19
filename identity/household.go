@@ -40,6 +40,12 @@ const MnemonicWords = 24
 // future key derived from the same mnemonic. Never reuse this label.
 const hkdfInfoHouseholdRoot = "cairn/household-root/v1"
 
+// hkdfInfoMemberRoot domain-separates a MEMBER root from a household root. Both
+// are derived from 24 words, and a member who founded the household holds two
+// separate phrases; the labels guarantee neither derivation can produce the
+// other's key even if the same words were somehow reused.
+const hkdfInfoMemberRoot = "cairn/member-root/v1"
+
 // NewMnemonic generates a fresh 24-word BIP-39 mnemonic. This is the only
 // artifact that must leave the device to be written down; it is shown once,
 // during bootstrap, and never recoverable from Cairn afterwards.
@@ -90,6 +96,35 @@ func HouseholdRootFromMnemonic(mnemonic, passphrase string) (KeyPair, error) {
 	r := hkdf.New(sha512.New, seed, nil, []byte(hkdfInfoHouseholdRoot))
 	if _, err := io.ReadFull(r, sk); err != nil {
 		return KeyPair{}, fmt.Errorf("identity: derive household root: %w", err)
+	}
+	priv := ed25519.NewKeyFromSeed(sk)
+	return KeyPair{Pub: priv.Public().(ed25519.PublicKey), Priv: priv}, nil
+}
+
+// MemberRootFromMnemonic deterministically derives a MEMBER root keypair from
+// that member's own mnemonic — a different set of words from the household's.
+//
+// A member root is an offline apex, exactly like the household root: it signs
+// the member's FIRST device delegation and is then put away, never persisted on
+// any device. Every device after that is paired from an existing device, which
+// signs as parent (see DeviceDelegation). That is what makes device revocation
+// meaningful — a stolen device holds no key that can admit a replacement — and
+// it is why room keys wrap to DEVICE keys rather than to this one.
+//
+// Domain-separated from the household derivation, so the same words could never
+// produce both and one can never be used to forge the other. Everything the
+// household note above says about a wrong passphrase applies here too: it yields
+// a different member root, not an error.
+func MemberRootFromMnemonic(mnemonic, passphrase string) (KeyPair, error) {
+	if err := ValidateMnemonic(mnemonic); err != nil {
+		return KeyPair{}, err
+	}
+	seed := bip39.NewSeed(normalizeMnemonic(mnemonic), passphrase)
+
+	sk := make([]byte, ed25519.SeedSize)
+	r := hkdf.New(sha512.New, seed, nil, []byte(hkdfInfoMemberRoot))
+	if _, err := io.ReadFull(r, sk); err != nil {
+		return KeyPair{}, fmt.Errorf("identity: derive member root: %w", err)
 	}
 	priv := ed25519.NewKeyFromSeed(sk)
 	return KeyPair{Pub: priv.Public().(ed25519.PublicKey), Priv: priv}, nil

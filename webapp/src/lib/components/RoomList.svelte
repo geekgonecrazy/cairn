@@ -3,6 +3,7 @@
   import { app } from '../state.svelte'
   import { ui } from '../ui.svelte'
   import { roomStore } from '../rooms.svelte'
+  import { unread } from '../unread.svelte'
   import { identity } from '../identity.svelte'
 
   let query = $state('')
@@ -107,6 +108,7 @@
       <button
         class="room-item"
         class:discoverable={!r.joined}
+        class:has-unread={unread.count(r.id) > 0 && app.currentRoomId !== r.id}
         aria-current={app.currentRoomId === r.id}
         onclick={() => { app.selectRoom(r.id); ui.closeNav() }}
         title={r.joined ? r.name : `${r.name} — you can see this room but haven't joined it`}
@@ -115,6 +117,8 @@
         <span class="name">{r.name}</span>
         {#if r.pendingRequests > 0}
           <span class="req-badge" title="{r.pendingRequests} waiting to join">{r.pendingRequests}</span>
+        {:else if unread.count(r.id) > 0}
+          <span class="unread-badge" title="{unread.count(r.id)} unread">{unread.count(r.id)}</span>
         {:else if !r.joined}
           <span class="lock" aria-label="not joined"><Icon name="lock" size={12} /></span>
         {/if}
@@ -139,6 +143,28 @@
 </aside>
 
 <style>
+  /* Matches the design's .room-item .badge (Cairn.html): full-strength text on
+     surface-3 with a border. An earlier version inverted this — muted grey
+     background, surface-coloured text — which read as decoration rather than
+     "new messages", especially in dark mode. */
+  .unread-badge {
+    margin-left: auto;
+    min-width: 16px;
+    padding: 2px 6px;
+    border-radius: 999px;
+    text-align: center;
+    font: 500 10px/1 var(--font-mono, monospace);
+    color: var(--text);
+    background: var(--surface-3);
+    border: 1px solid var(--border-2);
+  }
+  /* The strongest unread signal is the name itself. The design only bolds the
+     ACTIVE room; bolding unread too is a deliberate addition, because a badge
+     alone did not read as unread. */
+  .room-item.has-unread .name {
+    font-weight: 650;
+    color: var(--text);
+  }
   .section-label .add {
     margin-left: auto;
     width: 22px;

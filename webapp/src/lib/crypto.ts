@@ -14,6 +14,7 @@ import { ed25519 } from '@noble/curves/ed25519.js'
 import { create } from '@bufbuild/protobuf'
 import { CipherSuite, DhkemX25519HkdfSha256, HkdfSha256, Aes256Gcm } from '@hpke/core'
 import { encode as cborEncode, decode as cborDecode, type CborValue } from './cbor'
+import { cairn } from './api'
 import type { InlayInstance } from './inlay/types'
 import type { FileRef } from './files'
 import { EventSchema, EventType, type Event } from '../gen/cairn_pb'
@@ -200,6 +201,16 @@ function rawRoomKey(room: string, epoch: number): Uint8Array | null {
 function storeRoomKey(room: string, epoch: number, raw: Uint8Array) {
   localStorage.setItem(rkId(room, epoch), bytesToB64(raw))
   cryptoKeyCache.delete(`${room}:${epoch}`)
+}
+
+/** Thrown when a key event that WAS meant for us could not be applied. Distinct
+ *  from NoRoomKeyError, which means "we were never given access": this one means
+ *  "we were given access and something is wrong", and must not look the same. */
+export class KeyEventError extends Error {
+  constructor(msg: string) {
+    super(msg)
+    this.name = 'KeyEventError'
+  }
 }
 
 /** Thrown when an operation needs a room key we do not hold — i.e. we are not a
@@ -623,14 +634,29 @@ async function wrapKeyTo(recipientEdPub: Uint8Array, roomKey: Uint8Array): Promi
   return concat(putUvarint(enc.length), enc, ct)
 }
 
-/** Member root keypair from the vault, read straight from storage to keep
- *  crypto.ts free of app-state imports. Null when un-onboarded. */
-function memberIdentity(): { memberPub: Uint8Array; memberPriv: Uint8Array } | null {
+/** This DEVICE's keypair from the vault, read straight from storage to keep
+ *  crypto.ts free of app-state imports. Null when un-onboarded.
+ *
+ *  Room keys wrap to device keys, so this — not the member root — is the unwrap
+ *  identity. The member root is offline (it lives only in the member's recovery
+ *  words) and is deliberately absent from storage entirely. */
+function deviceIdentity(): { devicePub: Uint8Array; devicePriv: Uint8Array } | null {
   try {
-    const sk = localStorage.getItem('cairn-member-sk')
+    const sk = localStorage.getItem('cairn-device-sk')
     if (!sk) return null
-    const memberPriv = b64ToBytes(sk)
-    return { memberPriv, memberPub: ed25519.getPublicKey(memberPriv) }
+    const devicePriv = b64ToBytes(sk)
+    return { devicePriv, devicePub: ed25519.getPublicKey(devicePriv) }
+  } catch {
+    return null
+  }
+}
+
+/** Our member ROOT pubkey (public only — the secret never touches this device).
+ *  Membership is still recorded per member; only decryption is per device. */
+function myMemberPub(): Uint8Array | null {
+  try {
+    const pub = localStorage.getItem('cairn-member-pub')
+    return pub ? b64ToBytes(pub) : null
   } catch {
     return null
   }
@@ -640,12 +666,38 @@ async function unwrapKey(blob: Uint8Array): Promise<Uint8Array> {
   const { value: encLen, rest } = readUvarint(blob)
   const enc = rest.subarray(0, encLen)
   const ct = rest.subarray(encLen)
-  const me = memberIdentity()
-  if (!me) throw new Error('no member identity to unwrap a room key with')
-  const xPriv = ed25519.utils.toMontgomerySecret(me.memberPriv)
+  const me = deviceIdentity()
+  if (!me) throw new Error('no device identity to unwrap a room key with')
+  const xPriv = ed25519.utils.toMontgomerySecret(me.devicePriv)
   const rsk = await hpke.kem.importKey('raw', ab(xPriv), false)
   const recip = await hpke.createRecipientContext({ recipientKey: rsk, enc: ab(enc), info: bs(HPKE_INFO) })
   return new Uint8Array(await recip.open(bs(ct)))
+}
+
+/**
+ * Expand member roots into the DEVICE keys a room key must be sealed to.
+ *
+ * Room keys wrap to devices, not to the offline member root, so admitting a
+ * member means sealing to every device in their tree. Revoked devices — and
+ * anything paired from one — are excluded by the carrier, which is what makes a
+ * revocation actually cut a device out of the next epoch.
+ *
+ * Our OWN device is always included, from local state rather than the lookup: a
+ * key we cannot ourselves unwrap is a key we have just lost.
+ */
+async function devicesForMembers(memberPubs: Uint8Array[]): Promise<Uint8Array[]> {
+  const me = deviceIdentity()
+  if (!me) throw new Error('cannot wrap a room key without a device identity')
+
+  const out: Uint8Array[] = [me.devicePub]
+  for (const memberPub of dedupePubs(memberPubs)) {
+    const res = await cairn.listMemberDevices({ memberPub })
+    // A member with no published devices yet contributes nothing. That is the
+    // honest outcome — we cannot seal to a key we have never seen — and it
+    // resolves itself when they publish and someone next rotates.
+    out.push(...res.devicePubs)
+  }
+  return dedupePubs(out)
 }
 
 // buildCleartext builds a signed epoch-0 (unencrypted) event — used for the
@@ -679,20 +731,26 @@ function dedupePubs(pubs: Uint8Array[]): Uint8Array[] {
   return out
 }
 
-// mints a fresh epoch key, wraps it to every recipient, and stores it locally.
+/**
+ * Mint a fresh epoch key, wrap it to every recipient's DEVICES, and store it.
+ *
+ * `memberPubs` are member roots — membership is a member-level fact — but the
+ * wrapping is per device, because the member root is offline and holds no
+ * secret to unwrap with. Each member is expanded to their non-revoked device
+ * tree, which is what makes a revoked device fall out of the next epoch: it is
+ * simply no longer in the set, and nothing is sealed to it again.
+ *
+ * Sealing to a session key would be wrong for the older reason too: a session
+ * key dies with the tab, so a member would lose the room on reload.
+ */
 async function mintEpoch(
   roomIdStr: string,
-  recipients: Uint8Array[],
+  memberPubs: Uint8Array[],
 ): Promise<{ epoch: number; wrapped_keys: { [hex: string]: Uint8Array } }> {
   const newKey = crypto.getRandomValues(new Uint8Array(32))
   const epoch = currentEpoch(roomIdStr) + 1
   const wrapped_keys: { [hex: string]: Uint8Array } = {}
-  // Wrap to MEMBER ROOTS, never session keys. Membership is a property of the
-  // member (models.Member.MemberPub): a session key dies with the tab, so a
-  // room key wrapped to one would silently strand the member on reload.
-  const me = memberIdentity()
-  if (!me) throw new Error('cannot mint a room key without an identity')
-  for (const pub of dedupePubs([...recipients, me.memberPub])) {
+  for (const pub of await devicesForMembers(memberPubs)) {
     wrapped_keys[hexStr(pub)] = await wrapKeyTo(pub, newKey)
   }
   storeRoomKey(roomIdStr, epoch, newKey)
@@ -870,12 +928,21 @@ export async function buildMemberAdd(
 ): Promise<Event> {
   const { epoch, wrapped_keys } = await mintEpoch(roomIdStr, [...existingMemberPubs, newMemberPub])
 
-  // Past epochs, wrapped to the newcomer only — existing members already hold them.
-  const history_keys: { [hex: string]: Uint8Array } = {}
+  // Past epochs, wrapped to the newcomer only — existing members already hold
+  // them. Nested epoch → device → blob, because the newcomer may have several
+  // devices and each needs its own wrap; a single blob per epoch would give the
+  // backlog to whichever device happened to be wrapped and silently strand the
+  // rest, which reads as "history sharing didn't work" on that device.
+  const history_keys: { [epoch: string]: { [deviceHex: string]: Uint8Array } } = {}
   if (shareHistory) {
+    const newDevices = await devicesForMembers([newMemberPub])
     for (const { epoch: e, raw } of heldEpochs(roomIdStr)) {
       if (e >= epoch) continue
-      history_keys[String(e)] = await wrapKeyTo(newMemberPub, raw)
+      const perDevice: { [deviceHex: string]: Uint8Array } = {}
+      for (const pub of newDevices) {
+        perDevice[hexStr(pub)] = await wrapKeyTo(pub, raw)
+      }
+      history_keys[String(e)] = perDevice
     }
   }
 
@@ -914,35 +981,69 @@ export async function applyKeyEvent(ev: Event): Promise<boolean> {
       epoch: number
       wrapped_keys: { [hex: string]: Uint8Array }
       member_pub?: Uint8Array
-      history_keys?: { [epoch: string]: Uint8Array }
+      history_keys?: { [epoch: string]: { [deviceHex: string]: Uint8Array } }
     }
-    const me = memberIdentity()
-    if (!me) return false
+    // Keys are addressed to THIS DEVICE; membership is still recorded against
+    // the member root, which is why history_keys is matched on the member and
+    // wrapped_keys on the device.
+    const me = deviceIdentity()
+    const memberPub = myMemberPub()
+    if (!me || !memberPub) return false
 
     // Back-fill any shared history epochs addressed to us. Done before the
     // current-epoch check so a re-delivered member_add still installs them.
-    if (obj.member_pub && hexStr(obj.member_pub) === hexStr(me.memberPub) && obj.history_keys) {
-      for (const [epochStr, blob] of Object.entries(obj.history_keys)) {
+    if (obj.member_pub && hexStr(obj.member_pub) === hexStr(memberPub) && obj.history_keys) {
+      for (const [epochStr, perDevice] of Object.entries(obj.history_keys)) {
         const e = Number(epochStr)
         if (!Number.isFinite(e) || rawRoomKey(room, e)) continue
+        const blob = perDevice?.[hexStr(me.devicePub)]
+        if (!blob) continue // shared, but not with this device
         try {
-          storeRoomKey(room, e, await unwrapKey(blob as Uint8Array))
+          storeRoomKey(room, e, await unwrapKey(blob))
         } catch {
           /* not wrapped to us, or corrupt — skip rather than fail the whole event */
         }
       }
     }
 
-    const blob = obj.wrapped_keys?.[hexStr(me.memberPub)]
-    if (!blob) return false // not addressed to me
+    const blob = obj.wrapped_keys?.[hexStr(me.devicePub)]
+    if (!blob) {
+      // Not addressed to this device — and that is NORMAL, not an error. Every
+      // key event predating this device names members but not a device that did
+      // not exist yet, so a newly paired device replays a pile of them on its
+      // first sync. Raising here turned an ordinary backfill into a stream of
+      // alarming banners claiming the key had not been shared.
+      //
+      // Whether we ACTUALLY lack access is a question about the room after all
+      // events are folded, not about any single event — see AppState.checkRoomKey.
+      return false
+    }
     if (rawRoomKey(room, obj.epoch)) {
       setEpoch(room, obj.epoch)
       return false // already had it
     }
-    storeRoomKey(room, obj.epoch, await unwrapKey(blob))
+    // Addressed to us: from here a failure is REAL, not "someone else's event".
+    let raw: Uint8Array
+    try {
+      raw = await unwrapKey(blob)
+    } catch (e) {
+      throw new KeyEventError(
+        `A room key was addressed to this device but could not be opened. That means the ` +
+          `key it was sealed to is not the key this device holds. ` +
+          `(device ${hexStr(me.devicePub).slice(0, 12)}…, epoch ${obj.epoch}: ` +
+          `${e instanceof Error ? e.message : String(e)})`,
+      )
+    }
+    storeRoomKey(room, obj.epoch, raw)
     setEpoch(room, obj.epoch)
     return true
-  } catch {
-    return false
+  } catch (e) {
+    // A key event we cannot apply is how a device ends up staring at "you're not
+    // a member" of a room it was just given access to. Swallowing every failure
+    // here made that indistinguishable from genuinely not being a member.
+    if (e instanceof KeyEventError) throw e
+    throw new KeyEventError(
+      `A room key event could not be processed: ${e instanceof Error ? e.message : String(e)}`,
+    )
   }
 }

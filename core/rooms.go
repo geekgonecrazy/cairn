@@ -19,6 +19,7 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 
+	"github.com/geekgonecrazy/cairn/identity"
 	"github.com/geekgonecrazy/cairn/models"
 	cairnv1 "github.com/geekgonecrazy/cairn/proto/cairnv1"
 )
@@ -189,13 +190,35 @@ func applyRoomState(ev *cairnv1.Event) error {
 
 // memberRootOf resolves an event sender (a session or device key) up to its
 // member root via the identity log. Empty if the chain isn't present.
+//
+// Devices pair devices, so this climbs to the TOP of the sender's device tree
+// rather than taking one hop: a tablet paired from a phone still belongs to the
+// member, and stopping at the first parent would return a device key that
+// matches no space owner and silently deny an authorized change.
+//
+// Signatures are NOT checked here — SubmitEvent already ran VerifySender over
+// this same chain, so anything reaching a fold has been verified end to end.
 func memberRootOf(senderPub []byte) []byte {
-	devicePub := senderPub
+	cur := senderPub
 	if sd, ok := st.SessionDelegation(senderPub); ok {
-		devicePub = sd.DevicePub
+		cur = sd.DevicePub
 	}
-	if dd, ok := st.DeviceDelegation(devicePub); ok {
-		return dd.MemberPub
+	seen := map[string]bool{}
+	for range identity.MaxChainDepth {
+		if seen[string(cur)] {
+			return nil // cycle; no member root to report
+		}
+		seen[string(cur)] = true
+		dd, ok := st.DeviceDelegation(cur)
+		if !ok {
+			// No delegation above it: this is the member root, unless we never
+			// moved at all (an unknown sender key, which resolves to nothing).
+			if len(seen) == 1 {
+				return nil
+			}
+			return cur
+		}
+		cur = dd.ParentPub
 	}
 	return nil
 }

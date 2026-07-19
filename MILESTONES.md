@@ -324,9 +324,146 @@ join; the recovery flow is gated and unskippable.
       > until one returns); creator-only (no promoting other admins yet); the client trusts the
       > owner-enforced server roster rather than re-verifying it.
 
+### Founding moves to the CLI (`cmd/cairnctl`) — 2026-07-18
+
+- [x] **The household's 24 words never touch a browser.** Attesting a member used to mean typing
+      them into a `<textarea>`; they can vouch for anyone as anyone, and a web page is reachable
+      by extensions, autofill and devtools history in a way a terminal is not. `cairnctl attest`
+      replaces that form; the webapp's `bootstrap()`, household-phrase `recover()` and
+      `attestJoinRequest()` are DELETED, not merely unused.
+- [x] **No trust-on-first-use window.** `cairnctl init` writes the root to `trusted-roots.txt`,
+      so the chain gate is strict from the FIRST event (`ENFORCING against 1 configured household
+      root(s)` at boot, no adoption). `init` refuses to found twice.
+      > This was not theoretical. Onboarding twice minted a second household; adoption had
+      > latched onto the first, so every event from the live identity was refused as
+      > `ErrUntrustedRoot` — TERMINAL, therefore not retried, therefore silently `queued`. The
+      > symptom was "creating a space does nothing". That state is now unrepresentable.
+- [x] **Delivery failures are shown.** `deliver()` caught rejections, marked them `queued` and
+      returned NORMALLY — so `createSpace` resolved successfully and handed back an id for a
+      space that did not exist. Control-plane events now use `mustLand` and throw with the
+      server's own message; a banner surfaces the rest. `api.isSenderRejected` had carried the
+      comment *"surface it rather than silently queueing"* since it was written, and nothing
+      called it.
+- [x] `identity/invite.go` — join-code and invite-blob encoding in Go, previously browser-only,
+      byte-pinned by conformance vectors on both sides.
+      > Building it surfaced a trap worth remembering: a plain `cbor.Marshal(map)` sorts keys
+      > lexicographically where canonical CBOR sorts length-first. The result still decodes and
+      > still VERIFIES — the signature covers the fields, not the envelope — while being
+      > byte-different from the browser's. Use the package's canonical `Marshal`.
+- [x] Everyone joins, including whoever founded the household, so the founder is no longer a
+      special case in the app and holds one personal phrase like everyone else.
+      > **Verified end to end on a clean node:** `cairnctl init` → `cairnd` enforcing from t=0 →
+      > join code → `cairnctl attest` → invite verified in the browser's own parser → device
+      > delegation published → **SPACE_CREATE accepted**.
+
+**Still not done:** a real two-browser run. The rehearsal above uses Go harnesses that mirror the
+browser paths; the actual UI flow remains unexercised at runtime.
+
+### Delegation tree: offline member root + real device pairing — 2026-07-18
+
+An audit of the Phase-4 exit criteria found that **device pairing could not be completed as
+designed**, and that two of the claims below were overstated. Rationale in `decisions.md`
+(§Member root goes offline).
+
+- [x] **Revocation authority is checked.** `VerifySender` took a bare `DeviceRevoked(pub) bool`
+      from its Resolver, and the sqlite identity log files an object under whatever subject it
+      names with no check that the signer had standing — so ANY keypair could file a revoke for
+      ANY device and permanently lock it out (permanently, since a revoked key can never be
+      re-paired). The Resolver now returns the signed object and the chain walk checks it.
+      `DeviceLog.AddRevoke` had this check; the walk could not assume its Resolver was that
+      careful. `DeviceLog` also no longer DELETES the delegation on revoke — the walk needs it to
+      tell "revoked" from "unknown device".
+      > The browser was already correct here (`directory.svelte.ts` compared `dr.member_pub` to
+      > `dd.member_pub`); the hole was Go-side only.
+
+**Pairing was a dead end, not merely camera-less.** `admitDevice` minted a `DeviceDelegation` into
+the approver's LOCAL list and never published it; there was no new-device side at all — no pending
+state, no poll, no import. The new device sat on the onboarding screen forever. Nobody noticed
+because the member-JOIN flow works, so a second device was usable by joining as a whole new member.
+Underneath sat the real blocker: room keys wrapped to member roots, so a paired device needed the
+member secret — the one thing that makes revoking it meaningless.
+
+- [x] **Member root is an offline apex** — derived from 24 words, signs only the first device
+      delegation, then dropped. Only the PUBLIC half is stored (`cairn-member-pub`). Because it is
+      derived rather than random, **recovery restores the SAME member identity** instead of
+      minting a stranger.
+- [x] **A founder holds two separate phrases**, shown and confirmed one at a time and labelled for
+      what each does: the HOUSEHOLD phrase (attests new members; can live in a safe) and their own
+      MEMBER phrase (restores their account, revokes an unreachable device; must stay reachable).
+      Deriving one from the other was tried and reverted — see `decisions.md` for why the
+      compromise-equivalence argument does not justify it. Joiners get only a member phrase.
+      Recovery splits accordingly: founders re-attest offline, everyone else fetches the
+      attestation published when they joined and verifies it locally.
+- [x] **Devices delegate devices.** `ParentPub` replaces `MemberPub`; `VerifySender` walks the
+      tree with `MaxChainDepth = 8` and a visited set. Revocation is checked at EVERY hop, so it
+      cascades to the whole subtree without naming a descendant — on every verifier, including
+      ones offline at the time.
+- [x] **Ancestors-only revoke authority** (`RevokerPub`). A device may retire what it paired, never
+      what paired it: peer revocation would let a thief with one device permanently destroy the
+      others while keeping their own. `revokeWithMemberRoot` covers the case only the words can do.
+- [x] **Room keys wrap to device keys**, expanded from each member's non-revoked device tree via
+      the new `ListMemberDevices` RPC (`DevicesUnder`, backed by a denormalized `parent_pub`
+      column). A revoked device and its whole subtree drop out of the wrap set, so the next epoch
+      excludes them. `history_keys` is now nested epoch → device.
+- [x] Pairing completed end to end: the approver **publishes** the delegation (it never left the
+      approver's localStorage before), the new device polls `ResolveSender`, re-verifies the whole
+      chain locally, persists, and gets every held room key re-wrapped to it. Plus **camera
+      capture** (`QrScanner.svelte`: `BarcodeDetector`, jsQR fallback for Safari/iOS).
+- [x] Device tree UI naming who admitted whom, and a revoke dialog that lists every descendant
+      that will fall with the target before confirming.
+- [x] **Onboarding reload bypass fixed** as part of this: `commit()` is now called only after the
+      confirmation quiz passes, so nothing reaches storage until the words are confirmed.
+- [x] `SelfHousehold` (headless clients) gains a **derived device key** — one key acting as its own
+      parent is a cycle the recursive walk correctly refuses. Derived, not random, so it is stable
+      across runs; a fresh device key each start would lose every room key wrapped to the last one.
+      > Verified live: fresh carrier → `cmd/smoke` founds and adopts → device-signed event verifies
+      > and round-trips → restart reloads the root and stays ENFORCING. `cmd/agent` creates a space,
+      > room and self-add, then stops with an honest error when the target member has no published
+      > devices — wrapping to a member root would produce a key nobody can open.
+
+**Honest limits of this work:**
+
+- Two browsers have still not actually run this. Verified via Go binaries, conformance vectors and
+  typecheck; the browser pairing flow is unexercised at runtime.
+- Backlog is not re-wrapped on pairing: a newly paired device reads from the current epoch forward,
+  not older history. Same rule as a newly added member.
+- Re-keying on revoke covers rooms THIS device holds keys to. A room whose only key-holder is the
+  revoked device stays readable to it until another member rotates.
+
 **Not yet — the rest of Phase 4:**
 
-- [ ] Camera QR capture (`getUserMedia`); today pairing is copy/paste of the same payload.
+- [ ] **Channel membership has no fold-time authorization.** `core/rooms.go` folds `MEMBER_ADD` /
+      `MEMBER_REMOVE` with only a length check — no check the sender belongs to the room. The
+      "a channel roster must stay within its space roster" claim above is enforced CLIENT-side only
+      (`state.svelte.ts`), which is not enforcement: any household member passing the chain gate can
+      sign themselves into any room, which flips `joined=true` and defeats hidden rooms. Spaces got
+      `spaceChangeAuthorized`; channels got nothing.
+- [ ] **Server-side channel roster is arrival-order, not LWW.** `PutMember`/`DeleteMember` carry no
+      `Ts` (unlike their space equivalents), so two carriers receiving add/remove in different orders
+      disagree on `ListRooms`. The timestamp-ordered convergence claimed above is the webapp's
+      `foldRoster` only. Attacker-controlled `ts` also means a pre-signed far-future `MEMBER_ADD`
+      resurrects a removed member on every client.
+- [ ] **Onboarding gate is bypassable by reload.** `bootstrap()` persists the identity BEFORE the
+      24-word confirmation quiz, so reloading at the phrase screen lands you in the app having never
+      confirmed — and the mnemonic is never persisted, so it is then permanently lost. The quiz is
+      real; it just guards nothing. (Being fixed with the member-root work above.)
+- [ ] **Session keys expire at 24h with no renewal path.** No interval, no re-sign; at T+24h an open
+      tab gets `PermissionDenied`, which the error taxonomy treats as TERMINAL, so messages sit
+      permanently `queued` with no re-auth prompt.
+- [ ] **Browser chain walk checks no expiry** (`directory.svelte.ts`), where Go does. Conformance
+      covers signing bytes, not verification policy.
+- [ ] **No way to remove a MEMBER from a household** — no `MemberRevoke` object exists.
+- [ ] **Epoch downgrade** — nothing compares an incoming event's epoch to the room's current one, so
+      a current member can post at an old epoch that every removed ex-member can still read. The
+      outbound twin of the recorded "old-epoch post" gap.
+- [ ] `ROOM_CREATE` is unauthorized w.r.t. its space: any sender can inject a channel into any
+      space's sidebar.
+- [ ] **Identity is not a self-DAG.** `plan.md` §175 specifies `device_delegation` / `device_revoke`
+      as DAG events (`IDENTITY_ATTESTATION=60`, `DEVICE_DELEGATION=61`, `DEVICE_REVOKE=62`); what
+      shipped is a content-addressed side channel (`identity_log` + `PutIdentityObject`).
+      Those three enums have zero uses. Belongs in `decisions.md` §Deviations.
+- [ ] Phase-1's "route, accept, no UI" commitment is not honored: `SIGNALING_*`, `CALL_RING`,
+      `CALL_BYE` are not routed or enumerated anywhere.
 - [ ] **Admit-policy enforcement** — a space's `admit_kind`/`admit_origin` is now editable and stored
       (see above) but nothing gates a `SPACE_MEMBER_ADD` on it; a space admin adds members by key
       regardless. Plus **peer-household join** with origin-fingerprint review (`PeerJoinModal`), and

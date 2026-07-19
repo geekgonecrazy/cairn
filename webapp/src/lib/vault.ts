@@ -1,15 +1,25 @@
 // Persistent browser identity — what replaces the Phase-1 throwaway key.
 //
-// Key tiers and where each lives (PROTOCOL.md §1, decisions.md §Household-root):
+// Key tiers and where each lives (PROTOCOL.md §1, decisions.md §Member root
+// goes offline):
 //
-//   household root  — NOT STORED. Derived from the 24 words only when signing an
-//                     attestation, then dropped. Nothing on this device can
-//                     re-mint members after onboarding without the words.
-//   member root     — localStorage. This is "you"; stable across tabs and
-//                     restarts. Signs device delegations and revocations.
+//   household root  — NEVER IN THE BROWSER AT ALL. Founding and attesting moved
+//                     to `cairnctl` on the server, so the household's words —
+//                     which can vouch for anyone as anyone — are never typed
+//                     into a web page. Only its PUBLIC key is stored here.
+//   member root     — NOT STORED. Derived from the MEMBER's own 24 words (a
+//                     different phrase) to sign their FIRST device delegation,
+//                     then dropped. Only the PUBLIC half is kept.
 //   device key      — localStorage. This browser profile. Delegated by the
-//                     member root; revocable.
+//                     member root (first device) or by another device (every
+//                     one paired after that), and revocable.
 //   session key     — sessionStorage, per tab (see crypto.ts). Unchanged.
+//
+// The member root is offline for a specific reason: it is the authority that
+// admits devices, so a device holding it could mint itself a replacement and
+// walk back in after being revoked. Keeping it in the words is what makes
+// "revoke a device" true. It follows that room keys must wrap to DEVICE keys —
+// there is no member secret here to unwrap with (see crypto.ts).
 //
 // NOTE: this makes two tabs ONE member, where Phase 1 made them two distinct
 // participants. The two-tab convergence demo now needs two browser profiles (or
@@ -19,9 +29,8 @@
 import { ed25519 } from '@noble/curves/ed25519.js'
 import { cacheClear } from './idb'
 import {
-  bootstrapHousehold,
-  householdRootFromMnemonic,
-  provisionMember,
+  newMemberRoot,
+  memberRootFromMnemonic,
   approvePairing,
   revokeDevice,
   newPairingRequest,
@@ -30,6 +39,9 @@ import {
   parseJoinRequest,
   encodeAttestation,
   parseAttestation,
+  encodePairingRequest,
+  verifyDeviceDelegation,
+  verifyAttestation as verifyAttestationSig,
   fingerprint,
   type DeviceDelegation,
   type DeviceRevoke,
@@ -37,7 +49,7 @@ import {
   type Kind,
 } from './identity'
 
-const K_MEMBER_SK = 'cairn-member-sk'
+const K_MEMBER_PUB = 'cairn-member-pub' // PUBLIC half only; the secret is in the words
 const K_DEVICE_SK = 'cairn-device-sk'
 const K_ATTESTATION = 'cairn-attestation'
 const K_DELEGATION = 'cairn-delegation'
@@ -74,8 +86,10 @@ function newSecret(): Uint8Array {
 }
 
 export interface Identity {
+  /** PUBLIC only. The member secret lives in the member's recovery words and is
+   *  never on a device — see the header. Anything needing it (admitting a first
+   *  device, revoking above a device) re-derives it from the words. */
   memberPub: Uint8Array
-  memberPriv: Uint8Array
   devicePub: Uint8Array
   devicePriv: Uint8Array
   householdPub: Uint8Array
@@ -88,20 +102,18 @@ export interface Identity {
 
 /** The identity in storage, or null if this browser has never been onboarded. */
 export function loadIdentity(): Identity | null {
-  const memberSk = localStorage.getItem(K_MEMBER_SK)
+  const memberPub = localStorage.getItem(K_MEMBER_PUB)
   const deviceSk = localStorage.getItem(K_DEVICE_SK)
   const attRaw = localStorage.getItem(K_ATTESTATION)
   const delRaw = localStorage.getItem(K_DELEGATION)
   const hh = localStorage.getItem(K_HOUSEHOLD)
-  if (!memberSk || !deviceSk || !attRaw || !delRaw || !hh) return null
+  if (!memberPub || !deviceSk || !attRaw || !delRaw || !hh) return null
 
   try {
-    const memberPriv = unb64(memberSk)
     const devicePriv = unb64(deviceSk)
     const attestation = decodeObj<IdentityAttestation>(attRaw)
     return {
-      memberPriv,
-      memberPub: ed25519.getPublicKey(memberPriv),
+      memberPub: unb64(memberPub),
       devicePriv,
       devicePub: ed25519.getPublicKey(devicePriv),
       householdPub: unb64(hh),
@@ -118,15 +130,40 @@ export function loadIdentity(): Identity | null {
   }
 }
 
+/**
+ * Re-derive the member root from the member's recovery words, checking it is
+ * actually OURS. Needed for the two operations no device key can do: admitting
+ * a first device, and revoking a device that no live device sits above.
+ *
+ * The check matters — a valid but different phrase silently yields a different
+ * member root (BIP-39 has no wrong answers), and signing with it would produce
+ * objects that verify perfectly and belong to nobody.
+ */
+export function memberRootFromWords(
+  id: Identity,
+  mnemonic: string,
+  passphrase = '',
+): { pub: Uint8Array; priv: Uint8Array } {
+  const kp = memberRootFromMnemonic(mnemonic, passphrase)
+  if (hex(kp.pub) !== hex(id.memberPub)) {
+    throw new Error(
+      'Those words derive a different member key than this device holds. Check the ' +
+        'phrase (and the passphrase, if your account uses one) — a wrong phrase does ' +
+        'not error, it just produces a different identity.',
+    )
+  }
+  return kp
+}
+
 function persist(id: {
-  memberPriv: Uint8Array
+  memberPub: Uint8Array
   devicePriv: Uint8Array
   householdPub: Uint8Array
   attestation: IdentityAttestation
   delegation: DeviceDelegation
   deviceLabel: string
 }) {
-  localStorage.setItem(K_MEMBER_SK, b64(id.memberPriv))
+  localStorage.setItem(K_MEMBER_PUB, b64(id.memberPub))
   localStorage.setItem(K_DEVICE_SK, b64(id.devicePriv))
   localStorage.setItem(K_HOUSEHOLD, b64(id.householdPub))
   localStorage.setItem(K_ATTESTATION, encodeObj(id.attestation as unknown as Record<string, unknown>))
@@ -134,69 +171,96 @@ function persist(id: {
   localStorage.setItem(K_DEVICE_LABEL, id.deviceLabel)
 }
 
-/**
- * Mint a member root + device key under `mnemonic`'s household and persist them.
- * Shared by first-run bootstrap and by recovery — recovery is not a restore, it
- * is exactly this operation run again with the same words (decisions.md).
- */
-function provisionInto(
-  mnemonic: string,
-  passphrase: string,
-  displayName: string,
-  kind: Kind,
-  deviceLabel: string,
-): Identity {
-  const memberPriv = newSecret()
-  const memberPub = ed25519.getPublicKey(memberPriv)
-  const devicePriv = newSecret()
-  const devicePub = ed25519.getPublicKey(devicePriv)
-  const now = BigInt(Date.now())
-
-  const attestation = provisionMember(mnemonic, passphrase, memberPub, kind, displayName, null, now)
-  const delegation = approvePairing(
-    newPairingRequest(devicePub, deviceLabel),
-    memberPub,
-    memberPriv,
-    now,
-  )
-  const householdPub = householdRootFromMnemonic(mnemonic, passphrase).pub
-
-  persist({ memberPriv, devicePriv, householdPub, attestation, delegation, deviceLabel })
-  return {
-    memberPub, memberPriv, devicePub, devicePriv, householdPub,
-    attestation, delegation, displayName, kind, deviceLabel,
-  }
-}
-
 export interface BootstrapResult {
   identity: Identity
-  /** Shown ONCE. Never persisted; unrecoverable from Cairn after this. */
-  mnemonic: string
+  /**
+   * YOUR phrase. Recovers your member identity and revokes a device that no
+   * live device sits above. Shown ONCE and never persisted.
+   */
+  memberMnemonic: string
+  /**
+   * Write the identity to storage.
+   *
+   * Deliberately NOT done at mint time. Persisting first meant a reload at the
+   * "write these words down" screen landed the user in a working app having
+   * never confirmed — or read — the phrase, which is then gone for good since
+   * it is never stored. The gate has to hold the identity in memory until the
+   * words are confirmed, or it guards nothing.
+   */
+  commit: () => void
 }
 
-/** First run: new household, new member, this device. */
-export function bootstrap(displayName: string, deviceLabel: string): BootstrapResult {
-  const hh = bootstrapHousehold()
-  return {
-    identity: provisionInto(hh.mnemonic, '', displayName, 'human', deviceLabel),
-    mnemonic: hh.mnemonic,
-  }
-}
+// Founding moved to `cairnctl init` and attestation to `cairnctl attest`, so the
+// household's 24 words never enter a browser: they can vouch for anyone as
+// anyone, and a web page is reachable by extensions, autofill and devtools
+// history in a way a terminal is not. Founding also decides what the CARRIER
+// trusts, which is server configuration, and the CLI can write it directly —
+// removing the trust-on-first-use adoption window that let a second, accidental
+// household capture a node.
+//
+// What used to live here — bootstrap(), recover() with a household phrase, and
+// attestJoinRequest() — is deliberately gone rather than merely unused.
 
 /**
- * Recovery: re-derive the household from the words and re-attest a fresh member
- * root. The household id is unchanged, so peers' trustedRoots still work.
+ * Recovery for someone who is NOT the founder: they hold their own member
+ * phrase but have never seen the household's, so they cannot re-attest
+ * themselves.
  *
- * This does NOT recover message history — per-room keys were never in the words,
- * and pre-join history stays opaque (PROTOCOL.md §3). Callers must say so.
+ * Their attestation already exists in the identity log — it was signed when they
+ * joined — so recovery means re-deriving the member root from their words and
+ * pairing it back up with that published attestation. The caller fetches it (see
+ * identity.recoverFromCarrier); this function verifies it really covers the
+ * member root those words derive, so a wrong phrase or a swapped attestation
+ * fails here rather than installing an identity whose key we do not hold.
  */
-export function recover(
-  mnemonic: string,
-  passphrase: string,
-  displayName: string,
+export function recoverWithAttestation(
+  memberMnemonic: string,
+  attestation: IdentityAttestation,
   deviceLabel: string,
-): Identity {
-  return provisionInto(mnemonic, passphrase, displayName, 'human', deviceLabel)
+): BootstrapResult {
+  const member = memberRootFromMnemonic(memberMnemonic)
+  if (hex(attestation.pubkey) !== hex(member.pub)) {
+    throw new Error(
+      'Those words do not match the account that attestation is for. Check the phrase — ' +
+        'a wrong phrase does not error, it just derives a different identity.',
+    )
+  }
+  if (!verifyAttestationSig(attestation)) {
+    throw new Error('That attestation has a bad signature.')
+  }
+
+  const devicePriv = newSecret()
+  const devicePub = ed25519.getPublicKey(devicePriv)
+  const delegation = approvePairing(
+    newPairingRequest(devicePub, deviceLabel),
+    member.pub,
+    member.priv,
+    BigInt(Date.now()),
+  )
+  const identity: Identity = {
+    memberPub: member.pub,
+    devicePub,
+    devicePriv,
+    householdPub: attestation.origin,
+    attestation,
+    delegation,
+    displayName: attestation.display_name,
+    kind: attestation.kind,
+    deviceLabel,
+  }
+  return {
+    identity,
+    memberMnemonic,
+    commit: () =>
+      persist({
+        memberPub: member.pub,
+        devicePriv,
+        householdPub: attestation.origin,
+        attestation,
+        delegation,
+        deviceLabel,
+      }),
+  }
 }
 
 // --- joining an existing household ----------------------------------------
@@ -209,23 +273,48 @@ export function recover(
 const K_PENDING_JOIN = 'cairn-pending-join'
 
 interface PendingJoin {
-  memberPriv: Uint8Array
+  /** PUBLIC only — the newcomer's member secret was dropped at beginJoin. */
+  memberPub: Uint8Array
   devicePriv: Uint8Array
+  /** Signed at beginJoin, while the member root was briefly in memory. */
+  delegation: DeviceDelegation
   displayName: string
   deviceLabel: string
 }
 
 /**
- * Step 1 (newcomer): mint a member + device key and return the join code to
- * hand to someone already in the household. Keys are held provisionally — this
- * device has NO standing until the attestation comes back.
+ * Step 1 (newcomer): mint a member root from fresh recovery words, sign this
+ * device's delegation with it, drop the secret, and return the join code plus
+ * the words to write down.
+ *
+ * The delegation is signed NOW rather than at completeJoin because that is the
+ * only moment the member root exists — a join is a round trip through another
+ * human, and holding a member secret in localStorage across it would put the
+ * one key that must stay offline on disk for as long as the invite takes.
  */
-export function beginJoin(displayName: string, deviceLabel: string): string {
-  const memberPriv = newSecret()
+export function beginJoin(
+  displayName: string,
+  deviceLabel: string,
+): { code: string; memberMnemonic: string; commit: () => void } {
+  const member = newMemberRoot()
   const devicePriv = newSecret()
-  const pending: PendingJoin = { memberPriv, devicePriv, displayName, deviceLabel }
-  localStorage.setItem(K_PENDING_JOIN, encodeObj(pending as unknown as Record<string, unknown>))
-  return encodeJoinRequest(newJoinRequest(ed25519.getPublicKey(memberPriv), displayName))
+  const devicePub = ed25519.getPublicKey(devicePriv)
+  const delegation = approvePairing(
+    newPairingRequest(devicePub, deviceLabel),
+    member.keys.pub,
+    member.keys.priv,
+    BigInt(Date.now()),
+  )
+  const pending: PendingJoin = {
+    memberPub: member.keys.pub, devicePriv, delegation, displayName, deviceLabel,
+  }
+  return {
+    code: encodeJoinRequest(newJoinRequest(member.keys.pub, displayName)),
+    memberMnemonic: member.mnemonic,
+    // Same rule as bootstrap: nothing is written until the words are confirmed.
+    commit: () =>
+      localStorage.setItem(K_PENDING_JOIN, encodeObj(pending as unknown as Record<string, unknown>)),
+  }
 }
 
 /** The in-progress join on this device, if any (so the UI can resume it). */
@@ -235,34 +324,12 @@ export function pendingJoin(): { code: string; displayName: string } | null {
   try {
     const p = decodeObj<PendingJoin>(raw)
     return {
-      code: encodeJoinRequest(newJoinRequest(ed25519.getPublicKey(p.memberPriv), p.displayName)),
+      code: encodeJoinRequest(newJoinRequest(p.memberPub, p.displayName)),
       displayName: p.displayName,
     }
   } catch {
     return null
   }
-}
-
-/**
- * Step 2 (inviter): attest a pasted join code with the household's words. The
- * root is re-derived, used, and dropped — nothing apex-level is left behind.
- */
-export function attestJoinRequest(
-  mnemonic: string,
-  passphrase: string,
-  joinCode: string,
-): string {
-  const req = parseJoinRequest(joinCode)
-  const att = provisionMember(
-    mnemonic,
-    passphrase,
-    req.memberPub,
-    'human',
-    req.displayName,
-    null,
-    BigInt(Date.now()),
-  )
-  return encodeAttestation(att)
 }
 
 /**
@@ -278,26 +345,20 @@ export function completeJoin(attestationBlob: string): Identity {
   const pending = decodeObj<PendingJoin>(raw)
   const att = parseAttestation(attestationBlob)
 
-  const memberPub = ed25519.getPublicKey(pending.memberPriv)
-  if (hex(att.pubkey) !== hex(memberPub)) {
+  if (hex(att.pubkey) !== hex(pending.memberPub)) {
     throw new Error(
       'This invite was issued for a different person. Ask for one made from YOUR join code.',
     )
   }
 
-  const devicePub = ed25519.getPublicKey(pending.devicePriv)
-  const delegation = approvePairing(
-    newPairingRequest(devicePub, pending.deviceLabel),
-    memberPub,
-    pending.memberPriv,
-    BigInt(Date.now()),
-  )
+  // The delegation was signed at beginJoin, by the member root that existed for
+  // that moment only. Nothing here needs a member secret.
   persist({
-    memberPriv: pending.memberPriv,
+    memberPub: pending.memberPub,
     devicePriv: pending.devicePriv,
     householdPub: att.origin,
     attestation: att,
-    delegation,
+    delegation: pending.delegation,
     deviceLabel: pending.deviceLabel,
   })
   localStorage.removeItem(K_PENDING_JOIN)
@@ -345,9 +406,122 @@ export async function resetDevice(): Promise<void> {
 /** Wipe this device's identity. Does not revoke it for anyone else — that needs
  *  a DeviceRevoke from the member root, which other devices must see. */
 export function forgetIdentity() {
-  for (const k of [K_MEMBER_SK, K_DEVICE_SK, K_ATTESTATION, K_DELEGATION, K_HOUSEHOLD, K_DEVICE_LABEL]) {
+  for (const k of [K_MEMBER_PUB, K_DEVICE_SK, K_ATTESTATION, K_DELEGATION, K_HOUSEHOLD, K_DEVICE_LABEL]) {
     localStorage.removeItem(k)
   }
+}
+
+// --- pairing THIS device onto an existing account -------------------------
+//
+// The mirror image of the peer-device list below: this is the NEW device's side.
+// It mints a device key, shows it as a QR, and waits for a device already in the
+// account to publish a delegation for it. No secret travels in either direction
+// — the QR carries a public key, and what comes back is a signed delegation
+// anyone could read.
+
+const K_PENDING_PAIR = 'cairn-pending-pair'
+
+interface PendingPair {
+  devicePriv: Uint8Array
+  deviceLabel: string
+}
+
+/** Step 1 (new device): mint a device key and return the code to show. */
+export function beginDevicePairing(deviceLabel: string): { code: string; devicePub: Uint8Array } {
+  const devicePriv = newSecret()
+  const devicePub = ed25519.getPublicKey(devicePriv)
+  const pending: PendingPair = { devicePriv, deviceLabel }
+  localStorage.setItem(K_PENDING_PAIR, encodeObj(pending as unknown as Record<string, unknown>))
+  return { code: encodePairingRequest(newPairingRequest(devicePub, deviceLabel)), devicePub }
+}
+
+/** The in-progress pairing on this device, if any (so the UI can resume it). */
+export function pendingDevicePairing(): {
+  code: string
+  devicePub: Uint8Array
+  deviceLabel: string
+} | null {
+  const raw = localStorage.getItem(K_PENDING_PAIR)
+  if (!raw) return null
+  try {
+    const p = decodeObj<PendingPair>(raw)
+    const devicePub = ed25519.getPublicKey(p.devicePriv)
+    return {
+      code: encodePairingRequest(newPairingRequest(devicePub, p.deviceLabel)),
+      devicePub,
+      deviceLabel: p.deviceLabel,
+    }
+  } catch {
+    return null
+  }
+}
+
+export function cancelDevicePairing() {
+  localStorage.removeItem(K_PENDING_PAIR)
+}
+
+/**
+ * Step 3 (new device): the delegation arrived. Verify it end to end and become
+ * a real device.
+ *
+ * Everything is re-checked locally, because these objects came from the carrier
+ * and the carrier is not an authority:
+ *
+ *  - the delegation names OUR device key (else it is somebody else's pairing),
+ *  - its signature verifies under the parent it claims,
+ *  - the attestation covers the member root the chain terminates at,
+ *  - the attestation verifies under the household root it claims.
+ *
+ * What CANNOT be checked here is that the household is the right one — origin is
+ * self-declared, so a stranger's household verifies its own chain perfectly.
+ * That is what the fingerprint comparison during the scan is for, and why the
+ * caller must show `fingerprint(att.origin)` before this is treated as done.
+ */
+export function completeDevicePairing(
+  delegationChain: DeviceDelegation[],
+  attestation: IdentityAttestation,
+): Identity {
+  const raw = localStorage.getItem(K_PENDING_PAIR)
+  if (!raw) throw new Error('No pairing in progress on this device. Start again.')
+  const pending = decodeObj<PendingPair>(raw)
+  const devicePub = ed25519.getPublicKey(pending.devicePriv)
+
+  const mine = delegationChain.find((d) => hex(d.device_pub) === hex(devicePub))
+  if (!mine) {
+    throw new Error('That approval was issued for a different device. Ask them to scan again.')
+  }
+  // Walk our own chain to the member root, verifying each hop — the same walk
+  // every other member will run against us. Refusing here rather than persisting
+  // means we never end up as a device nobody else accepts.
+  let cur: Uint8Array = devicePub
+  const seen = new Set<string>()
+  for (let i = 0; i <= 8; i++) {
+    if (seen.has(hex(cur))) throw new Error('That approval chain loops on itself.')
+    seen.add(hex(cur))
+    const dd = delegationChain.find((d) => hex(d.device_pub) === hex(cur))
+    if (!dd) break
+    if (!verifyDeviceDelegation(dd)) {
+      throw new Error('That approval has a bad signature. Ask them to scan again.')
+    }
+    cur = dd.parent_pub
+  }
+  if (hex(cur) !== hex(attestation.pubkey)) {
+    throw new Error('That approval does not lead to the account it claims.')
+  }
+  if (!verifyAttestationSig(attestation)) {
+    throw new Error('The account attestation has a bad signature.')
+  }
+
+  persist({
+    memberPub: attestation.pubkey,
+    devicePriv: pending.devicePriv,
+    householdPub: attestation.origin,
+    attestation,
+    delegation: mine,
+    deviceLabel: pending.deviceLabel,
+  })
+  localStorage.removeItem(K_PENDING_PAIR)
+  return loadIdentity()!
 }
 
 // --- paired peer devices --------------------------------------------------
@@ -374,12 +548,20 @@ function savePeerDevices(list: PeerDevice[]) {
   localStorage.setItem(K_PEER_DEVICES, encodeObj(list as unknown as Record<string, unknown>))
 }
 
-/** Admit a scanned device under this member root and remember the delegation. */
+/**
+ * Admit a scanned device under THIS DEVICE and remember the delegation.
+ *
+ * The parent is this device's key, not the member root — the member root is
+ * offline, and requiring the words to add a device would make pairing a
+ * ceremony. The new device becomes a child of this one, which is also what
+ * makes the cascade meaningful: if this device is later revoked, everything it
+ * admitted goes with it.
+ */
 export function admitDevice(id: Identity, devicePub: Uint8Array, label: string): DeviceDelegation {
   const delegation = approvePairing(
     newPairingRequest(devicePub, label),
-    id.memberPub,
-    id.memberPriv,
+    id.devicePub,
+    id.devicePriv,
     BigInt(Date.now()),
   )
   const list = peerDevices()
@@ -402,16 +584,72 @@ export function admitDevice(id: Identity, devicePub: Uint8Array, label: string):
   return delegation
 }
 
-/** Revoke a paired device. Revocation is permanent: a revoked key is treated as
- *  compromised and can never be re-paired (identity/log.go). */
+/**
+ * Revoke a device THIS DEVICE admitted. A revoke binds only from an ancestor,
+ * and this device is the parent of everything in its peer list, so its own key
+ * is sufficient — no words needed for the common case.
+ *
+ * Revocation is permanent (a revoked key is assumed compromised and can never
+ * be re-paired) and it CASCADES: every device paired from this one goes too.
+ * Callers must show `subtreeOf(devicePub)` before confirming.
+ */
 export function revokePeerDevice(id: Identity, devicePub: Uint8Array): DeviceRevoke {
-  const revoked = revokeDevice(devicePub, id.memberPub, id.memberPriv, BigInt(Date.now()))
+  const revoked = revokeDevice(devicePub, id.devicePub, id.devicePriv, BigInt(Date.now()))
   savePeerDevices(
     peerDevices().map((d) =>
       hex(d.delegation.device_pub) === hex(devicePub) ? { ...d, revoked } : d,
     ),
   )
   return revoked
+}
+
+/**
+ * Revoke a device this one did NOT admit — including the case that matters
+ * most: revoking a device that sits ABOVE this one, or the last device you can
+ * still reach. Only the member root is an ancestor of everything, so this needs
+ * the member's recovery words.
+ *
+ * That cost is the point. A revoke signed by a peer would let a thief with one
+ * device permanently destroy access to the others.
+ */
+export function revokeWithMemberRoot(
+  id: Identity,
+  devicePub: Uint8Array,
+  mnemonic: string,
+  passphrase = '',
+): DeviceRevoke {
+  const root = memberRootFromWords(id, mnemonic, passphrase)
+  const revoked = revokeDevice(devicePub, root.pub, root.priv, BigInt(Date.now()))
+  savePeerDevices(
+    peerDevices().map((d) =>
+      hex(d.delegation.device_pub) === hex(devicePub) ? { ...d, revoked } : d,
+    ),
+  )
+  return revoked
+}
+
+/**
+ * The device and everything paired from it — exactly what a revocation takes
+ * down. Computed over the delegations this device knows about (its peer list
+ * plus its own), which is what the settings surface can show.
+ */
+export function subtreeOf(devicePub: Uint8Array): Uint8Array[] {
+  const all = peerDevices().map((d) => d.delegation)
+  const out: Uint8Array[] = [devicePub]
+  // Repeated sweeps: the list is unordered, so a child may be seen before its
+  // parent is known to be in the set.
+  for (let i = 0; i < 8; i++) {
+    let grew = false
+    for (const dd of all) {
+      if (out.some((p) => hex(p) === hex(dd.device_pub))) continue
+      if (out.some((p) => hex(p) === hex(dd.parent_pub))) {
+        out.push(dd.device_pub)
+        grew = true
+      }
+    }
+    if (!grew) break
+  }
+  return out
 }
 
 export { fingerprint, hex }

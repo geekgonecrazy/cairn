@@ -89,6 +89,135 @@ Closes the open question carried in `plan.md` §5 and `PROTOCOL.md` §298. Imple
   error. That is BIP-39's plausible-deniability property; the UI must make the resulting
   "nobody recognizes you" state legible rather than looking like a bug.
 
+### Founding and attestation move to the CLI (`cairnctl`) — decided 2026-07-18 (Phase 4)
+
+Supersedes the browser-founding path and the "founding window" adoption model below.
+
+**Two reasons, and the security one is the bigger.**
+
+1. **The household's 24 words never touch a browser.** They are the most powerful secret in the
+   system — the root can attest ANY member key as ANYONE — and the previous flow asked the
+   inviter to type them into a `<textarea>` in `DevicesModal`. A web page is reachable by
+   extensions, autofill and devtools history in a way a terminal is not. The design went to real
+   lengths to keep this root offline and never persisted, and then put the only UI that uses it
+   in the most exposed place available.
+2. **Founding decides what the CARRIER trusts, which is server configuration.** `cairnctl init`
+   writes the root to `trusted-roots.txt` beside the config, so the chain gate is strict from the
+   FIRST event. That removes the trust-on-first-use adoption window entirely.
+
+**What the adoption window actually cost.** It is not theoretical: onboarding twice (clearing
+site data and setting up again) minted a second household. Adoption had already latched onto the
+first, so every event from the live identity was refused as `ErrUntrustedRoot` — which the error
+taxonomy treats as TERMINAL, so it was not retried, just silently marked `queued`. The visible
+symptom was "creating a space does nothing at all". `cairnctl init` refuses to found twice, which
+makes that state unrepresentable rather than merely diagnosable.
+
+**Shape.**
+
+- `cairnctl init [-name …]` — mint the household phrase, show it once, require three words back,
+  write the root to `trusted-roots.txt`. The private key is never written anywhere.
+- `cairnctl attest <join-code>` — prompt for the words, sign an attestation, print an invite.
+  Refuses if the words derive a household this node does not trust, which is the only way to
+  catch a wrong phrase: BIP-39 has no wrong answers, it just yields a DIFFERENT household.
+- `cairnctl roots` — what this node trusts, with fingerprints.
+- **Everyone joins, including the founder.** The founder is no longer a special case in the app;
+  they get one personal phrase like every other member. This retires the two-phrase founder
+  onboarding added earlier the same day.
+- `trusted-roots.txt` is a separate file, not `config.yaml`: the CLI writes it, and rewriting
+  YAML would destroy the hand-written comments. `config.Load` merges the two.
+
+**Consequences to accept.**
+
+- Setting up a household now requires a terminal on the server. For a self-hosted household hub
+  where you already ran `cairnd`, that is reasonable — but it does block a non-technical member
+  from standing up a node alone.
+- The webapp lost `bootstrap()`, `recover()`-with-household-phrase, and `attestJoinRequest()`.
+  They are DELETED rather than left unused, so nobody wires them back up.
+- Browser recovery now has exactly one path: re-derive the member root from the member's own
+  words and pair it with the attestation published when they joined. That needs a reachable
+  carrier — an offline restore would require the household phrase, which is precisely what must
+  not be in the browser.
+- Go gained `identity/invite.go` (join-code and invite-blob encoding), previously browser-only.
+  Byte parity is pinned by conformance vectors on both sides. Building it surfaced a real trap:
+  a plain `cbor.Marshal(map)` sorts keys lexicographically where canonical CBOR sorts
+  length-first, producing a blob that still decodes AND still verifies — the signature covers the
+  fields, not the envelope — while being byte-different from the browser's.
+
+### Member root goes offline; devices form a delegation tree — decided 2026-07-18 (Phase 4)
+
+Supersedes the parts of the Phase-4 notes that put the member root on every device and wrapped
+room keys to it. Prompted by finding that device pairing could not be completed as designed.
+
+**The contradiction that forced this.** Room keys were HPKE-wrapped to the MEMBER ROOT
+(`crypto.ts` `mintEpoch`), so a device could only read a room if it held the member root secret.
+But `identity/pairing.go` promised the member root's private key never leaves the trusted device.
+Both could not hold, and the consequence of resolving it the easy way is fatal: if pairing hands
+the member secret to the new device, then a stolen device **is** the member — it signs itself a
+fresh `DeviceDelegation` and walks back in, because the member root is exactly the authority that
+admits devices. Revocation would only ever bind against an attacker who chose to cooperate.
+That is why device pairing was never finished: it *couldn't* be, as designed.
+
+**The shape.**
+
+- A member root is now an **offline apex**, exactly like the household root: derived from its own
+  24-word BIP-39 mnemonic (`cairn/member-root/v1` domain separation), used to sign the member's
+  FIRST device delegation, then dropped. Never persisted on any device.
+- **Devices delegate devices.** `DeviceDelegation.MemberPub` becomes `ParentPub`, which is either
+  a member root (the first device) or another device key. The chain is a TREE per member, and the
+  walk `session → device → … → device → member root → household root` is recursive rather than
+  the old fixed single device hop.
+- **Room keys wrap to DEVICE keys, not member roots.** This is now forced rather than chosen: the
+  member root holds no live secret, so it cannot be an unwrap target. Membership stays a
+  member-level fact (`models.Member.MemberPub`); decryption becomes a device-level capability, and
+  the wrap target set is derived by expanding each member into its non-revoked devices.
+- **Revocation cascades for free.** Because the walk checks revocation at EVERY hop, revoking a
+  device kills its entire subtree without naming any descendant — on every verifier, including
+  ones offline at the time, since the identity log is an order-independent set.
+- **Revoke authority is ancestors-only.** `DeviceRevoke.MemberPub` becomes `RevokerPub`, and a
+  revoke binds only if the revoker is an ANCESTOR of the target (the member root may revoke
+  anything). Peer revocation is deliberately refused: a stolen phone could otherwise revoke the
+  laptop, destroying the owner's access permanently — revoked keys can never be re-paired — while
+  the attacker kept theirs. A compromised device may damage only what it was already responsible
+  for. Cost to accept: revoking your FIRST device requires the member's 24 words.
+
+**Honest properties.**
+
+- The cascade is automatic for AUTHENTICATION only. A revoked device still physically holds the
+  room keys it was wrapped, so rotation must exclude the **entire revoked subtree**, not just the
+  named device. Excluding only the named device is the easy bug here.
+- Pre-revocation history stays readable to the revoked device. Keys cannot be un-shared; this is
+  the same limit already recorded for member removal.
+- Every member now needs their own recovery phrase, where previously only the founder saw words.
+  That is real added ceremony at onboarding, accepted because it is the only version where
+  "revoke a device" is true without an asterisk.
+- **The founder holds TWO separate phrases**, and they are not interchangeable:
+  - *household phrase* — attests new members. Needed whenever someone joins. Can live in a safe.
+  - *member phrase* — their own identity. Restores their account, and revokes a device that no
+    live device sits above. Must stay reachable, because losing a phone is ordinary.
+
+  Deriving the founder's member root from the household words (different HKDF label) was tried
+  first and reverted. It is defensible on *compromise* grounds — whoever holds the household
+  words can already attest any member key, so the household phrase is strictly more powerful —
+  but that is an argument about compromise, not operation. One shared phrase forces the household
+  secret to be as reachable as the personal one, and makes the founder's member root behave
+  differently from every joiner's, whose phrase is independent by construction. Onboarding shows
+  them one at a time, each separately confirmed, labelled for what it does.
+- **Recovery differs by role, and has to.** A founder holds the household phrase and can
+  re-attest themselves entirely offline. Everyone else never sees it — their attestation was
+  published when they joined, so recovery re-derives the member root from their words and pairs
+  it with that fetched attestation, verified locally (`recoverWithAttestation`). The consequence
+  to accept: non-founder recovery needs a reachable carrier.
+- The recursive walk needs guards a fixed-depth walk did not: **max depth 8**, **cycle detection**,
+  and one-parent-per-device (already enforced in `DeviceLog.AddDelegation`, now load-bearing —
+  it is what makes the structure a tree rather than a graph).
+- **Still missing: there is no way to remove a MEMBER from a household.** No `MemberRevoke` object
+  exists. A member root being unrevocable is correct within its own tree, but it also means a
+  member cannot be ejected. Recorded as a gap, not solved here.
+
+**Breaking change, accepted.** Existing rooms were wrapped to member roots and become unreadable.
+Per the dev-phase policy (no migrations until real users), existing data is abandoned rather than
+migrated.
+
 ### Space is the authority; channels enforce it — decided 2026-07-18 (Phase 4)
 
 Supersedes the "two independent membership tiers" framing from the two-tier note below.

@@ -33,6 +33,50 @@ export function isSenderRejected(e: unknown): boolean {
   return e instanceof ConnectError && e.code === Code.PermissionDenied
 }
 
+/**
+ * Turn a send failure into something a human can act on, ALWAYS including the
+ * server's own message rather than replacing it with a friendly guess.
+ *
+ * The rule here is that the carrier's reason is the most useful thing we have —
+ * "chain does not terminate at a trusted root" tells you exactly what is wrong,
+ * where "couldn't send" tells you nothing and sends you reading logs. We add
+ * context about what to DO, and keep the raw text.
+ */
+export function describeSendFailure(e: unknown): string {
+  if (!(e instanceof ConnectError)) {
+    return e instanceof Error ? e.message : String(e)
+  }
+  const raw = e.rawMessage || e.message
+
+  if (e.code === Code.PermissionDenied) {
+    // Terminal: the carrier will never accept this sender as-is. Retrying is
+    // pointless, so say what it actually means.
+    if (/trusted root|untrusted/i.test(raw)) {
+      return (
+        `The server does not trust your household, so it rejected this. ` +
+        `That usually means it adopted a DIFFERENT household first — e.g. this ` +
+        `identity was set up again after the server had already seen another one. ` +
+        `Pin your household root in the server's trustedRoots, or reset its database. ` +
+        `(server: ${raw})`
+      )
+    }
+    if (/revoked/i.test(raw)) {
+      return `This device has been revoked, so the server rejected it. (server: ${raw})`
+    }
+    if (/expired/i.test(raw)) {
+      return `Your session has expired — reload to mint a new one. (server: ${raw})`
+    }
+    return `The server rejected this permanently. (server: ${raw})`
+  }
+  if (e.code === Code.FailedPrecondition) {
+    return `The server could not verify you yet, even after publishing your identity. (server: ${raw})`
+  }
+  if (e.code === Code.Unavailable) {
+    return `Can't reach the server — it may be stopped. (server: ${raw})`
+  }
+  return `Send failed: ${raw}`
+}
+
 /** Open the realtime SSE stream. Calls onEvent for each Event the server pushes. */
 export function subscribe(onEvent: (ev: Event) => void, onOpen?: () => void): () => void {
   const es = new EventSource('/v1/subscribe')

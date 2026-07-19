@@ -180,16 +180,18 @@
 
       <div class="field">
         <label for="peer">Add a member by key</label>
-        <div class="keyrow">
-          <input
-            id="peer"
-            placeholder="paste a 64-hex member key"
-            bind:value={peerKey}
-            spellcheck="false"
-          />
-          <button class="btn primary sm" disabled={busy || !peerKey.trim()} onclick={add}>Add</button>
-        </div>
-        {#if error}<p class="err">{error}</p>{/if}
+        <input
+          id="peer"
+          placeholder="paste a 64-hex member key"
+          bind:value={peerKey}
+          spellcheck="false"
+        />
+
+        <!-- ABOVE the Add button, deliberately. This choice is irreversible and
+             its default (off) is the one that surprises people: the member joins
+             and sees an empty room, which reads as "adding them didn't work".
+             Below the button it was decoration — you click Add before you ever
+             scroll to it. -->
         <label class="share">
           <input type="checkbox" bind:checked={shareHistory} />
           <span>
@@ -200,13 +202,20 @@
                 undone</strong> — removing them later doesn't take back what they can already
                 read, and everyone in the room can see history was shared.
               {:else}
-                Off: they'll only see messages from now on. Past messages stay unreadable to
-                them, even though they're in the room.
+                Off: they'll see messages from now on, and <strong>the room will look empty
+                to them</strong> — past messages stay unreadable even though they're a member.
               {/if}
             </small>
           </span>
         </label>
-        <p class="hint">Mints a new key epoch and HPKE-wraps it to every member.</p>
+
+        <div class="keyrow">
+          <button class="btn primary sm wide" disabled={busy || !peerKey.trim()} onclick={add}>
+            {shareHistory ? 'Add with full history' : 'Add — new messages only'}
+          </button>
+        </div>
+        {#if error}<p class="err">{error}</p>{/if}
+        <p class="hint">Mints a new key epoch and HPKE-wraps it to every member's devices.</p>
       </div>
 
       <div class="row-actions">
@@ -278,6 +287,9 @@
   .count {
     font-family: var(--font-mono, monospace);
     color: var(--text-3);
+  }
+  .keyrow .wide {
+    width: 100%;
   }
   .share {
     display: flex;
@@ -357,7 +369,7 @@
     white-space: nowrap;
     color: var(--text-2);
   }
-  .keyrow input {
+  .field > input {
     flex: 1;
     font-family: var(--font-mono);
     font-size: 12px;
@@ -368,7 +380,7 @@
     color: var(--text);
     outline: none;
   }
-  .keyrow input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .field > input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
   .hint { margin: 0; font-size: 11.5px; color: var(--text-3); line-height: 1.4; }
   .err { margin: 0; font-size: 12px; color: var(--neg); }
   .row-actions { display: flex; gap: 8px; padding-top: 4px; }

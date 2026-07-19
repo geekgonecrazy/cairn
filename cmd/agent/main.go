@@ -112,11 +112,17 @@ func main() {
 	//    operated by the human it's demoing with. Publishing the self-attestation
 	//    founds that household on a fresh carrier (adoption), so every event below
 	//    verifies. Without it the first SendEvent is refused with PermissionDenied.
+	//    Events are signed by the DERIVED DEVICE key, not by the root: roots are
+	//    attested rather than delegated, so the root key has no chain of its own.
+	//    It is derived from the stored key, so it is stable across runs — a random
+	//    one would lose every room key wrapped to the previous device.
 	agentID := identity.KeyPair{Pub: me.Pub, Priv: me.Priv}
-	att, dd, err := identity.SelfHousehold(agentID, identity.KindAgent, human, "cmd/agent", time.Now().UnixMilli())
+	att, dd, device, err := identity.SelfHousehold(
+		agentID, identity.KindAgent, human, "cmd/agent", time.Now().UnixMilli())
 	if err != nil {
 		log.Fatalf("agent: self-household: %v", err)
 	}
+	me.Pub, me.Priv = device.Pub, device.Priv
 	for _, obj := range []any{att, dd} {
 		blob, err := identity.Marshal(obj)
 		if err != nil {
@@ -126,7 +132,11 @@ func main() {
 			log.Fatalf("agent: publish identity: %v", err)
 		}
 	}
-	log.Printf("founded standalone household %x (operated by %x)", me.Pub[:6], human[:6])
+	// agentID.Pub, not me.Pub — me is the DEVICE key now, and the household root
+	// is what a carrier adopts and what belongs in trustedRoots. Printing the
+	// device key here would send anyone pinning this agent to the wrong value.
+	log.Printf("founded standalone household %x (device %x, operated by %x)",
+		agentID.Pub[:6], me.Pub[:6], human[:6])
 	// NOTE: the agent and the human are DIFFERENT households, but a carrier adopts
 	// only ONE root at founding. To run the full agent↔human approval demo, start
 	// cairnd with both roots pinned: `trustedRoots: [<agent key>, <human household
@@ -167,18 +177,32 @@ func main() {
 		"wrapped_keys": map[string][]byte{hex.EncodeToString(me.Pub): wrapMe},
 	}), "member_add(self)")
 
-	wrapHuman, err := room.WrapKey(human, roomKey)
+	// Room keys wrap to DEVICE keys, not member roots — a member root is offline
+	// and holds no secret to unwrap with. So admitting the human means sealing to
+	// every device in their tree, which the carrier resolves for us.
+	humanDevices, err := client.ListMemberDevices(ctx,
+		connect.NewRequest(&cairnv1.ListMemberDevicesRequest{MemberPub: human}))
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("agent: list human devices: %v", err)
+	}
+	if len(humanDevices.Msg.GetDevicePubs()) == 0 {
+		log.Fatalf("agent: the human %x has no published devices on this carrier — "+
+			"open the webapp there once so its device delegation is published, then re-run. "+
+			"Wrapping to their member root would produce a key nobody can open.", human[:6])
+	}
+	// Wrapped to the newcomer's devices AND our own: existing members must keep
+	// working across the epoch.
+	wrapped := map[string][]byte{hex.EncodeToString(me.Pub): wrapMe}
+	for _, dev := range humanDevices.Msg.GetDevicePubs() {
+		w, err := room.WrapKey(dev, roomKey)
+		if err != nil {
+			log.Fatal(err)
+		}
+		wrapped[hex.EncodeToString(dev)] = w
 	}
 	send(mustCleartext(me, roomID, cairnv1.EventType_MEMBER_ADD, map[string]any{
 		"member_pub": human, "role": "member", "epoch": epoch,
-		// Wrapped to BOTH: the newcomer needs the key, and existing members must
-		// keep working across the epoch.
-		"wrapped_keys": map[string][]byte{
-			hex.EncodeToString(human): wrapHuman,
-			hex.EncodeToString(me.Pub): wrapMe,
-		},
+		"wrapped_keys": wrapped,
 	}), "member_add(human)")
 
 	// 3. A chat line, so there is something ordinary alongside the inlays.

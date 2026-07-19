@@ -171,7 +171,7 @@ func TestIdentityLog_ResolverRoundTrip(t *testing.T) {
 
 	att := &identity.IdentityAttestation{Pubkey: member.Pub, Kind: identity.KindHuman, Origin: root.Pub, DisplayName: "Ada", IssuedAt: 1}
 	identity.Sign(att, root.Priv)
-	dd := &identity.DeviceDelegation{DevicePub: device.Pub, MemberPub: member.Pub, IssuedAt: 1}
+	dd := &identity.DeviceDelegation{DevicePub: device.Pub, ParentPub: member.Pub, IssuedAt: 1}
 	identity.Sign(dd, member.Priv)
 
 	if err := s.PutAttestation(att); err != nil {

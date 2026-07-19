@@ -34,6 +34,7 @@
     file: '<path d="M9 2.5H4.5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V6L9 2.5Z"/><path d="M9 2.5V6h3.5"/>',
     image: '<rect x="2.5" y="3.5" width="11" height="9" rx="1.5"/><circle cx="6" cy="6.5" r="1"/><path d="m3.5 11 3-3 2.5 2.5L11 9l2 2"/>',
     warning: '<path d="M8 2.5 14 13H2L8 2.5Z"/><path d="M8 6.5v3M8 11.4v.1" stroke-width="1.6"/>',
+    camera: '<path d="M2.5 5.5h2.2l1-1.5h4.6l1 1.5h2.2a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1Z"/><circle cx="8" cy="9.5" r="2.5"/>',
     leaf: '<path d="M13 3c0 5-3.5 8.5-8 8.5H3.5C3.5 7 7 3.5 11.5 3.5H13Z"/><path d="M3 13c2-3.5 4.5-6 8-7.5"/>',
     sync: '<path d="M13 7a5 5 0 0 0-9-2.5M3 9a5 5 0 0 0 9 2.5"/><path d="M12.5 2.5v2.5H10M3.5 13.5V11H6"/>',
   }

@@ -1,3 +1,10 @@
+# local server config (machine-specific; config.example.yaml is the template)
+config.yaml
+
+# Household roots this node trusts — written by `cairnctl init`. Machine-local
+# state, not source: it names a real household and differs per deployment.
+trusted-roots.txt
+
 # Go
 /cairnd
 /agent

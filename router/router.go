@@ -65,12 +65,30 @@ func Start() error {
 // spaHandler serves files from dir (paths already have the /__hub/ prefix
 // stripped), falling back to index.html for any path that isn't an existing
 // file so client-side routing works.
+//
+// CACHING IS THE WHOLE TRICK HERE, and getting it wrong is not a performance
+// issue — it is a correctness one. Vite content-hashes every asset
+// (index-B7XzFQ3.js), so those are safe to cache forever. index.html is what
+// NAMES those hashes, so if it is cached the browser keeps loading yesterday's
+// bundle and no amount of reloading helps. On a phone, where "hard reload" is
+// not really available, that means a deployed fix simply never arrives.
+//
+// So: index.html must always be revalidated, hashed assets are immutable.
 func spaHandler(dir string) http.Handler {
 	index := filepath.Join(dir, "index.html")
+
+	serveIndex := func(w http.ResponseWriter, r *http.Request) {
+		// no-cache means "revalidate before using", not "never store" — the
+		// browser may still keep it and a 304 stays cheap. no-store would work
+		// too but re-downloads a small file every time for no benefit.
+		w.Header().Set("Cache-Control", "no-cache, must-revalidate")
+		http.ServeFile(w, r, index)
+	}
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rel := strings.TrimPrefix(r.URL.Path, "/")
 		if rel == "" {
-			http.ServeFile(w, r, index)
+			serveIndex(w, r)
 			return
 		}
 		clean := filepath.Clean(rel)
@@ -79,10 +97,19 @@ func spaHandler(dir string) http.Handler {
 			return
 		}
 		if fi, err := os.Stat(filepath.Join(dir, clean)); err == nil && !fi.IsDir() {
+			// Anything under assets/ carries a content hash in its name, so a
+			// changed file is a changed URL and this can never serve staleness.
+			// Everything else (favicon.svg, icons.svg) has a stable name and must
+			// be revalidated, or an updated icon would stick around indefinitely.
+			if strings.HasPrefix(clean, "assets/") {
+				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			} else {
+				w.Header().Set("Cache-Control", "no-cache, must-revalidate")
+			}
 			http.ServeFile(w, r, filepath.Join(dir, clean))
 			return
 		}
-		http.ServeFile(w, r, index) // SPA fallback
+		serveIndex(w, r) // SPA fallback
 	})
 }
 

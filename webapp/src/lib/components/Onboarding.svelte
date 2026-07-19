@@ -3,21 +3,26 @@
   // recover an existing one. Gated and unskippable — the recovery phrase is
   // shown exactly once and cannot be re-derived from Cairn afterwards, so the
   // confirm step verifies the human actually wrote it down (MILESTONES Phase 4).
+  import QRCode from 'qrcode'
   import Icon from '../Icon.svelte'
+  import { identity } from '../identity.svelte'
   import {
-    bootstrap,
-    recover,
     beginJoin,
     completeJoin,
     pendingJoin,
     cancelJoin,
+    beginDevicePairing,
+    pendingDevicePairing,
+    cancelDevicePairing,
     type Identity,
   } from '../vault'
   import { validateMnemonicPhrase, MNEMONIC_WORDS, parseAttestation, fingerprint } from '../identity'
 
   let { onready }: { onready: (id: Identity) => void } = $props()
 
-  type Step = 'welcome' | 'name' | 'phrase' | 'confirm' | 'recover' | 'join' | 'join-wait' | 'found'
+  type Step =
+    | 'welcome' | 'phrase' | 'confirm' | 'recover'
+    | 'join' | 'join-wait' | 'found' | 'pair-wait'
   // A household is founded ONCE. Resume a join if one is already in flight,
   // otherwise start at the path most people actually need: joining.
   let step = $state<Step>(pendingJoin() ? 'join-wait' : 'welcome')
@@ -32,19 +37,100 @@
   let displayName = $state('')
   let deviceLabel = $state(defaultDeviceLabel())
   let mnemonic = $state('')
+  // Held in MEMORY until the phrase is confirmed. Nothing is written to storage
+  // before `commit` — persisting at mint time meant a reload on the phrase
+  // screen dropped the user into a working app having never confirmed (or read)
+  // the words, which are then gone for good since they are never stored.
   let pendingIdentity: Identity | null = null
+  let pendingCommit: (() => void) | null = null
 
-  // Confirm step: re-enter three words chosen at random from the phrase.
+  // Confirm step: re-enter three words chosen at random from the phrase. Every
+  // member has exactly one phrase — their own. The household's lives with
+  // whoever runs the server and is never shown here.
+  let quizPurpose = $state<'household' | 'member' | 'join'>('household')
   let quizIndexes = $state<number[]>([])
   let quizAnswers = $state<string[]>(['', '', ''])
   let quizError = $state('')
 
   // Recovery step.
   let recoveryPhrase = $state('')
+  let recoveryHouseholdPhrase = $state('')
   let recoveryPassphrase = $state('')
   let recoveryName = $state('')
   let recoveryError = $state('')
   let busy = $state(false)
+
+  // --- pairing this device onto an existing account ------------------------
+
+  let pairCode = $state('')
+  let pairQrUrl = $state('')
+  let pairFingerprint = $state('')
+  let pairError = $state('')
+  let pairTimer: ReturnType<typeof setInterval> | null = null
+
+  function startDevicePairing() {
+    pairError = ''
+    const res = beginDevicePairing(deviceLabel.trim() || 'this browser')
+    pairCode = res.code
+    pairFingerprint = fingerprint(res.devicePub)
+    void QRCode.toDataURL(pairCode, { width: 220, margin: 1 })
+      .then((u) => (pairQrUrl = u))
+      .catch(() => (pairQrUrl = '')) // the text code below still works
+    step = 'pair-wait'
+    startPolling()
+  }
+
+  /**
+   * Watch for the approval to land. Polling rather than pushing because this
+   * device has no identity yet — it cannot open an authenticated stream, and the
+   * carrier has nothing to push to. Every 2s is well inside human patience for a
+   * flow where someone is tapping "approve" on another screen.
+   */
+  function startPolling() {
+    stopPolling()
+    pairTimer = setInterval(async () => {
+      try {
+        const id = await identity.pollPairing()
+        if (id) {
+          stopPolling()
+          onready(id)
+        }
+      } catch (e) {
+        // A malformed or mismatched approval needs a human, not another retry.
+        stopPolling()
+        pairError = e instanceof Error ? e.message : String(e)
+      }
+    }, 2000)
+  }
+
+  function stopPolling() {
+    if (pairTimer) clearInterval(pairTimer)
+    pairTimer = null
+  }
+
+  function abandonDevicePairing() {
+    stopPolling()
+    cancelDevicePairing()
+    pairCode = ''
+    pairQrUrl = ''
+    pairError = ''
+    step = 'welcome'
+  }
+
+  // Resume a pairing that was already in flight when the tab reloaded.
+  $effect(() => {
+    const pending = pendingDevicePairing()
+    if (pending && step === 'welcome' && !pendingJoin()) {
+      pairCode = pending.code
+      pairFingerprint = fingerprint(pending.devicePub)
+      void QRCode.toDataURL(pending.code, { width: 220, margin: 1 })
+        .then((u) => (pairQrUrl = u))
+        .catch(() => (pairQrUrl = ''))
+      step = 'pair-wait'
+      startPolling()
+    }
+    return stopPolling
+  })
 
   function defaultDeviceLabel(): string {
     const ua = navigator.userAgent
@@ -57,24 +143,6 @@
 
   const words = $derived(mnemonic ? mnemonic.split(' ') : [])
 
-  function createHousehold() {
-    if (!displayName.trim()) return
-    busy = true
-    try {
-      const res = bootstrap(displayName.trim(), deviceLabel.trim() || 'this browser')
-      pendingIdentity = res.identity
-      mnemonic = res.mnemonic
-      // Three distinct positions, sorted so the prompts read in phrase order.
-      const picks = new Set<number>()
-      while (picks.size < 3) picks.add(Math.floor(Math.random() * MNEMONIC_WORDS))
-      quizIndexes = [...picks].sort((a, b) => a - b)
-      quizAnswers = ['', '', '']
-      step = 'phrase'
-    } finally {
-      busy = false
-    }
-  }
-
   function checkQuiz() {
     const ok = quizIndexes.every(
       (wordIdx, i) => quizAnswers[i].trim().toLowerCase() === words[wordIdx],
@@ -83,27 +151,34 @@
       quizError = "That doesn't match. Check your written copy — order matters."
       return
     }
+      // Confirmed: only NOW does anything reach storage.
+    if (!pendingCommit) return
+    pendingCommit()
+    if (quizPurpose === 'join') {
+      // The join is only half done — the newcomer still needs an attestation
+      // from someone who holds the household words.
+      step = 'join-wait'
+      return
+    }
     if (pendingIdentity) onready(pendingIdentity)
   }
 
-  function doRecover() {
+  async function doRecover() {
     recoveryError = ''
     const bad = validateMnemonicPhrase(recoveryPhrase)
     if (bad) {
       recoveryError = bad
       return
     }
-    if (!recoveryName.trim()) {
-      recoveryError = 'Enter the name to use on this device.'
-      return
-    }
     busy = true
     try {
+      // One path for everyone: re-derive the member root from these words and
+      // pair it with the attestation published when this member joined. There is
+      // no household-phrase branch on purpose — those words belong on the server,
+      // and asking for them here would undo the reason attestation moved to the CLI.
       onready(
-        recover(
+        await identity.recoverFromCarrier(
           recoveryPhrase,
-          recoveryPassphrase,
-          recoveryName.trim(),
           deviceLabel.trim() || 'this browser',
         ),
       )
@@ -120,8 +195,29 @@
       joinError = 'Enter the name your household will know you by.'
       return
     }
-    joinCode = beginJoin(joinName.trim(), deviceLabel.trim() || 'this browser')
-    step = 'join-wait'
+    // A joiner gets their OWN recovery phrase — they never see the household's.
+    // It derives their member root, which signs this device's delegation and is
+    // then dropped, so it must be written down here or it is gone.
+    const res = beginJoin(joinName.trim(), deviceLabel.trim() || 'this browser')
+    joinCode = res.code
+    pendingCommit = res.commit
+    mnemonic = res.memberMnemonic
+    quizPurpose = 'join'
+    startQuiz()
+    step = 'phrase'
+  }
+
+  /** What the phrase on screen is FOR — they are not interchangeable. */
+  const phraseTitle = 'Your personal recovery phrase'
+  const phraseStepOf = ''
+
+  /** Pick three distinct positions, sorted so prompts read in phrase order. */
+  function startQuiz() {
+    const picks = new Set<number>()
+    while (picks.size < 3) picks.add(Math.floor(Math.random() * MNEMONIC_WORDS))
+    quizIndexes = [...picks].sort((a, b) => a - b)
+    quizAnswers = ['', '', '']
+    quizError = ''
   }
 
   /**
@@ -192,30 +288,62 @@
         <button class="primary" onclick={() => (step = 'join')}>
           Join a household
         </button>
+        <button class="ghost" onclick={startDevicePairing}>
+          Add this device to my account
+        </button>
         <button class="ghost" onclick={() => (step = 'recover')}>
           Restore from my recovery phrase
         </button>
       </div>
       <p class="footnote">
-        A household is created once, by whoever sets it up first — everyone else joins it.
+        Everyone joins — including whoever set the household up. Founding it is a one-time
+        <code>cairnctl init</code> on the server.
         <button class="link" onclick={() => (step = 'found')}>
           Nobody has set ours up yet
         </button>
       </p>
 
-    {:else if step === 'found'}
-      <h1>Start a new household?</h1>
+    {:else if step === 'pair-wait'}
+      <h1>Show this to a device you already use</h1>
       <p class="lede">
-        Only do this if your household doesn't exist yet. It creates a brand-new household
-        with its own recovery phrase — it will <strong>not</strong> connect you to one that
-        already exists. To join an existing household, go back and ask someone in it for an
-        invite.
+        Open <strong>Identity &amp; devices → Pair</strong> there and scan this code. Check the
+        fingerprint below matches what that device shows before approving — that comparison is
+        the only thing standing between you and someone else's code.
+      </p>
+      {#if pairQrUrl}
+        <img class="qr" src={pairQrUrl} alt="Pairing QR code for this device" />
+      {/if}
+      <code class="code">{pairCode}</code>
+      <p class="fp-line">
+        Fingerprint <span class="mono">{pairFingerprint}</span>
+      </p>
+      <p class="footnote">
+        Waiting for approval… this screen updates itself. Nothing is shared with the other
+        device except this public key — no recovery phrase is involved.
+      </p>
+      {#if pairError}<p class="error" role="alert">{pairError}</p>{/if}
+      <div class="actions">
+        <button class="ghost" onclick={abandonDevicePairing}>Cancel</button>
+      </div>
+
+    {:else if step === 'found'}
+      <h1>Founding happens on the server</h1>
+      <p class="lede">
+        A household is created with the <code>cairnctl</code> command on the machine running
+        Cairn, not in the browser. Two reasons: the household's 24 words are the most powerful
+        secret in the system — they can vouch for anyone as anyone — and they should never be
+        typed into a web page. And founding decides what the server trusts, which is server
+        configuration.
+      </p>
+      <p class="lede">On that machine, run:</p>
+      <code class="code">cairnctl init -name "Our household"</code>
+      <p class="lede">
+        It shows the phrase once, writes the household root to the server's trusted list, and
+        tells you to restart Cairn. Then come back here and <strong>join</strong> — everyone
+        joins, including whoever founded it.
       </p>
       <div class="actions">
-        <button class="ghost" onclick={() => (step = 'welcome')}>Back</button>
-        <button class="primary" onclick={() => (step = 'name')}>
-          Yes, start a new household
-        </button>
+        <button class="primary" onclick={() => (step = 'join')}>Join a household</button>
       </div>
 
     {:else if step === 'join'}
@@ -289,40 +417,21 @@
         </button>
       </div>
 
-    {:else if step === 'name'}
-      <h1>What should people call you?</h1>
-      <p class="lede">
-        This name is signed into your identity and can't be changed later, so pick the one
-        your household will recognise.
-      </p>
-      <label class="field">
-        <span>Display name</span>
-        <!-- svelte-ignore a11y_autofocus -->
-        <input
-          autofocus
-          bind:value={displayName}
-          placeholder="Sam"
-          maxlength="64"
-          onkeydown={(e) => e.key === 'Enter' && createHousehold()}
-        />
-      </label>
-      <label class="field">
-        <span>Name for this device</span>
-        <input bind:value={deviceLabel} placeholder="Sam's laptop" maxlength="64" />
-      </label>
-      <div class="actions">
-        <button class="ghost" onclick={() => (step = 'welcome')}>Back</button>
-        <button class="primary" disabled={!displayName.trim() || busy} onclick={createHousehold}>
-          Continue
-        </button>
-      </div>
-
     {:else if step === 'phrase'}
-      <h1>Write these 24 words down</h1>
+      {#if phraseStepOf}<p class="step-of">Phrase {phraseStepOf}</p>{/if}
+      <h1>{phraseTitle}</h1>
+
       <p class="lede">
-        This is the only way back into your household if you lose every device. Cairn does not
-        store it and <strong>cannot show it to you again</strong>. Write it on paper — a photo
-        or a password manager is a copy someone else can reach.
+        This is <strong>your</strong> phrase. It restores your account on a new device, and it
+        is the only way to revoke a device you can no longer get to. It is not the household's
+        phrase — that one lives on the server with whoever runs it, and you never need it.
+      </p>
+      <p class="lede">
+        Losing a phone is ordinary, so keep this somewhere you can actually reach.
+      </p>
+      <p class="lede">
+        Cairn does not store it and <strong>cannot show it to you again</strong>. Write it on
+        paper — a photo or a password manager is a copy someone else can reach.
       </p>
       <ol class="words">
         {#each words as w, i}
@@ -336,7 +445,10 @@
 
     {:else if step === 'confirm'}
       <h1>Check your copy</h1>
-      <p class="lede">Type these three words from the phrase you just wrote down.</p>
+      <p class="lede">
+        Type these three words from <strong>{phraseTitle.toLowerCase()}</strong> — the phrase you
+        just wrote down{phraseStepOf ? ` (${phraseStepOf})` : ''}.
+      </p>
       {#each quizIndexes as wordIdx, i}
         <label class="field">
           <span>Word {wordIdx + 1}</span>
@@ -356,14 +468,15 @@
       </div>
 
     {:else if step === 'recover'}
-      <h1>Recover your household</h1>
+      <h1>Restore your account</h1>
       <p class="lede">
-        Enter your 24 words. This re-creates your identity under the same household — but it
-        does <strong>not</strong> bring back message history: room keys were never in the phrase,
-        and past messages stay unreadable until someone re-admits you.
+        Enter <strong>your personal recovery phrase</strong> — the one that is yours, not the
+        household's. This restores the same account on this device, so rooms and rosters still
+        know you. It does <strong>not</strong> bring back message history: room keys were never
+        in any phrase, and past messages stay unreadable until someone re-admits you.
       </p>
       <label class="field">
-        <span>Recovery phrase</span>
+        <span>Your personal recovery phrase</span>
         <textarea
           bind:value={recoveryPhrase}
           rows="3"
@@ -372,17 +485,33 @@
           spellcheck="false"
         ></textarea>
       </label>
-      <label class="field">
-        <span>Display name</span>
-        <input bind:value={recoveryName} placeholder="Sam" maxlength="64" />
-      </label>
+
       <details class="adv">
-        <summary>I set a passphrase</summary>
+        <summary>I founded this household (I have its phrase too)</summary>
+        <p class="hint">
+          Only the founder holds the household phrase. With it, this works completely offline;
+          without it, your account is looked up on the server, where it was published when you
+          joined.
+        </p>
         <label class="field">
-          <span>Passphrase</span>
+          <span>Household recovery phrase</span>
+          <textarea
+            bind:value={recoveryHouseholdPhrase}
+            rows="3"
+            placeholder="word one, word two, …"
+            autocapitalize="none"
+            spellcheck="false"
+          ></textarea>
+        </label>
+        <label class="field">
+          <span>Display name</span>
+          <input bind:value={recoveryName} placeholder="Sam" maxlength="64" />
+        </label>
+        <label class="field">
+          <span>Household passphrase</span>
           <input bind:value={recoveryPassphrase} type="password" autocomplete="off" />
           <small class="hint">
-            A wrong passphrase doesn't error — it silently creates a different household that
+            A wrong passphrase doesn't error — it silently derives a different household that
             nobody recognises. Leave blank if you never set one.
           </small>
         </label>
@@ -536,6 +665,30 @@
   }
   .muted {
     color: var(--text-3);
+  }
+  .step-of {
+    margin: 0 0 4px;
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-3);
+  }
+  .qr {
+    display: block;
+    margin: 14px auto;
+    width: 200px;
+    height: 200px;
+    image-rendering: pixelated;
+    background: #fff;
+    padding: 8px;
+    border-radius: 8px;
+  }
+  .fp-line {
+    margin-top: 10px;
+    font-size: 13px;
+    color: var(--text-3);
+    text-align: center;
   }
   .footnote {
     margin: 18px 0 0;

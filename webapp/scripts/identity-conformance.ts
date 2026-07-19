@@ -21,6 +21,9 @@ import {
   validateMnemonicPhrase,
   normalizeMnemonic,
   newMnemonic,
+  approvePairing,
+  revokeDevice,
+  memberRootFromMnemonic,
 } from '../src/lib/identity.ts'
 import { signGrant, signDeny, TYPE_GRANT, TYPE_DENY } from '../src/lib/approval.ts'
 import { ed25519 } from '@noble/curves/ed25519.js'
@@ -42,6 +45,13 @@ const GOLDEN = {
   attHash: '3881da6f4d41eafce59092690a44dcf2af64bdabeb0f5bbd6785ffe80ea7955c',
   pairEncoded: "cairn:pair:1:oKGio6SlpqeoqaqrrK2ur7CxsrO0tba3uLm6u7y9vr8:Sam's phone",
   fingerprint: 'a0a1-a2a3-a4a5-a6a7',
+  memberRootPub: '5c76722a889dec8d4736408eb6e741787750a30f61c98fef5d29a7226e061b51',
+  delegationSig:
+    '31c61e17088c202fe7a594f2e418a7c5e1108cd746684d5a164e13afdecc3e46' +
+    'ea8d26a2fa48f4bc0520c5baf158de3194393d4cca88c1b89f524ee1745c8408',
+  revokeSig:
+    '94fdd5259a246a127ff63e7944a6bb754296aca3bf1fcc2caa8b1622ca11c89d' +
+    'c2e04d8f7b955442cbc29765681a69f409695d50802470bbe6bd9ead005f3606',
 }
 
 let failures = 0
@@ -67,6 +77,16 @@ console.log('identity conformance (browser vs Go golden vectors)')
 check('household root from mnemonic', hex(householdRootFromMnemonic(M, '').pub), GOLDEN.rootPub)
 check('household root with passphrase', hex(householdRootFromMnemonic(M, 'trezor').pub), GOLDEN.rootPubPass)
 
+// --- member root derivation ---
+// Same words as the household above; the HKDF label is the only difference, and
+// it MUST produce a different key — otherwise a member could sign attestations
+// as their own household.
+check('member root from mnemonic', hex(memberRootFromMnemonic(M, '').pub), GOLDEN.memberRootPub)
+assert(
+  'member root differs from household root',
+  hex(memberRootFromMnemonic(M, '').pub) !== hex(householdRootFromMnemonic(M, '').pub),
+)
+
 // --- attestation signing bytes ---
 const memberPub = new Uint8Array(32).map((_, i) => i)
 const att = provisionMember(M, '', memberPub, 'human', 'Sam', null, 1720000000000n)
@@ -80,6 +100,46 @@ const req = newPairingRequest(devicePub, "Sam's phone")
 check('pairing encoding', encodePairingRequest(req), GOLDEN.pairEncoded)
 check('device fingerprint', fingerprint(devicePub), GOLDEN.fingerprint)
 assert('pairing round trip', hex(parsePairingRequest(GOLDEN.pairEncoded).devicePub) === hex(devicePub))
+
+// --- delegation & revoke signing bytes ---
+//
+// These are the objects a device signs to admit or retire ANOTHER device. Drift
+// here means one side admits a device the other rejects — and it went unpinned
+// until the delegation tree landed, which is how member_pub could be renamed to
+// parent_pub / revoker_pub with every suite still green.
+const parentKeys = householdRootFromMnemonic(M, '')
+const dd = approvePairing(req, parentKeys.pub, parentKeys.priv, 1720000000000n)
+check('device delegation signature', hex(dd.sig!), GOLDEN.delegationSig)
+assert('delegation names its parent', hex(dd.parent_pub) === hex(parentKeys.pub))
+
+const dr = revokeDevice(devicePub, parentKeys.pub, parentKeys.priv, 1720000000000n)
+check('device revoke signature', hex(dr.sig!), GOLDEN.revokeSig)
+assert('revoke names its revoker', hex(dr.revoker_pub) === hex(parentKeys.pub))
+
+// A device cannot delegate or revoke ITSELF: self-delegation would be a cycle,
+// and a revoke binds only from an ancestor.
+assert(
+  'self-delegation rejected',
+  (() => {
+    try {
+      approvePairing(newPairingRequest(parentKeys.pub, 'self'), parentKeys.pub, parentKeys.priv, 1n)
+      return false
+    } catch {
+      return true
+    }
+  })(),
+)
+assert(
+  'self-revoke rejected',
+  (() => {
+    try {
+      revokeDevice(parentKeys.pub, parentKeys.pub, parentKeys.priv, 1n)
+      return false
+    } catch {
+      return true
+    }
+  })(),
+)
 
 // --- mnemonic handling ---
 assert('valid mnemonic accepted', validateMnemonicPhrase(M) === null)

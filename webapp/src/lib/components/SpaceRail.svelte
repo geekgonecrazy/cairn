@@ -2,6 +2,7 @@
   import Icon from '../Icon.svelte'
   import { app } from '../state.svelte'
   import { roomStore } from '../rooms.svelte'
+  import { unread } from '../unread.svelte'
   import { identity } from '../identity.svelte'
   import { ui } from '../ui.svelte'
 
@@ -15,6 +16,12 @@
   // attention is flagged even when you're viewing a different one.
   function pendingIn(spaceId: string): number {
     return roomStore.inSpace(spaceId).reduce((n, r) => n + r.pendingRequests, 0)
+  }
+
+  // Unread across a space's channels, so activity in a space you're not viewing
+  // still flags itself. Join requests win the badge — they need a decision.
+  function unreadIn(spaceId: string): number {
+    return unread.total(roomStore.inSpace(spaceId).map((r) => r.id))
   }
 
   const me = $derived(identity.current)
@@ -42,6 +49,8 @@
       {s.label}
       {#if pendingIn(s.id) > 0}
         <span class="rail-badge" aria-label="{pendingIn(s.id)} waiting to join">{pendingIn(s.id)}</span>
+      {:else if unreadIn(s.id) > 0}
+        <span class="rail-badge unread" aria-label="{unreadIn(s.id)} unread">{unreadIn(s.id)}</span>
       {/if}
     </button>
   {/each}
@@ -64,6 +73,15 @@
 </nav>
 
 <style>
+  /* Quieter than the join-request badge: unread is information, a pending
+     request is a decision waiting on you. */
+  /* Same reasoning as the sidebar badge: readable, not a muted blob. Join
+     requests keep the accent — they need a decision, unread just needs noticing. */
+  .rail-badge.unread {
+    background: var(--surface-3);
+    color: var(--text);
+    border: 1px solid var(--border-2);
+  }
   .space-rail {
     display: flex;
     flex-direction: column;

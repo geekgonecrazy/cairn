@@ -51,8 +51,18 @@ Two terminals.
 ```sh
 git clone https://github.com/geekgonecrazy/cairn.git
 cd cairn
+
+# Found the household. ONCE, on the machine that runs Cairn. It shows a 24-word
+# phrase, asks for three words back, and records the household root in
+# trusted-roots.txt so the server is strict from the first event.
+go run ./cmd/cairnctl init -name "Our household"
+
 go run ./cmd/cairnd
 ```
+
+The household's words are never typed into the browser — they can vouch for anyone as anyone,
+so they stay on the server (see `decisions.md` §Founding and attestation move to the CLI). An
+un-founded node refuses every event: an empty trust list is default-deny, not open.
 
 **2 — Frontend** (Vite dev server, proxies the API to cairnd):
 
@@ -85,14 +95,20 @@ Then open **http://localhost:8099/__hub/** (`/` redirects there).
 
 ## Things to try
 
-- **Set up an identity.** A household is founded **once**; everyone else **joins** it. On the
-  very first browser, take "Nobody has set ours up yet" → write down the 24-word recovery
-  phrase → confirm three words back. The phrase is shown once and never stored (see
-  `decisions.md` §Household-root).
-- **Add a second person.** In a fresh browser take *Join a household* → copy the join code. In
-  the first browser: **Identity & devices → Members → Add someone**, paste the code, enter the
-  24 words, and send back the invite. The joiner compares the household fingerprint before
-  accepting — that comparison is load-bearing, since an invite's household is self-declared.
+- **Set up an identity.** Everyone **joins**, including whoever founded the household — there
+  is no separate founder path in the app. Take *Join a household*, write down **your own**
+  24-word phrase (yours, not the household's), confirm three words back, and copy the join code.
+  Then on the server:
+
+  ```sh
+  go run ./cmd/cairnctl attest <their join code>
+  ```
+
+  It prints an invite to paste back, and the household fingerprint they should see. Compare it
+  out loud — that comparison is load-bearing, because an invite's household is self-declared and
+  a stranger's household verifies its own signature perfectly.
+- **Add a second person.** Same thing: they join in a fresh browser, you run `cairnctl attest`
+  with their code. `go run ./cmd/cairnctl roots` shows what this node trusts.
 - **Open two browser windows.** Since Phase 4 the member + device keys persist in
   `localStorage`, so two *tabs* are now one member. For two distinct participants use a normal
   and a private window (or two browser profiles), each with its own household. Send a message in
@@ -104,10 +120,12 @@ Then open **http://localhost:8099/__hub/** (`/` redirects there).
 - **Reset this device** — **Identity & devices → You → Reset this device**. Erases keys, room
   keys and the cached DAG. Not a "log out": there is no server session, the keys *are* the
   account, and without your 24 words the household is gone from this device.
-- **Person icon** (room header) — identity & devices: your member/household fingerprints, paired
-  devices, and QR pairing. Paste a device's `cairn:pair:1:…` code, compare the fingerprint shown
-  on both screens, and admit it. Revoking is permanent — a revoked key is treated as compromised
-  and cannot be re-paired.
+- **Add another device.** On the new device choose *Add this device to my account* — it shows a
+  QR code and waits. On a device you already use: **Identity & devices → Pair → Scan QR code**,
+  compare the fingerprint on both screens, approve. The new device is delegated by the one that
+  scanned it, and every room key you hold is re-wrapped to it (going forward, not history).
+  Revoking is permanent, and **cascades**: revoking a device also cuts off everything paired
+  from it, which the confirm dialog names before you agree.
 - **`/inlay greenhouse`** in the composer — posts a *declared inlay* rendered entirely from
   primitives by the generic role renderer. Also `poll`, `tasks`, `agent`, `widget`.
   `greenhouse` is deliberately **not** standard-library, so it demonstrates the per-room

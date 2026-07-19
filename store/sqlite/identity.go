@@ -20,7 +20,10 @@ const (
 	objDeviceRevoke     = "device_revoke"
 )
 
-func (s *Store) putIdentityObject(objType string, subjectPub []byte, obj any) error {
+// putIdentityObject stores one object. parentPub is the delegation's parent for
+// device delegations and nil otherwise — it exists so the device tree can be
+// walked downward (see DevicesUnder) without decoding every row's CBOR.
+func (s *Store) putIdentityObject(objType string, subjectPub, parentPub []byte, obj any) error {
 	blob, err := identity.Marshal(obj)
 	if err != nil {
 		return err
@@ -30,23 +33,96 @@ func (s *Store) putIdentityObject(objType string, subjectPub []byte, obj any) er
 		return err
 	}
 	_, err = s.db.Exec(
-		`INSERT OR IGNORE INTO identity_log(hash,obj_type,subject_pub,cbor) VALUES(?,?,?,?)`,
-		hash[:], objType, subjectPub, blob,
+		`INSERT OR IGNORE INTO identity_log(hash,obj_type,subject_pub,parent_pub,cbor) VALUES(?,?,?,?,?)`,
+		hash[:], objType, subjectPub, parentPub, blob,
 	)
 	return err
 }
 
 func (s *Store) PutAttestation(a *identity.IdentityAttestation) error {
-	return s.putIdentityObject(objAttestation, a.Pubkey, a)
+	return s.putIdentityObject(objAttestation, a.Pubkey, nil, a)
 }
 func (s *Store) PutDeviceDelegation(d *identity.DeviceDelegation) error {
-	return s.putIdentityObject(objDeviceDelegation, d.DevicePub, d)
+	return s.putIdentityObject(objDeviceDelegation, d.DevicePub, d.ParentPub, d)
 }
 func (s *Store) PutSessionDelegation(d *identity.SessionDelegation) error {
-	return s.putIdentityObject(objSessionDeleg, d.SessionPub, d)
+	return s.putIdentityObject(objSessionDeleg, d.SessionPub, nil, d)
 }
 func (s *Store) PutDeviceRevoke(d *identity.DeviceRevoke) error {
-	return s.putIdentityObject(objDeviceRevoke, d.DevicePub, d)
+	return s.putIdentityObject(objDeviceRevoke, d.DevicePub, nil, d)
+}
+
+// DevicesUnder returns every non-revoked device key in memberPub's tree, at any
+// depth. This is the wrap target set for a member: room keys are sealed to
+// DEVICE keys, so admitting a member means sealing to each of their devices.
+//
+// A device is excluded if it OR any ancestor is revoked — the same cascade the
+// chain walk applies, so this never hands a key to a device that has in fact
+// stopped working. Bounded by identity.MaxChainDepth.
+func (s *Store) DevicesUnder(memberPub []byte) ([][]byte, error) {
+	frontier := [][]byte{memberPub}
+	var out [][]byte
+
+	for range identity.MaxChainDepth {
+		// Collect this level's children FIRST, closing each cursor before doing
+		// anything else with the connection. The revocation check below is
+		// another query, and issuing it while a rows cursor is still open on the
+		// same connection deadlocks.
+		var children [][]byte
+		for _, parent := range frontier {
+			rows, err := s.db.Query(
+				`SELECT subject_pub FROM identity_log WHERE obj_type=? AND parent_pub=?`,
+				objDeviceDelegation, parent,
+			)
+			if err != nil {
+				return nil, err
+			}
+			for rows.Next() {
+				var child []byte
+				if err := rows.Scan(&child); err != nil {
+					rows.Close()
+					return nil, err
+				}
+				children = append(children, child)
+			}
+			err = rows.Err()
+			rows.Close()
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		var next [][]byte
+		for _, child := range children {
+			// A revoked device takes its whole subtree with it: not descending
+			// into it is what makes the cascade apply to the wrap set too.
+			if s.DeviceRevoked(child) {
+				continue
+			}
+			next = append(next, child)
+			out = append(out, child)
+		}
+		if len(next) == 0 {
+			break
+		}
+		frontier = next
+	}
+	return out, nil
+}
+
+// DeviceRevoked reports whether a revocation object exists for devicePub.
+//
+// NOTE: this does NOT check that the revoker had standing — the table files an
+// object under whatever subject it names. It is used only where a conservative
+// answer is right (excluding a device from a key wrap), never to decide whether
+// to accept a sender; VerifySender does that against the delegation tree.
+func (s *Store) DeviceRevoked(devicePub []byte) bool {
+	var one int
+	err := s.db.QueryRow(
+		`SELECT 1 FROM identity_log WHERE obj_type=? AND subject_pub=? LIMIT 1`,
+		objDeviceRevoke, devicePub,
+	).Scan(&one)
+	return err == nil
 }
 
 // GetIdentityObject returns the raw CBOR of an object by its BLAKE3 hash, or
@@ -92,18 +168,15 @@ func (s *Store) DeviceDelegation(devicePub []byte) (*identity.DeviceDelegation, 
 	return &d, true
 }
 
-func (s *Store) DeviceRevoked(devicePub []byte) bool {
-	var one int
-	err := s.db.QueryRow(
-		`SELECT 1 FROM identity_log WHERE obj_type=? AND subject_pub=? LIMIT 1`, objDeviceRevoke, devicePub,
-	).Scan(&one)
-	return err == nil
-}
-
-// DeviceRevokeFor returns the revocation object itself, not just the boolean
-// DeviceRevoked answers. ResolveSender has to hand the actual signed revoke to
-// the client — telling a client "revoked, trust me" would make the server an
-// authority; giving it the signed object lets the client verify for itself.
+// DeviceRevokeFor implements identity.Resolver and serves ResolveSender.
+//
+// It deliberately returns the signed object rather than a verdict. This table
+// files an object under whatever subject_pub it names, with no check that the
+// signer had any standing to revoke it — so "a row exists" is not "this device
+// is revoked". VerifySender decides that, by checking the revoke against the
+// delegation. Handing clients the object rather than a boolean serves the same
+// principle over the wire: telling a client "revoked, trust me" would make the
+// server an authority.
 func (s *Store) DeviceRevokeFor(devicePub []byte) (*identity.DeviceRevoke, bool) {
 	var d identity.DeviceRevoke
 	if !s.lookup(objDeviceRevoke, devicePub, &d) {

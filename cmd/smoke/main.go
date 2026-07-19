@@ -37,10 +37,14 @@ func main() {
 	// that chains to a trusted household root. As a standalone client, we ARE our
 	// own household of one — publishing our self-attestation founds it on a fresh
 	// carrier (adoption) so our events verify. Skipping this yields PermissionDenied.
-	att, dd, err := identity.SelfHousehold(kp, identity.KindHuman, nil, "smoke", 1)
+	//
+	// Events are signed by the DERIVED DEVICE key, not by kp: kp is the root, and
+	// roots are attested rather than delegated, so kp has no chain of its own.
+	att, dd, device, err := identity.SelfHousehold(kp, identity.KindHuman, nil, "smoke", 1)
 	if err != nil {
 		log.Fatal(err)
 	}
+	kp = device
 	for _, obj := range []any{att, dd} {
 		blob, err := identity.Marshal(obj)
 		if err != nil {

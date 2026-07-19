@@ -238,9 +238,34 @@ message ListSpaceMembersResponse { repeated SpaceMemberInfo members = 1; }
 message ResolveSenderRequest { bytes sender_pub = 1; }
 message ResolveSenderResponse {
   bytes session_delegation = 1; // CBOR, empty if the sender is a device key
-  bytes device_delegation = 2;  // CBOR, empty if unknown
-  bytes attestation = 3;        // CBOR, empty if unknown
-  bytes device_revoke = 4;      // CBOR, empty if not revoked
+  bytes attestation = 3;        // CBOR of the member root's attestation, empty if unknown
+
+  // The device delegation chain, LEAF FIRST: the sender's own device, then the
+  // device that paired it, and so on up to the one a member root signed.
+  // Devices pair devices, so this is a walk of unbounded length rather than the
+  // single hop it used to be, and the client needs every link to verify any of
+  // them. Truncated at the server's depth limit.
+  repeated bytes device_delegations = 5;
+
+  // Revocations for any device on that chain. A revoke of an ANCESTOR is what
+  // makes the sender invalid, so sending only the sender's own revoke would let
+  // a client accept a device whose parent was revoked underneath it.
+  repeated bytes device_revokes = 6;
+
+  reserved 2, 4; // singular device_delegation / device_revoke, pre-tree
+  reserved "device_delegation", "device_revoke";
+}
+
+message ListMemberDevicesRequest {
+  bytes member_pub = 1;
+}
+
+// The device keys a room key must be wrapped to for this member. Room keys seal
+// to DEVICE keys, not the member root — the member root is offline — so a client
+// admitting a member needs their whole device set. Revoked devices and anything
+// paired from them are excluded.
+message ListMemberDevicesResponse {
+  repeated bytes device_pubs = 1;
 }
 
 service CairnService {
@@ -252,5 +277,6 @@ service CairnService {
   rpc ResolveSender(ResolveSenderRequest) returns (ResolveSenderResponse);
   rpc ListRooms(ListRoomsRequest) returns (ListRoomsResponse);
   rpc ListSpaceMembers(ListSpaceMembersRequest) returns (ListSpaceMembersResponse);
+  rpc ListMemberDevices(ListMemberDevicesRequest) returns (ListMemberDevicesResponse);
   // Realtime push is SSE (see PROTOCOL.md §API), not a proto stream.
 }

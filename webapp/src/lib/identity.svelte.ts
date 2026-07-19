@@ -2,13 +2,37 @@
 // (rooms/DAG) because identity outlives any room and is read by the shell before
 // the app is usable at all.
 
-import { loadIdentity, forgetIdentity, resetDevice, hex, type Identity } from './vault'
-import { signSessionDelegation, type SessionDelegation } from './identity'
+import {
+  loadIdentity,
+  forgetIdentity,
+  resetDevice,
+  hex,
+  pendingDevicePairing,
+  completeDevicePairing,
+  recoverWithAttestation,
+  type Identity,
+} from './vault'
+import {
+  memberRootFromMnemonic,
+  signSessionDelegation,
+  type SessionDelegation,
+  type DeviceDelegation,
+  type IdentityAttestation,
+} from './identity'
 import { sessionPub } from './crypto'
 import { directory } from './directory.svelte'
 import { roomStore } from './rooms.svelte'
 import { cairn } from './api'
-import { encode as cborEncode, type CborValue } from './cbor'
+import { encode as cborEncode, decode as cborDecode, type CborValue } from './cbor'
+
+/** Decode one identity-log object, or null if it is malformed. */
+function decodeIdentityObject<T>(b: Uint8Array): T | null {
+  try {
+    return cborDecode(b) as T
+  } catch {
+    return null
+  }
+}
 
 /** Session delegations are short-lived; a tab re-mints one each load. */
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000
@@ -93,6 +117,77 @@ class IdentityState {
     } catch {
       return false
     }
+  }
+
+  /**
+   * Poll for this device's pairing approval.
+   *
+   * The new device holds only its own key, so it asks the carrier to resolve
+   * that key and watches for a delegation chain plus an attestation to appear —
+   * published by whichever device approved the scan. Everything is re-verified
+   * locally in `completeDevicePairing`; the carrier is a mailbox here, not an
+   * authority.
+   *
+   * Returns the identity once paired, or null while still waiting. Errors from
+   * a bad or mismatched approval are thrown, because those need the human to see
+   * them rather than being retried forever.
+   */
+  async pollPairing(): Promise<Identity | null> {
+    const pending = pendingDevicePairing()
+    if (!pending) return null
+
+    let res
+    try {
+      res = await cairn.resolveSender({ senderPub: pending.devicePub })
+    } catch {
+      return null // offline; the caller polls again
+    }
+    const chain = (res.deviceDelegations ?? [])
+      .map((b) => decodeIdentityObject<DeviceDelegation>(b))
+      .filter((d): d is DeviceDelegation => d !== null)
+    const att = res.attestation
+      ? decodeIdentityObject<IdentityAttestation>(res.attestation)
+      : null
+    if (!chain.length || !att) return null // approval hasn't landed yet
+
+    const id = completeDevicePairing(chain, att)
+    this.set(id)
+    return id
+  }
+
+  /**
+   * Recover a NON-founder from their member phrase alone, by fetching the
+   * attestation the household signed for them when they joined.
+   *
+   * They never saw the household phrase, so they cannot re-attest themselves —
+   * but they do not need to: the attestation is already published, and it is
+   * verified locally before anything is written.
+   */
+  async recoverFromCarrier(memberMnemonic: string, deviceLabel: string): Promise<Identity> {
+    const memberPub = memberRootFromMnemonic(memberMnemonic).pub
+    let res
+    try {
+      res = await cairn.resolveSender({ senderPub: memberPub })
+    } catch {
+      throw new Error(
+        'Cannot reach the carrier to look up your account. Recovery this way needs a ' +
+          'connection — or use the household phrase, if you have it.',
+      )
+    }
+    const att = res.attestation
+      ? decodeIdentityObject<IdentityAttestation>(res.attestation)
+      : null
+    if (!att) {
+      throw new Error(
+        'No account was found for those words on this server. Either the phrase is wrong, ' +
+          'or nobody has published your attestation here — ask a household member to ' +
+          'invite you again.',
+      )
+    }
+    const restored = recoverWithAttestation(memberMnemonic, att, deviceLabel)
+    restored.commit()
+    this.set(restored.identity)
+    return restored.identity
   }
 
   set(id: Identity) {

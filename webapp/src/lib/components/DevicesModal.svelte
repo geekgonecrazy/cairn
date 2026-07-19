@@ -3,11 +3,13 @@
   // devices you've admitted, and the QR pairing flow (MILESTONES Phase 4).
   import QRCode from 'qrcode'
   import Icon from '../Icon.svelte'
+  import QrScanner from './QrScanner.svelte'
   import { identity } from '../identity.svelte'
   import {
     admitDevice,
     revokePeerDevice,
     peerDevices,
+    subtreeOf,
     fingerprint,
     hex,
     type PeerDevice,
@@ -16,66 +18,13 @@
     encodePairingRequest,
     newPairingRequest,
     parsePairingRequest,
-    parseJoinRequest,
-    validateMnemonicPhrase,
   } from '../identity'
-  import { attestJoinRequest } from '../vault'
   import { app } from '../state.svelte'
 
   let { onclose }: { onclose: () => void } = $props()
 
   type Tab = 'identity' | 'members' | 'devices' | 'pair'
   let tab = $state<Tab>('identity')
-
-  // Members tab: attest someone else's join code with the household words.
-  let joinCodeIn = $state('')
-  let inviterWords = $state('')
-  let inviterPass = $state('')
-  let inviteOut = $state('')
-  let memberError = $state('')
-  let memberName = $state('')
-
-  function inspectJoin() {
-    memberError = ''
-    inviteOut = ''
-    memberName = ''
-    if (!joinCodeIn.trim()) return
-    try {
-      memberName = parseJoinRequest(joinCodeIn).displayName
-    } catch (e) {
-      memberError = e instanceof Error ? e.message : String(e)
-    }
-  }
-
-  async function makeInvite() {
-    memberError = ''
-    inviteOut = ''
-    const bad = validateMnemonicPhrase(inviterWords)
-    if (bad) {
-      memberError = bad
-      return
-    }
-    try {
-      const newcomer = parseJoinRequest(joinCodeIn).memberPub
-      inviteOut = attestJoinRequest(inviterWords, inviterPass, joinCodeIn)
-      // The words were only needed for this signature; don't leave them around.
-      inviterWords = ''
-      inviterPass = ''
-      // Grant SPACE membership so the newcomer lands with the household's
-      // discoverable rooms visible (locked) instead of an empty sidebar. This is
-      // discovery only — it wraps no room key, so they still can't read anything
-      // until a room member adds them. Non-fatal if it can't reach the carrier:
-      // the attestation above is the essential artifact; discovery can be granted
-      // again later.
-      try {
-        await app.addSpaceMember(newcomer)
-      } catch {
-        /* carrier unreachable — the invite blob still works; retry discovery later */
-      }
-    } catch (e) {
-      memberError = e instanceof Error ? e.message : String(e)
-    }
-  }
 
   async function copy(s: string) {
     try {
@@ -110,6 +59,8 @@
   let parsedLabel = $state('')
   let pairError = $state('')
   let pairDone = $state('')
+  let scanning = $state(false)
+  let confirmRevoke = $state<PeerDevice | null>(null)
 
   const id = $derived(identity.current)
 
@@ -139,13 +90,41 @@
     }
   }
 
-  function confirmPair() {
+  async function confirmPair() {
     if (!id) return
+    pairError = ''
     try {
       const req = parsePairingRequest(pasted)
-      admitDevice(id, req.devicePub, req.label || 'paired device')
+      const delegation = admitDevice(id, req.devicePub, req.label || 'paired device')
       devices = peerDevices()
-      pairDone = `Paired ${req.label || 'device'}.`
+
+      // The delegation has to REACH the new device, which holds only its own
+      // key and is polling the carrier for exactly this. Minting it locally and
+      // stopping — which is what this did before — left the new device stuck on
+      // its waiting screen forever.
+      const published = await identity.publishObject(
+        delegation as unknown as Record<string, unknown>,
+      )
+      if (!published) {
+        pairError =
+          `Approved on this device, but it could not be published — the new device is ` +
+          `still waiting. Reconnect and use "Retry publishing".`
+        return
+      }
+      // Also publish OUR attestation and chain, or the new device can verify the
+      // delegation but cannot see what account it belongs to.
+      await identity.publish()
+
+      // Room keys seal to device keys, so the new device can read nothing until
+      // each room we hold is rotated to include it. We can do this alone.
+      pairDone = `Paired ${req.label || 'device'}. Sharing room keys…`
+      const { rooms, failed } = await app.rewrapForNewDevice()
+      pairDone =
+        failed > 0
+          ? `Paired ${req.label || 'device'}. Shared keys for ${rooms} room(s); ${failed} could ` +
+            `not be shared — that device won't see those until you retry while online.`
+          : `Paired ${req.label || 'device'}. It can now read ${rooms} room(s) going forward ` +
+            `(not older messages).`
       pasted = ''
       parsedFp = ''
       parsedLabel = ''
@@ -154,11 +133,65 @@
     }
   }
 
+  function onScanned(text: string) {
+    scanning = false
+    pasted = text.trim()
+    inspect() // same untrusted-input path as a paste; the human still compares
+  }
+
+  /**
+   * Devices that will ALSO stop working if `d` is revoked — everything paired
+   * from it, at any depth. The cascade is automatic (a descendant's chain runs
+   * through the revoked device), so it must be shown before confirming or it is
+   * invisible until someone's other device silently dies.
+   */
+  /** Human name for the device (or member root) that admitted `d`. */
+  function parentLabel(d: PeerDevice): string {
+    if (!id) return 'unknown'
+    const parent = hex(d.delegation.parent_pub)
+    if (parent === hex(id.devicePub)) return `${id.deviceLabel} (this device)`
+    if (parent === hex(id.memberPub)) return 'your recovery phrase'
+    const p = devices.find((x) => hex(x.delegation.device_pub) === parent)
+    return p ? p.label : `cairn:${parent.slice(0, 6)}`
+  }
+
+  function cascadeOf(d: PeerDevice): PeerDevice[] {
+    const doomed = subtreeOf(d.delegation.device_pub).map(hex)
+    return devices.filter(
+      (x) =>
+        !x.revoked &&
+        hex(x.delegation.device_pub) !== hex(d.delegation.device_pub) &&
+        doomed.includes(hex(x.delegation.device_pub)),
+    )
+  }
+
   async function revoke(d: PeerDevice) {
     if (!id) return
     revokeError = ''
+    confirmRevoke = null
+    const cascade = cascadeOf(d)
     const dr = revokePeerDevice(id, d.delegation.device_pub)
     devices = peerDevices()
+
+    // Rotate every room we hold so the revoked device — and its whole subtree —
+    // is excluded from the next epoch. Without this the revoke only stops them
+    // SIGNING; they would keep reading, because they still hold the current key.
+    let rotateNote = ''
+    try {
+      const { failed } = await app.rewrapForNewDevice()
+      if (failed > 0) {
+        rotateNote =
+          ` ${failed} room(s) could not be re-keyed — that device can still read those ` +
+          `until you retry while online.`
+      }
+    } catch {
+      rotateNote = ' Rooms could not be re-keyed; that device can still read them for now.'
+    }
+    if (cascade.length) {
+      pairDone =
+        `Revoked ${d.label}, and with it ${cascade.length} device(s) it had admitted: ` +
+        cascade.map((x) => x.label).join(', ') + '.'
+    }
 
     // The local record is already updated — but until the signed revoke reaches
     // the carrier, every OTHER member still trusts this key. Say so plainly
@@ -167,7 +200,10 @@
     if (!published) {
       revokeError =
         `Revoked on this device, but it could not be published — other members will ` +
-        `still accept "${d.label}" until you reconnect. Reopen this screen once you're online.`
+        `still accept "${d.label}" until you reconnect. Reopen this screen once you're online.` +
+        rotateNote
+    } else if (rotateNote) {
+      revokeError = `Revocation published.${rotateNote}`
     }
   }
 
@@ -283,49 +319,22 @@
       <section>
         <h3>Add someone to the household</h3>
         <p class="muted">
-          Paste the join code they sent you, then enter the household's 24 words to approve it.
-          The words are used to sign this one invite and are not stored — that's why you need
-          them each time.
+          Admitting a member is done on the server with <code>cairnctl</code>, not here. It
+          needs the household's 24 words, and those should never be typed into a browser —
+          they can vouch for anyone as anyone, and a web page is reachable by extensions,
+          autofill and devtools history in a way a terminal is not.
         </p>
-        <textarea
-          bind:value={joinCodeIn}
-          rows="2"
-          placeholder="cairn:join:1:…"
-          spellcheck="false"
-          autocapitalize="none"
-          oninput={inspectJoin}
-        ></textarea>
-
-        {#if memberName}
-          <p class="muted small">
-            This code says it's from <strong>{memberName}</strong>. Only approve it if you
-            were expecting it from them.
-          </p>
-          <label class="lbl" for="hh-words">Household recovery phrase</label>
-          <textarea
-            id="hh-words"
-            bind:value={inviterWords}
-            rows="3"
-            placeholder="the 24 words"
-            spellcheck="false"
-            autocapitalize="none"
-          ></textarea>
-          <label class="lbl" for="hh-pass">Passphrase (only if your household uses one)</label>
-          <input id="hh-pass" type="password" bind:value={inviterPass} autocomplete="off" />
-          <div class="row">
-            <button class="primary" onclick={makeInvite}>Approve &amp; create invite</button>
-          </div>
-        {/if}
-
-        {#if memberError}<p class="error" role="alert">{memberError}</p>{/if}
-
-        {#if inviteOut}
-          <p class="ok" role="status">Invite created — send this back to them.</p>
-          <code class="code">{inviteOut}</code>
-          <div class="row">
-            <button class="primary" onclick={() => copy(inviteOut)}>Copy invite</button>
-          </div>
-        {/if}
+        <p class="muted">
+          Ask them to open Cairn, choose <strong>Join a household</strong>, and send you the
+          join code it shows. Then on the machine running Cairn:
+        </p>
+        <code class="code">cairnctl attest &lt;their join code&gt;</code>
+        <p class="muted">
+          It prints an invite to send back, and shows the household fingerprint they should
+          see when they paste it — compare that out loud. An invite's origin is self-declared,
+          so a stranger's household verifies its own signature perfectly; the fingerprint
+          comparison is what actually distinguishes them.
+        </p>
       </section>
 
     {:else if tab === 'devices'}
@@ -343,11 +352,38 @@
                   {#if d.revoked}<span class="tag danger">revoked</span>{/if}
                 </div>
                 <div class="mono small">{fingerprint(d.delegation.device_pub)}</div>
+                <!-- Who admitted it. Devices pair devices, so this is the edge
+                     that makes the cascade legible: revoking a parent revokes
+                     everything under it. -->
+                <div class="small muted">admitted by {parentLabel(d)}</div>
               </div>
               {#if !d.revoked}
-                <button class="danger-btn" onclick={() => revoke(d)}>Revoke</button>
+                <button class="danger-btn" onclick={() => (confirmRevoke = d)}>Revoke</button>
               {/if}
             </li>
+            {#if confirmRevoke && hex(confirmRevoke.delegation.device_pub) === hex(d.delegation.device_pub)}
+              <li class="confirm-revoke">
+                <p class="muted small">
+                  <strong>Revoke {d.label}?</strong> This is permanent — a revoked key is
+                  treated as compromised and can never be paired again.
+                </p>
+                {#if cascadeOf(d).length}
+                  <p class="cascade" role="alert">
+                    This also cuts off {cascadeOf(d).length} device(s) admitted from it:
+                    <strong>{cascadeOf(d).map((x) => x.label).join(', ')}</strong>. They chain
+                    through {d.label}, so they stop working too.
+                  </p>
+                {/if}
+                <p class="muted small">
+                  It keeps whatever it could already read; rooms are re-keyed so it reads
+                  nothing new.
+                </p>
+                <div class="row two">
+                  <button class="ghost-btn" onclick={() => (confirmRevoke = null)}>Cancel</button>
+                  <button class="danger-btn" onclick={() => revoke(d)}>Revoke it</button>
+                </div>
+              </li>
+            {/if}
           {/each}
         </ul>
         {#if revokeError}
@@ -368,17 +404,31 @@
       <section>
         <h3>Admit a device</h3>
         <p class="muted">
-          On the new device, copy its pairing code and paste it here. Compare the fingerprint
-          on both screens before you confirm.
+          Scan the QR code on the new device, or paste its pairing code. Compare the
+          fingerprint on both screens before you confirm — that comparison is the whole
+          security of pairing, since anyone can point a camera at anything.
         </p>
-        <textarea
-          bind:value={pasted}
-          rows="3"
-          placeholder="cairn:pair:1:…"
-          spellcheck="false"
-          autocapitalize="none"
-          oninput={inspect}
-        ></textarea>
+
+        {#if scanning}
+          <QrScanner onscan={onScanned} oncancel={() => (scanning = false)} />
+        {:else}
+          <div class="row">
+            <button class="primary" onclick={() => (scanning = true)}>
+              <Icon name="camera" /> Scan QR code
+            </button>
+          </div>
+          <details>
+            <summary>Or paste the code</summary>
+            <textarea
+              bind:value={pasted}
+              rows="3"
+              placeholder="cairn:pair:1:…"
+              spellcheck="false"
+              autocapitalize="none"
+              oninput={inspect}
+            ></textarea>
+          </details>
+        {/if}
         {#if pairError}<p class="error" role="alert">{pairError}</p>{/if}
         {#if parsedFp}
           <div class="confirm">
@@ -593,6 +643,29 @@
   .devices li.revoked {
     opacity: 0.55;
   }
+  .devices li.confirm-revoke {
+    display: block;
+    background: var(--surface-2);
+    border-color: var(--danger-soft, #fecaca);
+  }
+  .cascade {
+    margin: 8px 0;
+    padding: 10px 12px;
+    border-radius: var(--r-2, 8px);
+    background: var(--danger-soft, #fee2e2);
+    color: var(--danger, #b91c1c);
+    font-size: 12px;
+    line-height: 1.55;
+  }
+  details {
+    margin-top: 10px;
+  }
+  details summary {
+    font-size: 12px;
+    color: var(--text-3);
+    cursor: pointer;
+    min-height: 32px;
+  }
   .d-name {
     font-size: 13px;
     font-weight: 550;
@@ -682,25 +755,6 @@
     color: var(--danger, #dc2626);
     font-size: 13px;
     margin: 8px 0 0;
-  }
-  .lbl {
-    display: block;
-    margin-top: 12px;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-3);
-  }
-  input[type='password'] {
-    width: 100%;
-    box-sizing: border-box;
-    margin-top: 6px;
-    padding: 10px;
-    font: inherit;
-    font-size: 15px;
-    color: var(--text);
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: var(--r-2, 8px);
   }
   .row {
     display: flex;
