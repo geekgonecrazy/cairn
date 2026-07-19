@@ -142,7 +142,9 @@ check('carrier lists the phone under the member',
   devs.devicePubs.map((d) => hex(d).slice(0, 12)).join(', '))
 
 // --- laptop: re-wrap room keys to the new device --------------------------
-const rotate = await buildRoomKeyRotate(roomId, [member.pub], [])
+// shareHistory=true mirrors what the app does at this step (rewrapForNewDevice):
+// pairing a device of OUR OWN re-wraps the backlog to it.
+const rotate = await buildRoomKeyRotate(roomId, [member.pub], [], true)
 await cairn.sendEvent({ event: rotate })
 const rotPayload = cborDecode(rotate.payload.subarray(1)) as any
 check('rotation wraps to the phone',
@@ -203,7 +205,10 @@ if (phoneIdentity) {
     }
   }
   check('phone can read messages sent AFTER pairing', sawAfter)
-  console.log(`  note  pre-pairing history readable: ${sawEarly} (not re-wrapped by design)`)
+  // Your own new device gets the backlog: the pairing rotation wraps the older
+  // epochs to every device of the member. Pre-join opacity is about new MEMBERS,
+  // not about a member's own devices.
+  check('phone can read pre-pairing history', sawEarly)
 }
 
 console.log(failures === 0 ? '\nPASS: device pairing works end to end' : `\nFAIL: ${failures} check(s) failed`)

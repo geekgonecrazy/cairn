@@ -832,9 +832,11 @@ class AppState {
    * published first. We can do this alone: no other member has to be online,
    * because we already hold these keys.
    *
-   * Only the CURRENT epoch travels this way. Backlog is deliberately not
-   * re-wrapped: pre-pairing history stays where it was, the same rule that
-   * governs a newly added member (see buildMemberAdd's share_history).
+   * The backlog travels too. This is NOT the newly-added-member case: those
+   * older epoch keys are already ours, and a paired device is the same member
+   * root, so wrapping them to it discloses nothing that member cannot already
+   * read on the device doing the wrapping. Adding a device and then finding an
+   * empty room is a bug from where the user stands.
    */
   async rewrapForNewDevice(): Promise<{ rooms: number; failed: number }> {
     let rooms = 0
@@ -846,7 +848,7 @@ class AppState {
           await cairn.sync({ roomId: utf8(r.id), haveHeads: [] })
         ).missing
         await this.deliver(
-          await buildRoomKeyRotate(r.id, this.rosterOf(events), localHeads(events)),
+          await buildRoomKeyRotate(r.id, this.rosterOf(events), localHeads(events), true),
         )
         rooms++
       } catch {
@@ -976,9 +978,17 @@ class AppState {
     await roomStore.refresh()
   }
 
-  /** Rotate the room key for the current membership. */
+  /**
+   * Rotate the room key for the current membership.
+   *
+   * Shares history with our own devices, because this is the recovery path
+   * checkRoomKey points people at ("hit Rotate key — that re-shares it to all
+   * your devices"). A rotation that re-shared only the new epoch would leave a
+   * device that paired earlier still staring at an empty room. Other members'
+   * devices get nothing extra: history_keys wrap to OUR member root alone.
+   */
   async rotateKey() {
-    const ev = await buildRoomKeyRotate(this.currentRoomId, this.roomMemberPubs(), localHeads(this.events))
+    const ev = await buildRoomKeyRotate(this.currentRoomId, this.roomMemberPubs(), localHeads(this.events), true)
     await this.ingest(ev, false)
     this.rebuild()
     await this.deliver(ev)

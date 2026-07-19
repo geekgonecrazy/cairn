@@ -961,14 +961,54 @@ export async function buildMemberAdd(
   )
 }
 
-/** Rotate the room key for the current membership (e.g. after a removal). */
+/**
+ * Rotate the room key for the current membership (e.g. after a removal).
+ *
+ * shareHistory additionally wraps the older epochs we hold to OUR OWN devices,
+ * which is what lets a newly paired device read the backlog. Unlike the
+ * member_add case this discloses nothing: every one of those keys is already
+ * held by the member doing the rotating, and a paired device belongs to that
+ * same member root. PROTOCOL.md §5 scopes pre-join opacity to new *members*;
+ * it says nothing about a member's own devices.
+ */
 export async function buildRoomKeyRotate(
   roomIdStr: string,
   memberPubs: Uint8Array[],
   parents: Uint8Array[],
+  shareHistory = false,
 ): Promise<Event> {
   const { epoch, wrapped_keys } = await mintEpoch(roomIdStr, memberPubs)
-  return buildCleartext(roomIdStr, EventType.ROOM_KEY_ROTATE, { epoch, wrapped_keys }, parents)
+
+  const payload: {
+    epoch: number
+    wrapped_keys: { [hex: string]: Uint8Array }
+    member_pub?: Uint8Array
+    history_shared?: boolean
+    history_keys?: { [epoch: string]: { [deviceHex: string]: Uint8Array } }
+  } = { epoch, wrapped_keys }
+
+  const memberPub = shareHistory ? myMemberPub() : null
+  if (memberPub) {
+    // Wrapped to ALL our devices, not just the new one: the wrap is addressed by
+    // device, and the roster of which device is "new" is exactly the thing that
+    // goes stale. Re-wrapping to every device we know is idempotent — a device
+    // that already holds an epoch skips it on apply (see applyKeyEvent).
+    const myDevices = await devicesForMembers([memberPub])
+    const history_keys: { [epoch: string]: { [deviceHex: string]: Uint8Array } } = {}
+    for (const { epoch: e, raw } of heldEpochs(roomIdStr)) {
+      if (e >= epoch) continue
+      const perDevice: { [deviceHex: string]: Uint8Array } = {}
+      for (const pub of myDevices) {
+        perDevice[hexStr(pub)] = await wrapKeyTo(pub, raw)
+      }
+      history_keys[String(e)] = perDevice
+    }
+    payload.member_pub = memberPub
+    payload.history_shared = true
+    payload.history_keys = history_keys
+  }
+
+  return buildCleartext(roomIdStr, EventType.ROOM_KEY_ROTATE, payload, parents)
 }
 
 /** On receiving a member_add/room_key_rotate, unwrap my epoch key if present.
