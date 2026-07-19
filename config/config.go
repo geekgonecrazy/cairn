@@ -31,6 +31,19 @@ type Configuration struct {
 	// Empty during early dev = accept any well-formed signed event (no chain
 	// gate); once set, senders must chain to one of these roots.
 	TrustedRoots []string `yaml:"trustedRoots" json:"trustedRoots"`
+	// TLSCertFile/TLSKeyFile, if both set, make cairnd serve HTTPS instead of
+	// cleartext.
+	//
+	// Not a deployment nicety — the webapp does not FUNCTION without it. Browsers
+	// expose crypto.subtle only in a secure context (HTTPS, or localhost), and
+	// every key operation in the client goes through it. Reached over a LAN IP on
+	// plain HTTP, the app fails deep inside HPKE with "undefined is not an object
+	// (evaluating 'this._api.importKey')", because crypto.subtle is undefined.
+	//
+	// A self-signed cert is enough: clicking through the browser warning still
+	// yields a secure context.
+	TLSCertFile string `yaml:"tlsCertFile" json:"tlsCertFile"`
+	TLSKeyFile  string `yaml:"tlsKeyFile" json:"tlsKeyFile"`
 }
 
 // Config is the loaded configuration (rfd-tool/flockledger package-var style).

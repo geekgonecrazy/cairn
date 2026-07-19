@@ -54,6 +54,18 @@ func Start() error {
 		}
 	}
 
+	// With TLS, HTTP/2 is negotiated by ALPN, so the h2c wrapper is neither
+	// needed nor wanted — h2c is the cleartext fallback for native gRPC clients.
+	cert, key := config.Config.TLSCertFile, config.Config.TLSKeyFile
+	if cert != "" && key != "" {
+		srv := &http.Server{Addr: config.Config.Address, Handler: withCORS(mux)}
+		log.Printf("cairnd listening on %s (TLS)", config.Config.Address)
+		return srv.ListenAndServeTLS(cert, key)
+	}
+	if cert != "" || key != "" {
+		log.Printf("router: tlsCertFile and tlsKeyFile must BOTH be set; serving cleartext")
+	}
+
 	srv := &http.Server{
 		Addr:    config.Config.Address,
 		Handler: h2c.NewHandler(withCORS(mux), &http2.Server{}),

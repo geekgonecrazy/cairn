@@ -8,6 +8,7 @@ trusted-roots.txt
 # Go
 /cairnd
 /agent
+/cairnctl
 *.db
 *.db-shm
 *.db-wal
@@ -29,3 +30,8 @@ mise.local.toml
 
 # blob store (local data-plane stand-in)
 cairn-blobs/
+
+# Dev TLS material. The webapp needs a secure context to have crypto.subtle at
+# all, so a LAN dev node needs HTTPS — but a self-signed keypair is per-machine
+# and the key is unencrypted. Generate your own; see config.example.yaml.
+tls/

@@ -39,3 +39,20 @@ blobDir: "cairn-blobs"
 # key and the human's household root).
 trustedRoots: []
 #   - "3f1a...."
+
+# --- TLS -------------------------------------------------------------------
+# Set BOTH to serve HTTPS. This is not a deployment nicety: browsers expose
+# crypto.subtle only in a secure context (HTTPS, or localhost), and every key
+# operation in the webapp goes through it. Served over plain HTTP on a LAN IP,
+# the app fails deep inside HPKE with "undefined is not an object (evaluating
+# 'this._api.importKey')" — crypto.subtle is simply undefined there.
+#
+# A self-signed cert is enough; clicking through the browser warning still
+# yields a secure context. Generate one covering the addresses you use:
+#
+#   openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
+#     -keyout tls/dev-key.pem -out tls/dev-cert.pem -subj "/CN=cairn-dev" \
+#     -addext "subjectAltName=IP:192.168.1.10,IP:127.0.0.1,DNS:localhost"
+#
+# tlsCertFile: tls/dev-cert.pem
+# tlsKeyFile: tls/dev-key.pem
