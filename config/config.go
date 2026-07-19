@@ -48,12 +48,17 @@ func defaults() Configuration {
 
 // Load reads path into Config, applying defaults for any unset field. A missing
 // file is not an error — Config becomes the defaults.
+//
+// trusted-roots.txt is loaded either way. `cairnctl init` writes it and reports
+// "trusted via: trusted-roots.txt", and a node founded that way usually has no
+// config.yaml at all; returning early here left the carrier refusing every event
+// against a root it had just written.
 func Load(path string) error {
 	Config = defaults()
 
 	b, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return nil
+		return loadTrustedRootsFile(path)
 	}
 	if err != nil {
 		return fmt.Errorf("config: read %s: %w", path, err)

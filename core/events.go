@@ -1,9 +1,11 @@
 package core
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/geekgonecrazy/cairn/event"
@@ -41,6 +43,14 @@ func SubmitEvent(ev *cairnv1.Event) error {
 		return ErrAwaitingFounding
 	}
 	if _, err := identity.VerifySender(ev.SenderPub, st, roots, time.Now().UnixMilli()); err != nil {
+		// Log it. A refusal the operator cannot see is indistinguishable from a
+		// client bug, and the client only ever shows its own guess at the cause.
+		anchors := make([]string, len(roots))
+		for i, r := range roots {
+			anchors[i] = hex.EncodeToString(r)
+		}
+		log.Printf("REJECT event type=%s sender=%x: %v (trusting %d root(s): %s)",
+			ev.Type, ev.SenderPub, err, len(roots), strings.Join(anchors, ", "))
 		return fmt.Errorf("core: sender not verified: %w", err)
 	}
 
