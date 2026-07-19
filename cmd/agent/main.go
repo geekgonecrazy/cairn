@@ -41,15 +41,214 @@ import (
 	"github.com/geekgonecrazy/cairn/room"
 )
 
-// Declaration content addresses from the browser's standard library
-// (webapp/src/lib/inlay/registry.ts). These are BLAKE3 over each declaration's
-// deterministic CBOR, so they are stable identifiers a non-browser client can
-// reference without shipping the declarations themselves.
-const (
-	cidPoll       = "b732d156878e8bb353ab31dd32b15be7de9da785ebff5da360f0702d875b7ede"
-	cidTaskList   = "f78db9a8f5689f47101ca9f746fed25a024a67755f74f9aeb22640521db1b12a"
-	cidAgentPanel = "b85178955252eda88350d00912c62b9ef0a37275ed9de0a790fadb62815aca22"
-	cidGreenhouse = "0b552673e6e578a999d02a084428da614d2313018da4d898de7181f03a7c5a9c"
+// declaration is an inlay declaration this agent DEFINES and publishes.
+//
+// These used to be hashes copied from the browser's standard library, which
+// meant the agent could only reference UI the client already shipped. It now
+// defines its own and publishes them as INLAY_DECL events, which is the point:
+// an agent composes whatever UI its job needs, and the client learns it from
+// the event. Nothing here is special-cased in any renderer.
+type declaration struct {
+	decl map[string]any
+	cid  string
+}
+
+// declare computes the declaration's content address the same way every client
+// does — BLAKE3 over its deterministic CBOR. Deriving it rather than hardcoding
+// it is what keeps the cid honest when the declaration is edited.
+func declare(decl map[string]any) declaration {
+	sum, err := identity.Hash(decl)
+	if err != nil {
+		log.Fatalf("agent: hash declaration %v: %v", decl["name"], err)
+	}
+	return declaration{decl: decl, cid: hex.EncodeToString(sum[:])}
+}
+
+// The examples this agent ships. Moved out of the webapp: a card only the client
+// could render was proving the renderer, not the protocol.
+var (
+	declPoll = declare(map[string]any{
+		"name":       "poll",
+		"version":    1,
+		"authorless": true,
+		"schema": map[string]any{
+			"role":   "group",
+			"header": map[string]any{"role": "text", "bind": "question", "emphasis": "title"},
+			"children": []any{
+				map[string]any{
+					"role": "list", "bind": "options", "empty": "No options.",
+					"item": map[string]any{
+						"role": "group",
+						"children": []any{
+							map[string]any{"role": "text", "bind": "label"},
+							map[string]any{"role": "progress_fraction", "bind": "share", "polarity": "neutral"},
+						},
+					},
+				},
+			},
+		},
+		"actions": []any{map[string]any{"id": "vote", "label": "Vote", "kind": "immediate", "variant": "primary"}},
+	})
+
+	declTaskList = declare(map[string]any{
+		"name":         "task_list",
+		"version":      1,
+		"bound_events": []any{"task_request", "task_update"},
+		"schema": map[string]any{
+			"role":   "group",
+			"header": map[string]any{"role": "text", "bind": "title", "emphasis": "title"},
+			"children": []any{
+				map[string]any{
+					"role": "record", "cols": 3,
+					"fields": []any{
+						map[string]any{"key": "Running", "node": map[string]any{"role": "number", "bind": "summary.running"}},
+						map[string]any{"key": "Queued", "node": map[string]any{"role": "number", "bind": "summary.queued"}},
+						map[string]any{"key": "Done today", "node": map[string]any{"role": "number", "bind": "summary.done"}},
+					},
+				},
+				map[string]any{
+					"role": "list", "bind": "tasks", "empty": "Nothing queued.",
+					"item": map[string]any{
+						"role": "group",
+						"children": []any{
+							map[string]any{"role": "text", "bind": "name"},
+							map[string]any{"role": "status_enum", "bind": "status"},
+							map[string]any{"role": "progress_fraction", "bind": "progress"},
+						},
+					},
+				},
+			},
+		},
+		"actions": []any{map[string]any{"id": "add_task", "label": "Add task", "kind": "modal", "variant": "primary"}},
+	})
+
+	// Composition by hash: a panel embeds the task list via inlay_ref, so the
+	// agent must publish BOTH declarations or the panel renders with a hole.
+	declAgentPanel = declare(map[string]any{
+		"name":    "agent_panel",
+		"version": 1,
+		"schema": map[string]any{
+			"role":   "group",
+			"header": map[string]any{"role": "text", "bind": "agent", "emphasis": "title"},
+			"children": []any{
+				map[string]any{"role": "status_enum", "bind": "status"},
+				map[string]any{"role": "inlay_ref", "decl_cid": declTaskList.cid},
+				map[string]any{
+					"role":   "group",
+					"header": map[string]any{"role": "text", "value": "Capabilities", "emphasis": "note"},
+					"children": []any{
+						map[string]any{
+							"role": "list", "bind": "capabilities", "empty": "No capabilities granted.",
+							"item": map[string]any{
+								"role": "group",
+								"children": []any{
+									map[string]any{"role": "text", "bind": "name"},
+									map[string]any{"role": "status_enum", "bind": "policy"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		"actions": []any{
+			map[string]any{"id": "configure", "label": "Configure", "kind": "modal"},
+			map[string]any{"id": "logs", "label": "Logs", "kind": "immediate", "variant": "ghost"},
+		},
+	})
+
+	// A PANEL declaration: the agent's standing status, pinned beside the room
+	// rather than posted into it. Panels are for what is CURRENTLY true; the
+	// timeline is for what happened.
+	declAgentStatus = declare(map[string]any{
+		"name":    "agent_status",
+		"version": 1,
+		"schema": map[string]any{
+			"role":   "group",
+			"header": map[string]any{"role": "text", "bind": "agent", "emphasis": "title"},
+			"children": []any{
+				map[string]any{"role": "status_enum", "bind": "status"},
+				map[string]any{"role": "text", "bind": "doing", "emphasis": "note"},
+				map[string]any{
+					"role": "record", "cols": 2,
+					"fields": []any{
+						map[string]any{"key": "Queue", "node": map[string]any{"role": "number", "bind": "queued"}},
+						map[string]any{"key": "Done today", "node": map[string]any{"role": "number", "bind": "done"}},
+					},
+				},
+				map[string]any{
+					"role":   "group",
+					"header": map[string]any{"role": "text", "value": "Capabilities", "emphasis": "note"},
+					"children": []any{
+						map[string]any{
+							"role": "list", "bind": "capabilities", "empty": "No capabilities granted.",
+							"item": map[string]any{
+								"role": "group",
+								"children": []any{
+									map[string]any{"role": "text", "bind": "name"},
+									map[string]any{"role": "status_enum", "bind": "policy"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		"actions": []any{map[string]any{"id": "logs", "label": "Logs", "kind": "immediate", "variant": "ghost"}},
+	})
+
+	// The live job card: posted once, then repainted by inlay_update checkpoints
+	// as the work proceeds. Progress is a BINDING, not a new message — the room
+	// gets one card that changes, instead of a scroll of status lines.
+	declJob = declare(map[string]any{
+		"name":    "agent_job",
+		"version": 1,
+		"schema": map[string]any{
+			"role":   "group",
+			"header": map[string]any{"role": "text", "bind": "title", "emphasis": "title"},
+			"children": []any{
+				map[string]any{"role": "status_enum", "bind": "status"},
+				map[string]any{"role": "progress_fraction", "bind": "progress", "label": "Progress"},
+				map[string]any{"role": "text", "bind": "step", "emphasis": "note"},
+				map[string]any{
+					"role": "record", "cols": 2,
+					"fields": []any{
+						map[string]any{"key": "Files", "node": map[string]any{"role": "number", "bind": "files"}},
+						map[string]any{"key": "Elapsed", "node": map[string]any{"role": "number", "bind": "elapsed", "unit": "s"}},
+					},
+				},
+			},
+		},
+		"actions": []any{map[string]any{"id": "cancel", "label": "Cancel", "kind": "immediate", "variant": "danger"}},
+	})
+
+	declGreenhouse = declare(map[string]any{
+		"name":    "greenhouse_bench",
+		"version": 1,
+		"schema": map[string]any{
+			"role":   "group",
+			"header": map[string]any{"role": "text", "bind": "title", "emphasis": "title"},
+			"children": []any{
+				map[string]any{"role": "timestamp", "bind": "updated_at"},
+				map[string]any{"role": "status_enum", "bind": "status"},
+				map[string]any{
+					"role": "record", "cols": 2,
+					"fields": []any{
+						map[string]any{"key": "Air temp", "node": map[string]any{"role": "number", "bind": "air_temp", "unit": "°C", "showTrend": true}, "note": "within 22–26° band"},
+						map[string]any{"key": "Humidity", "node": map[string]any{"role": "number", "bind": "humidity", "unit": "%", "showTrend": true}, "note": "target 55–70%"},
+						map[string]any{"key": "Soil moisture", "node": map[string]any{"role": "number", "bind": "soil", "unit": "%"}, "note": "beds nominal"},
+						map[string]any{"key": "CO₂", "node": map[string]any{"role": "number", "bind": "co2", "unit": "ppm"}, "note": "day cycle"},
+					},
+				},
+				map[string]any{"role": "series", "bind": "air_series", "polarity": "positive", "band": []any{22, 26}, "label": "Air temp · last 6h"},
+			},
+		},
+		"actions": []any{
+			map[string]any{"id": "refresh", "label": "Refresh", "kind": "immediate", "variant": "ghost"},
+			map[string]any{"id": "vent", "label": "Open roof vent", "kind": "immediate",
+				"capability_request": "vent.actuate(gh_roof)", "scope": "30 min · this vent only"},
+		},
+	})
 )
 
 func main() {
@@ -59,6 +258,10 @@ func main() {
 		roomName  = flag.String("room", "agent-demo", "room name to create")
 		keyPath   = flag.String("keys", "", "where to persist the agent's own keys")
 		watch     = flag.String("watch", "", "room id to watch for approval grants instead of posting")
+		invite    = flag.String("invite", "", "the cairn:att:… invite from `cairnctl attest -kind agent`")
+		name      = flag.String("name", "cmd/agent", "display name to request when joining")
+		live      = flag.Bool("live", false,
+			"after posting, wait for the approval to be granted, then post a job card and update it")
 	)
 	flag.Parse()
 
@@ -90,6 +293,18 @@ func main() {
 		return
 	}
 
+	// Asking to join needs nothing but this agent's own key, so the join code is
+	// printed before -member is required. Demanding the operator's member root to
+	// show a join code would be a chicken-and-egg the operator cannot solve.
+	storedAtt, err := loadAttestation(*keyPath)
+	if err != nil {
+		log.Fatalf("agent: attestation: %v", err)
+	}
+	if storedAtt == nil && *invite == "" {
+		printJoinInstructions(me.Pub, *name)
+		return
+	}
+
 	human, err := hex.DecodeString(*memberHex)
 	if err != nil || len(human) != ed25519.PublicKeySize {
 		log.Fatalf("agent: -member must be 64 hex chars (a member root pubkey); got %q", *memberHex)
@@ -106,23 +321,61 @@ func main() {
 		log.Printf("sent %-18s %x", what, ev.EventId[:6])
 	}
 
-	// 0. Establish identity. The carrier enforces the chain gate — it accepts an
-	//    event only from a sender that chains to a trusted household root. The
-	//    agent is a standalone participant: its key is its own household of one,
-	//    operated by the human it's demoing with. Publishing the self-attestation
-	//    founds that household on a fresh carrier (adoption), so every event below
-	//    verifies. Without it the first SendEvent is refused with PermissionDenied.
-	//    Events are signed by the DERIVED DEVICE key, not by the root: roots are
-	//    attested rather than delegated, so the root key has no chain of its own.
-	//    It is derived from the stored key, so it is stable across runs — a random
-	//    one would lose every room key wrapped to the previous device.
-	agentID := identity.KeyPair{Pub: me.Pub, Priv: me.Priv}
-	att, dd, device, err := identity.SelfHousehold(
-		agentID, identity.KindAgent, human, "cmd/agent", time.Now().UnixMilli())
+	// 0. Establish identity — as a member of the OPERATOR'S household, not a
+	//    household of its own.
+	//
+	//    The agent generates and keeps its own private key; it never sees the
+	//    recovery phrase. It shows a join code, the operator attests it with
+	//    `cairnctl attest -kind agent -operated-by <their member root>`, and the
+	//    resulting invite is stored beside the key. From then on the agent chains
+	//    to the same root as everyone else, so the carrier accepts it with no
+	//    second root pinned and the humans see an attested name rather than a
+	//    key stub.
+	//
+	//    Events are signed by the DERIVED DEVICE key, not the member root: roots
+	//    are attested rather than delegated, so a root has no chain of its own.
+	//    The device key is derived from the stored key, so it is stable across
+	//    runs — a random one would lose every room key wrapped to the previous
+	//    device.
+	att := storedAtt
+	if att == nil {
+		att, err = identity.ParseInvite(*invite)
+		if err != nil {
+			log.Fatalf("agent: -invite: %v", err)
+		}
+		if !bytes.Equal(att.Pubkey, me.Pub) {
+			log.Fatalf("agent: that invite attests %x, but this agent's member key is %x.\n"+
+				"An invite is bound to the key that asked for it; attest THIS agent's join code.",
+				att.Pubkey[:6], me.Pub[:6])
+		}
+		if !identity.VerifyAttestation(att) {
+			log.Fatal("agent: that invite does not verify against its own origin")
+		}
+		if err := saveAttestation(*keyPath, att); err != nil {
+			log.Fatalf("agent: save attestation: %v", err)
+		}
+		log.Printf("attested into household %x as %q", att.Origin[:6], att.DisplayName)
+	}
+
+	memberRoot := append([]byte(nil), me.Pub...)
+	// Same derivation the standalone path used: stable across runs, so room keys
+	// wrapped to this device keep opening.
+	device, err := identity.StandaloneDeviceKey(identity.KeyPair{Pub: me.Pub, Priv: me.Priv})
 	if err != nil {
-		log.Fatalf("agent: self-household: %v", err)
+		log.Fatalf("agent: derive device key: %v", err)
+	}
+	req, err := identity.NewPairingRequest(device.Pub, "cmd/agent")
+	if err != nil {
+		log.Fatal(err)
+	}
+	now := time.Now()
+	dd, err := identity.ApprovePairing(req, memberRoot, me.Priv,
+		now.UnixMilli(), now.Add(365*24*time.Hour).UnixMilli())
+	if err != nil {
+		log.Fatalf("agent: device delegation: %v", err)
 	}
 	me.Pub, me.Priv = device.Pub, device.Priv
+
 	for _, obj := range []any{att, dd} {
 		blob, err := identity.Marshal(obj)
 		if err != nil {
@@ -132,22 +385,30 @@ func main() {
 			log.Fatalf("agent: publish identity: %v", err)
 		}
 	}
-	// agentID.Pub, not me.Pub — me is the DEVICE key now, and the household root
-	// is what a carrier adopts and what belongs in trustedRoots. Printing the
-	// device key here would send anyone pinning this agent to the wrong value.
-	log.Printf("founded standalone household %x (device %x, operated by %x)",
-		agentID.Pub[:6], me.Pub[:6], human[:6])
-	// NOTE: the agent and the human are DIFFERENT households, but a carrier adopts
-	// only ONE root at founding. To run the full agent↔human approval demo, start
-	// cairnd with both roots pinned: `trustedRoots: [<agent key>, <human household
-	// root>]` (adoption is for the single-household case). Otherwise whichever
-	// party founds the carrier first is trusted and the other's events are refused.
+	log.Printf("identity published: member %x, device %x, operated by %x",
+		memberRoot[:6], me.Pub[:6], att.OperatedBy[:min(6, len(att.OperatedBy))])
 
 	// 1. Space + room. Both cleartext (epoch 0): a node that is not yet a member
 	//    must be able to fold them.
 	send(mustCleartext(me, spaceID, cairnv1.EventType_SPACE_CREATE, map[string]any{
 		"space_name": "Agent demo", "admit_kind": "human,agent", "admit_origin": "any",
 	}), "space_create")
+
+	// The SPACE roster is the authority: a client enforces "channel roster ⊆
+	// space roster" and evicts anyone in a channel who is not a space member,
+	// rotating the key without them (webapp drainRoom). Creating a space without
+	// joining it therefore got this agent thrown out of its OWN room by the first
+	// human to open it — a MEMBER_REMOVE plus a rotation it could not read, which
+	// looked from here like nobody ever answering the approval request.
+	for _, m := range []struct {
+		pub  []byte
+		role string
+		what string
+	}{{memberRoot, "admin", "space_member_add(self)"}, {human, "admin", "space_member_add(human)"}} {
+		send(mustCleartext(me, spaceID, cairnv1.EventType_SPACE_MEMBER_ADD, map[string]any{
+			"member_pub": m.pub, "role": m.role,
+		}), m.what)
+	}
 
 	send(mustCleartext(me, roomID, cairnv1.EventType_ROOM_CREATE, map[string]any{
 		"name": *roomName, "space_id": []byte(spaceID),
@@ -172,8 +433,15 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	// member_pub is the MEMBER ROOT; wrapped_keys are addressed to DEVICES. Using
+	// the device key for both looked harmless — the agent could still open its own
+	// room — but it puts a device key where every other reader expects a member
+	// root. The roster then disagrees with the identity chain, so anything that
+	// resolves a sender to its member and looks it up in the roster fails: the
+	// agent's own published declarations were refused as if a stranger had sent
+	// them.
 	send(mustCleartext(me, roomID, cairnv1.EventType_MEMBER_ADD, map[string]any{
-		"member_pub": []byte(me.Pub), "role": "admin", "epoch": epoch,
+		"member_pub": memberRoot, "role": "admin", "epoch": epoch,
 		"wrapped_keys": map[string][]byte{hex.EncodeToString(me.Pub): wrapMe},
 	}), "member_add(self)")
 
@@ -239,11 +507,50 @@ func main() {
 	send(mustSealedRaw(me, roomID, roomKey, epoch, cairnv1.EventType_APPROVAL_REQUEST, reqBytes),
 		"approval_request")
 
-	// 5. Declared inlays. Every one carries a text fallback: a client that cannot
+	// 5. Publish the DECLARATIONS first, then instances of them.
+	//
+	//    Order matters only for how it looks on arrival, not for correctness: an
+	//    instance whose declaration has not landed yet degrades to its text line
+	//    and renders once the declaration syncs. Sending declarations first just
+	//    means the room looks right the first time.
+	for _, d := range []declaration{declPoll, declTaskList, declAgentPanel, declGreenhouse, declAgentStatus} {
+		send(mustSealed(me, roomID, roomKey, epoch, cairnv1.EventType_INLAY_DECL,
+			map[string]any{"decl": d.decl}), fmt.Sprintf("inlay_decl(%s) %s", d.decl["name"], d.cid[:8]))
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	// 6. Declared inlays. Every one carries a text fallback: a client that cannot
 	//    resolve the declaration must still render something truthful.
 	for _, in := range inlays() {
 		send(mustSealed(me, roomID, roomKey, epoch, cairnv1.EventType_INLAY, in.payload), in.what)
 		time.Sleep(150 * time.Millisecond)
+	}
+
+	// 6b. The standing panel. surface: "room_panel" keeps it out of the timeline
+	//     and pins it beside the room, where "what is this agent doing right now"
+	//     belongs.
+	panelCard := mustSealed(me, roomID, roomKey, epoch, cairnv1.EventType_INLAY, map[string]any{
+		"decl_cid": declAgentStatus.cid,
+		"surface":  "room_panel",
+		"text":     "Greenhouse Agent — idle. Capabilities: vent.actuate (human-gated).",
+		"bindings": map[string]any{
+			"agent":  "Greenhouse Agent",
+			"status": map[string]any{"label": "idle", "polarity": "neutral"},
+			"doing":  "Waiting for something to do",
+			"queued": 0,
+			"done":   2,
+			"capabilities": []any{
+				map[string]any{"name": "vent.actuate", "policy": map[string]any{"label": "human-gated", "polarity": "busy"}},
+				map[string]any{"name": "rooms.write", "policy": map[string]any{"label": "auto", "polarity": "positive"}},
+			},
+		},
+	})
+	send(panelCard, "inlay(agent_status, room_panel)")
+
+	// 7. The live job: ask for approval, wait for a human to grant it, then post
+	//    ONE card and keep it current with inlay_update checkpoints.
+	if *live {
+		runLiveJob(ctx, client, send, me, roomID, roomKey, epoch, areq.RequestID, panelCard.EventId)
 	}
 
 	fmt.Printf("\nroom id:      %s\nagent member: %s\nhuman member: %s\n",
@@ -259,7 +566,7 @@ func inlays() []inlay {
 	now := time.Now().UnixMilli()
 	return []inlay{
 		{"inlay(poll)", map[string]any{
-			"decl_cid": cidPoll,
+			"decl_cid": declPoll.cid,
 			"surface":  "timeline",
 			"text":     "Poll: Ship the chain gate next? — yes (2), after QR (1), later (0).",
 			"bindings": map[string]any{
@@ -272,7 +579,7 @@ func inlays() []inlay {
 			},
 		}},
 		{"inlay(tasks)", map[string]any{
-			"decl_cid": cidTaskList,
+			"decl_cid": declTaskList.cid,
 			"surface":  "timeline",
 			"text":     "agent: 1 running, 1 queued, 2 done.",
 			"bindings": map[string]any{
@@ -293,7 +600,7 @@ func inlays() []inlay {
 			},
 		}},
 		{"inlay(agent_panel)", map[string]any{
-			"decl_cid": cidAgentPanel,
+			"decl_cid": declAgentPanel.cid,
 			"surface":  "timeline",
 			"text":     "cmd/agent — online. Capabilities: rooms.write (auto), keys.rotate (human-gated).",
 			"bindings": map[string]any{
@@ -315,10 +622,11 @@ func inlays() []inlay {
 				},
 			},
 		}},
-		// NOT in the standard library — exercises the per-room default-deny
-		// allowlist. Expect the text fallback, not the card, until it is allowed.
+		// Published by this agent like the rest. Under trust-by-author it renders
+		// for anyone who has the agent in their room; a client that never receives
+		// the declaration shows the text line instead.
 		{"inlay(greenhouse, non-standard)", map[string]any{
-			"decl_cid": cidGreenhouse,
+			"decl_cid": declGreenhouse.cid,
 			"surface":  "timeline",
 			"text":     "Greenhouse east bench — 24.6°C, 61% humidity, soil 34%. Nominal.",
 			"bindings": map[string]any{
@@ -407,6 +715,248 @@ func loadOrCreateKey(path string) (*keypair, error) {
 	return &keypair{Pub: kp.Pub, Priv: kp.Priv}, nil
 }
 
+
+// attestationPath keeps the invite beside the key: the two together are the
+// agent's whole identity, and splitting them across directories is how a working
+// agent turns into an unattested stranger after a move.
+func attestationPath(keyPath string) string { return keyPath + ".att" }
+
+func loadAttestation(keyPath string) (*identity.IdentityAttestation, error) {
+	b, err := os.ReadFile(attestationPath(keyPath))
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var att identity.IdentityAttestation
+	if err := identity.Unmarshal(b, &att); err != nil {
+		return nil, fmt.Errorf("stored attestation is unreadable: %w", err)
+	}
+	if !identity.VerifyAttestation(&att) {
+		return nil, fmt.Errorf("stored attestation does not verify")
+	}
+	return &att, nil
+}
+
+func saveAttestation(keyPath string, att *identity.IdentityAttestation) error {
+	blob, err := identity.Marshal(att)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(attestationPath(keyPath), blob, 0o600)
+}
+
+// printJoinInstructions shows the join code and the exact command to attest it.
+//
+// The agent asks to join the same way a person does. That symmetry is the point:
+// there is no separate "agent enrolment" mechanism to reason about, and the
+// operator sees a name and fingerprint before vouching for anything.
+func printJoinInstructions(memberPub ed25519.PublicKey, name string) {
+	req, err := identity.NewJoinRequest(memberPub, name)
+	if err != nil {
+		log.Fatalf("agent: join request: %v", err)
+	}
+	fmt.Printf(`
+This agent has no attestation yet, so the carrier would refuse everything it
+sends. It holds its own private key and never needs the household phrase.
+
+  1. Attest it (as the operator, with your own member root):
+
+     go run ./cmd/cairnctl attest -kind agent -operated-by <your-member-root-hex> \
+       %q
+
+  2. Re-run the agent with the invite it prints:
+
+     go run ./cmd/agent -invite "cairn:att:…" -member <your-member-root-hex>
+
+  member key:  %s
+  fingerprint: %s
+
+`, req.Encode(), hex.EncodeToString(memberPub), identity.Fingerprint(memberPub))
+}
+
+// runLiveJob waits for a human decision, then does visible work.
+//
+// This is the shape an agent's UI is supposed to take: ask before acting, and
+// once permitted, keep ONE card honest rather than narrating into the timeline.
+// The progress a human sees is the agent's actual state, published as
+// checkpoints against the card it already posted.
+func runLiveJob(
+	ctx context.Context,
+	client cairnv1connect.CairnServiceClient,
+	send func(*cairnv1.Event, string),
+	me *keypair,
+	roomID string,
+	roomKey []byte,
+	epoch uint64,
+	requestID []byte,
+	panelID []byte,
+) {
+	log.Printf("waiting for a human to approve %x …", requestID[:6])
+	roomKey, epoch, granted := waitForGrant(ctx, client, roomID, roomKey, epoch, me, requestID, 10*time.Minute)
+	if !granted {
+		log.Printf("no grant arrived; the job stays unstarted, which is the correct outcome")
+		return
+	}
+	log.Printf("approved — starting the job")
+
+	send(mustSealed(me, roomID, roomKey, epoch, cairnv1.EventType_INLAY_DECL,
+		map[string]any{"decl": declJob.decl}), "inlay_decl(agent_job)")
+
+	started := time.Now()
+	card := mustSealed(me, roomID, roomKey, epoch, cairnv1.EventType_INLAY, map[string]any{
+		"decl_cid": declJob.cid,
+		"surface":  "timeline",
+		"text":     "Indexing the greenhouse archive — starting.",
+		"bindings": map[string]any{
+			"title":    "Indexing the greenhouse archive",
+			"status":   map[string]any{"label": "starting", "polarity": "busy"},
+			"progress": 0.0,
+			"step":     "Waiting for the first batch",
+			"files":    0,
+			"elapsed":  0,
+		},
+	})
+	send(card, "inlay(agent_job)")
+
+	// Checkpoints against the card's event_id. Each carries only what changed;
+	// the client merges it over the bindings already on screen.
+	steps := []struct {
+		progress float64
+		step     string
+		files    int
+		status   string
+		polarity string
+	}{
+		{0.18, "Reading bench sensor logs", 214, "running", "busy"},
+		{0.41, "Normalising timestamps", 508, "running", "busy"},
+		{0.66, "Building the search index", 812, "running", "busy"},
+		{0.88, "Verifying checksums", 1043, "running", "busy"},
+		{1.0, "Done — 1,120 files indexed", 1120, "complete", "positive"},
+	}
+	for _, st := range steps {
+		time.Sleep(12 * time.Second)
+		send(mustSealed(me, roomID, roomKey, epoch, cairnv1.EventType_INLAY_UPDATE, map[string]any{
+			"target": panelID,
+			"state": map[string]any{
+				"status": map[string]any{"label": st.status, "polarity": st.polarity},
+				"doing":  st.step,
+				"queued": 1,
+			},
+		}), "inlay_update(panel)")
+		send(mustSealed(me, roomID, roomKey, epoch, cairnv1.EventType_INLAY_UPDATE, map[string]any{
+			"target": card.EventId,
+			"state": map[string]any{
+				"progress": st.progress,
+				"step":     st.step,
+				"files":    st.files,
+				"status":   map[string]any{"label": st.status, "polarity": st.polarity},
+				"elapsed":  int(time.Since(started).Seconds()),
+			},
+		}), fmt.Sprintf("inlay_update(%.0f%%)", st.progress*100))
+	}
+	// Leave the panel truthful once the work stops: a standing card that still
+	// says "running" after the job ended is worse than no card.
+	send(mustSealed(me, roomID, roomKey, epoch, cairnv1.EventType_INLAY_UPDATE, map[string]any{
+		"target": panelID,
+		"state": map[string]any{
+			"status": map[string]any{"label": "idle", "polarity": "neutral"},
+			"doing":  "Waiting for something to do",
+			"queued": 0,
+			"done":   3,
+		},
+	}), "inlay_update(panel idle)")
+	log.Printf("job complete")
+}
+
+// adoptLatestKey follows room-key rotations.
+//
+// An agent is a participant, not a publisher: the humans in its room rotate keys
+// (adding a member, pairing a device, or just re-wrapping after onboarding), and
+// every rotation mints a NEW epoch. An agent that keeps using the key it minted
+// reads nothing sent afterwards — including the approval it is waiting for — and
+// the failure looks exactly like nobody having answered. That is the bug this
+// function exists to prevent, and it is why the demo appeared to hang.
+//
+// Returns the highest-epoch key this agent can unwrap, or the current one.
+func adoptLatestKey(events []*cairnv1.Event, devicePriv ed25519.PrivateKey, devicePub ed25519.PublicKey,
+	curKey []byte, curEpoch uint64) ([]byte, uint64) {
+	bestKey, bestEpoch := curKey, curEpoch
+	for _, ev := range events {
+		if ev.Type != cairnv1.EventType_MEMBER_ADD && ev.Type != cairnv1.EventType_ROOM_KEY_ROTATE {
+			continue
+		}
+		// Room-state events are cleartext at epoch 0: one frame byte, then CBOR.
+		if len(ev.Payload) < 1 {
+			continue
+		}
+		var body struct {
+			Epoch       uint64            `cbor:"epoch"`
+			WrappedKeys map[string][]byte `cbor:"wrapped_keys"`
+		}
+		if err := identity.Unmarshal(ev.Payload[1:], &body); err != nil {
+			continue
+		}
+		if body.Epoch <= bestEpoch {
+			continue
+		}
+		blob, ok := body.WrappedKeys[hex.EncodeToString(devicePub)]
+		if !ok {
+			continue // rotated, but not wrapped to this device
+		}
+		key, err := room.UnwrapKey(devicePriv, blob)
+		if err != nil {
+			continue
+		}
+		bestKey, bestEpoch = key, body.Epoch
+	}
+	return bestKey, bestEpoch
+}
+
+// waitForGrant polls the room until the named request is granted, or the
+// deadline passes. Polling rather than SSE keeps this demo to one transport.
+func waitForGrant(
+	ctx context.Context,
+	client cairnv1connect.CairnServiceClient,
+	roomID string,
+	roomKey []byte,
+	epoch uint64,
+	me *keypair,
+	requestID []byte,
+	within time.Duration,
+) ([]byte, uint64, bool) {
+	deadline := time.Now().Add(within)
+	for time.Now().Before(deadline) {
+		res, err := client.Sync(ctx, connect.NewRequest(&cairnv1.SyncRequest{RoomId: []byte(roomID)}))
+		if err == nil {
+			// Take any newer key first: the grant we are waiting for is very
+			// likely sealed under it.
+			if k, e := adoptLatestKey(res.Msg.GetMissing(), me.Priv, me.Pub, roomKey, epoch); e > epoch {
+				log.Printf("adopted room key epoch %d (was %d)", e, epoch)
+				roomKey, epoch = k, e
+			}
+			for _, ev := range res.Msg.GetMissing() {
+				if ev.Type != cairnv1.EventType_APPROVAL_GRANT {
+					continue
+				}
+				_, body, err := room.Open(roomKey, ev)
+				if err != nil {
+					continue
+				}
+				var g approval.Grant
+				if identity.Unmarshal(body, &g) != nil {
+					continue
+				}
+				if bytes.Equal(g.RequestID, requestID) {
+					return roomKey, epoch, true
+				}
+			}
+		}
+		time.Sleep(3 * time.Second)
+	}
+	return roomKey, epoch, false
+}
 
 // --- watching for grants ---------------------------------------------------
 

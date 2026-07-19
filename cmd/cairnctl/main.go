@@ -21,6 +21,7 @@ package main
 
 import (
 	"bufio"
+	"crypto/ed25519"
 	"encoding/hex"
 	"errors"
 	"flag"
@@ -68,8 +69,14 @@ func main() {
 		phrase := args.String("phrase", "",
 			"household recovery phrase, for non-interactive use (see the warning in -h)")
 		passphrase := args.String("passphrase", "", "household BIP-39 passphrase, if any")
+		// An agent is a member of THIS household like anyone else, not a
+		// household of its own. operated_by names the human answerable for it,
+		// which is what makes an agent's actions attributable to a person.
+		kind := args.String("kind", "human", `"human" or "agent"`)
+		operatedBy := args.String("operated-by", "",
+			"for -kind agent: the human member root (64 hex) answerable for it")
 		_ = args.Parse(rest)
-		if err := doAttest(*configPath, args.Arg(0), *phrase, *passphrase); err != nil {
+		if err := doAttest(*configPath, args.Arg(0), *phrase, *passphrase, *kind, *operatedBy); err != nil {
 			log("cairnctl attest: %v", err)
 			os.Exit(1)
 		}
@@ -107,6 +114,10 @@ func usage() {
       -phrase "word one …"               supply the phrase non-interactively
                                          (avoid where you can: it lands in shell
                                           history and the process list)
+      -kind agent -operated-by <hex>     admit an AGENT under this household,
+                                         answerable to that human member root.
+                                         The agent keeps its own private key;
+                                         it never sees the phrase.
   cairnctl roots                         list the household roots this node trusts
 
 The household's 24 words are never stored. init shows them once; attest asks
@@ -240,7 +251,7 @@ func appendRoot(path, root, name string) error {
 	return os.WriteFile(path, []byte(b.String()), 0o644)
 }
 
-func doAttest(configPath, joinCode, phraseFlag, passFlag string) error {
+func doAttest(configPath, joinCode, phraseFlag, passFlag, kindFlag, operatedByHex string) error {
 	if err := loadConfig(configPath); err != nil {
 		return err
 	}
@@ -251,6 +262,22 @@ func doAttest(configPath, joinCode, phraseFlag, passFlag string) error {
 	req, err := identity.ParseJoinRequest(joinCode)
 	if err != nil {
 		return err
+	}
+
+	kind := identity.KindHuman
+	var operatedBy []byte
+	if kindFlag == "agent" {
+		kind = identity.KindAgent
+		operatedBy, err = hex.DecodeString(operatedByHex)
+		if err != nil || len(operatedBy) != ed25519.PublicKeySize {
+			return errors.New("-kind agent requires -operated-by <64 hex>: the human member " +
+				"root answerable for this agent. An agent nobody operates is an agent nobody " +
+				"is accountable for")
+		}
+	} else if kindFlag != "human" {
+		return fmt.Errorf("-kind must be \"human\" or \"agent\", got %q", kindFlag)
+	} else if operatedByHex != "" {
+		return errors.New("-operated-by only applies to -kind agent")
 	}
 
 	fmt.Printf("\nThis code asks to join as %q.\n", req.DisplayName)
@@ -283,7 +310,7 @@ func doAttest(configPath, joinCode, phraseFlag, passFlag string) error {
 	}
 
 	att, err := identity.ProvisionMember(
-		mnemonic, passphrase, req.MemberPub, identity.KindHuman, req.DisplayName, nil, time.Now().UnixMilli())
+		mnemonic, passphrase, req.MemberPub, kind, req.DisplayName, operatedBy, time.Now().UnixMilli())
 	if err != nil {
 		return fmt.Errorf("sign attestation: %w", err)
 	}
