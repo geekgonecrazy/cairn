@@ -85,6 +85,11 @@ enum EventType {
   INLAY_UPDATE = 31;
   INLAY_UNPIN  = 32;
   INTERACTION  = 33;
+  // Publishes a declaration into the room so instances can reference it by
+  // decl_cid. This is what makes inlays agent-definable: without it a sender can
+  // only reference UI the receiving client already compiled in. Carries no cid —
+  // every receiver derives it from the bytes (PROTOCOL.md §3).
+  INLAY_DECL   = 34;
 
   // Call (signaling only; live WebRTC lives in the video component)
   SIGNALING_OFFER  = 40;

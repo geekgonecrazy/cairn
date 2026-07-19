@@ -52,8 +52,11 @@ const {
 } = await import('../src/lib/identity.ts')
 const {
   buildSpaceCreate, buildSpaceMemberAdd, buildRoomCreate, buildMemberAdd,
-  buildChat, applyKeyEvent, openEvent, verifyEvent, haveRoomKey, sessionPub,
+  buildChat, buildInlay, buildInlayDecl, applyKeyEvent, openEvent, verifyEvent,
+  haveRoomKey, sessionPub,
 } = await import('../src/lib/crypto.ts')
+const { declHash, learnDeclaration, resolveDeclaration, STD_CIDS } =
+  await import('../src/lib/inlay/registry.ts')
 const { cairn } = await import('../src/lib/api.ts')
 const { encode: cborEncode } = await import('../src/lib/cbor.ts')
 
@@ -178,6 +181,67 @@ for (const ev of sync.missing) {
 check('joe can read messages sent AFTER he was added', sawAfter)
 check('joe canNOT read pre-join history (by design)', !sawBefore,
   sawBefore ? 'he could read it — pre-join opacity is broken' : 'correct: opaque')
+
+// --- Agent-authored UI: a declaration that travels over the wire ----------
+//
+// The standard library proves the renderer works; it cannot prove an AGENT can
+// define UI. So: publish a declaration no client ships, reference it from an
+// instance, and confirm the receiving side learns it from the event alone and
+// resolves the instance against it.
+console.log('\n--- agent-authored inlay declaration ---')
+active = 'aaron'
+const wellPump = {
+  name: 'well_pump_cycle',
+  version: 1,
+  schema: {
+    role: 'group',
+    header: { role: 'text', bind: 'title', emphasis: 'title' },
+    children: [
+      { role: 'status_enum', bind: 'state' },
+      { role: 'number', bind: 'psi', unit: 'psi' },
+    ],
+  },
+  actions: [{ id: 'prime', label: 'Prime pump', kind: 'immediate' }],
+}
+const wellCid = declHash(wellPump as never)
+check('agent declaration is NOT in the shipped standard library', !STD_CIDS.has(wellCid), wellCid.slice(0, 8))
+
+const declEvent = await buildInlayDecl(roomId, wellPump, [])
+try {
+  await cairn.sendEvent({ event: declEvent })
+  check('carrier accepted the INLAY_DECL event', true)
+} catch (e) {
+  check('carrier accepted the INLAY_DECL event', false, e instanceof Error ? e.message : String(e))
+}
+const instEvent = await buildInlay(
+  roomId,
+  { decl_cid: wellCid, bindings: { title: 'Well pump', state: 'running', psi: 41 }, text: 'Well pump: running, 41 psi' },
+  [],
+)
+try {
+  await cairn.sendEvent({ event: instEvent })
+  check('carrier accepted the INLAY instance', true)
+} catch (e) {
+  check('carrier accepted the INLAY instance', false, e instanceof Error ? e.message : String(e))
+}
+
+active = 'joe'
+const declSync = await cairn.sync({ roomId: new TextEncoder().encode(roomId), haveHeads: [] })
+let learnedCid: string | null = null
+let instanceCid = ''
+let fallbackText = ''
+for (const ev of declSync.missing) {
+  const d = await openEvent(ev)
+  if (d?.kind === 'inlay_decl') learnedCid = learnDeclaration(d.decl as never, 'aaron-member')
+  if (d?.kind === 'inlay' && d.instance.decl_cid === wellCid) {
+    instanceCid = d.instance.decl_cid
+    fallbackText = d.instance.text
+  }
+}
+check('joe learned the declaration from the event', learnedCid === wellCid, learnedCid?.slice(0, 8) ?? 'none')
+check('joe resolves the instance against it', !!instanceCid && !!resolveDeclaration(instanceCid),
+  resolveDeclaration(instanceCid)?.name ?? 'unresolved')
+check('the instance still carries its mandatory text fallback', fallbackText.length > 0, fallbackText)
 
 // --- The escape hatch: adding someone WITH history sharing ---------------
 //

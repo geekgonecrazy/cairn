@@ -427,6 +427,27 @@ whole-number floats across the two implementations.
 
 Read this before trusting `plan.md` on these points. Each is deliberate, not an oversight.
 
+- **Inlays are AGENT-DEFINABLE; the standard library was the wrong shape.** `plan.md` Phase 2
+  specified standard-library cards (poll, approval, task_list, agent_panel) shipped in the client,
+  with novel declarations as a per-room default-deny exception. Built that way, the exit criterion
+  passed on `greenhouse_bench` — but it only ever proved the RENDERER generalises. There was no way
+  to transport a declaration, so an agent could reference only UI the client already compiled in,
+  which caps agent UI at whatever we anticipated.
+  Reversed: `inlay_decl` (event type 34) publishes a declaration into the room, receivers learn it by
+  **verified** BLAKE3 hash, and it renders under **trust-by-author** — an agent that is a room member
+  composes freely. The shipped set is now `approval_prompt` **alone**, kept pinned because a spoofable
+  approval prompt is a phishing surface and that flow must stay specific and trackable. poll,
+  task_list, agent_panel and greenhouse_bench moved to `cmd/agent`, which publishes them at runtime
+  like any other agent — so the demo now exercises the protocol rather than the client's registry.
+  Consequence to accept: a declaration renders only once it has arrived. On a partition an instance
+  shows its `text` line until the declaration syncs, and an agent removed from a room leaves its
+  cards degraded (no author left to trust). Shipped declarations never had that failure mode; it is
+  the price of not deciding in advance what UI an agent is allowed to have.
+  Second consequence: `decl_cid` byte-identity across languages is now load-bearing, since Go
+  publishes and the browser verifies. Nested-map CBOR ordering was previously **untested** — the
+  event vectors are arrays only — so a declaration vector was added to both
+  `event/conformance_test.go` and `webapp/scripts/conformance.ts`.
+
 - **`blobs/` does NOT talk to `iroh-store` yet — it ships a local filesystem backend.**
   `plan.md` §2/Phase 2 specifies `blobs/` as an **iroh-store gRPC client** (content addressed
   by BLAKE3, verified resumable range reads, pinning). No `iroh-store` daemon exists in this

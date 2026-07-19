@@ -367,6 +367,21 @@ export function buildFileRef(
   return sealAndSign(roomIdStr, EventType.FILE_REF, prune({ file, caption: caption || undefined }), parents)
 }
 
+/**
+ * Publish a declaration into the room so instances can reference it by decl_cid.
+ *
+ * The cid is NOT carried: it is BLAKE3 over the declaration's deterministic
+ * CBOR, so every receiver derives it from the bytes it actually got. Sending it
+ * would only create a field that can disagree with its own content.
+ */
+export function buildInlayDecl(
+  roomIdStr: string,
+  decl: unknown,
+  parents: Uint8Array[],
+): Promise<Event> {
+  return sealAndSign(roomIdStr, EventType.INLAY_DECL, { decl: decl as CborValue }, parents)
+}
+
 /** Post a declared inlay: a decl_cid + bindings + the MANDATORY text fallback. */
 export function buildInlay(
   roomIdStr: string,
@@ -384,6 +399,22 @@ export function buildInlay(
     }),
     parents,
   )
+}
+
+/**
+ * Check point a posted inlay: a bindings-shaped `state` for an existing instance.
+ *
+ * The update carries only what changed, not a whole new instance, so a long-lived
+ * inlay (a progress bar, a task status) costs one small event per tick instead of
+ * re-posting its declaration reference and text fallback every time.
+ */
+export function buildInlayUpdate(
+  roomIdStr: string,
+  target: Uint8Array,
+  state: unknown,
+  parents: Uint8Array[],
+): Promise<Event> {
+  return sealAndSign(roomIdStr, EventType.INLAY_UPDATE, { target, state: state as CborValue }, parents)
 }
 
 /** Carry a pre-signed portable approval artifact as an event payload. The room
@@ -436,6 +467,8 @@ export type Decoded =
   | { kind: 'delete'; target: Uint8Array; by: string }
   | { kind: 'presence'; state: string }
   | { kind: 'inlay'; instance: InlayInstance }
+  | { kind: 'inlay_decl'; decl: Record<string, unknown> }
+  | { kind: 'inlay_update'; target: Uint8Array; state: Record<string, unknown> }
   | { kind: 'file'; ref: FileRef; caption?: string }
   | { kind: 'system'; text: string }
   // Approval artifacts travel as raw CBOR payloads; the caller decodes them via
@@ -524,6 +557,17 @@ export async function openEvent(ev: Event): Promise<Decoded | null> {
                 text: obj.text,
               },
             }
+          : null
+      case EventType.INLAY_DECL:
+        return obj.decl && typeof obj.decl === 'object'
+          ? { kind: 'inlay_decl', decl: obj.decl as Record<string, unknown> }
+          : null
+      case EventType.INLAY_UPDATE:
+        // Without a target there is no instance to fold into, and a non-map
+        // state could not merge into bindings — either way the checkpoint is
+        // unusable rather than merely empty.
+        return obj.target && obj.state && typeof obj.state === 'object'
+          ? { kind: 'inlay_update', target: obj.target as Uint8Array, state: obj.state as Record<string, unknown> }
           : null
       case EventType.REACTION:
         return { kind: 'reaction', target: obj.target as Uint8Array, emoji: (obj.emoji as string[]) ?? [] }

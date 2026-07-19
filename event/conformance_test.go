@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"testing"
 
+	"github.com/geekgonecrazy/cairn/identity"
 	cairnv1 "github.com/geekgonecrazy/cairn/proto/cairnv1"
 )
 
@@ -43,5 +44,48 @@ func TestConformanceVectors(t *testing.T) {
 		if got := hex.EncodeToString(id[:]); got != v.want {
 			t.Errorf("V%d event_id = %s, want %s", i+1, got, v.want)
 		}
+	}
+}
+
+// Declaration vector: a nested MAP, which the event vectors above never cover.
+//
+// Event envelopes are arrays of bytes and ints, so map-key ordering between Go's
+// deterministic CBOR and the browser's has never been asserted. Inlay
+// declarations are maps, and their decl_cid is BLAKE3 over that encoding — if
+// the two implementations order keys differently, every agent-published
+// declaration fails its hash check on arrival and silently degrades to a text
+// line. Asserted identically in webapp/scripts/conformance.ts.
+var declarationVector = map[string]any{
+	"name":       "poll",
+	"version":    1,
+	"authorless": true,
+	"schema": map[string]any{
+		"role":   "group",
+		"header": map[string]any{"role": "text", "bind": "question", "emphasis": "title"},
+		"children": []any{
+			map[string]any{
+				"role": "list", "bind": "options", "empty": "No options.",
+				"item": map[string]any{
+					"role": "group",
+					"children": []any{
+						map[string]any{"role": "text", "bind": "label"},
+						map[string]any{"role": "progress_fraction", "bind": "share", "polarity": "neutral"},
+					},
+				},
+			},
+		},
+	},
+	"actions": []any{map[string]any{"id": "vote", "label": "Vote", "kind": "immediate", "variant": "primary"}},
+}
+
+const declarationVectorCID = "b732d156878e8bb353ab31dd32b15be7de9da785ebff5da360f0702d875b7ede"
+
+func TestDeclarationCIDConformance(t *testing.T) {
+	sum, err := identity.Hash(declarationVector)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := hex.EncodeToString(sum[:]); got != declarationVectorCID {
+		t.Errorf("decl_cid = %s, want %s", got, declarationVectorCID)
 	}
 }

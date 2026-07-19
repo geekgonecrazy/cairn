@@ -4,7 +4,7 @@
 // Any drift here means Go↔browser event_ids would diverge and events would fail
 // to verify — a release-blocking regression.
 import { blake3 } from '@noble/hashes/blake3.js'
-import { encode as cborEncode } from '../src/lib/cbor.ts'
+import { encode as cborEncode, decode as cborDecode } from '../src/lib/cbor.ts'
 
 const rep = (b: number) => new Uint8Array(32).fill(b)
 const utf8 = (s: string) => new TextEncoder().encode(s)
@@ -42,11 +42,51 @@ const vectors = [
   },
 ]
 
-let ok = true
+// Declaration vector: a nested MAP, mirroring event/conformance_test.go.
+//
+// The event vectors are arrays of bytes and ints and never exercise map-key
+// ordering. Inlay declarations ARE maps, and decl_cid is BLAKE3 over that
+// encoding — if Go and the browser order keys differently, every declaration an
+// agent publishes fails its hash check on arrival and degrades to a text line.
+const declarationVector = {
+  name: 'poll',
+  version: 1,
+  authorless: true,
+  schema: {
+    role: 'group',
+    header: { role: 'text', bind: 'question', emphasis: 'title' },
+    children: [
+      {
+        role: 'list', bind: 'options', empty: 'No options.',
+        item: {
+          role: 'group',
+          children: [
+            { role: 'text', bind: 'label' },
+            { role: 'progress_fraction', bind: 'share', polarity: 'neutral' },
+          ],
+        },
+      },
+    ],
+  },
+  actions: [{ id: 'vote', label: 'Vote', kind: 'immediate', variant: 'primary' }],
+}
+const DECL_CID_WANT = 'b732d156878e8bb353ab31dd32b15be7de9da785ebff5da360f0702d875b7ede'
+
+const declEncoded = cborEncode(declarationVector as never)
+const declCid = hex(blake3(declEncoded))
+// The round-trip learnDeclaration actually performs: decode what arrived,
+// re-encode it, hash that. Stability here is what makes a decl_cid verifiable.
+const declRoundTrip = hex(cborEncode(cborDecode(declEncoded) as never))
+const declOK = declCid === DECL_CID_WANT
+const rtOK = declRoundTrip === hex(declEncoded)
+
+let ok = declOK && rtOK
 vectors.forEach((v, i) => {
   const pass = v.id === v.want
   ok &&= pass
   console.log(`V${i + 1} ${pass ? 'OK' : 'FAIL'}  ${v.id}${pass ? '' : `\n     want ${v.want}`}`)
 })
-console.log(ok ? 'CONFORMANCE PASS: browser event_ids match Go' : 'CONFORMANCE FAIL')
+console.log(`DECL ${declOK ? 'OK' : 'FAIL'}  ${declCid}${declOK ? '' : `\n     want ${DECL_CID_WANT}`}`)
+console.log(`DECL ${rtOK ? 'OK' : 'FAIL'}  decode -> re-encode is byte-stable`)
+console.log(ok ? 'CONFORMANCE PASS: browser event_ids + decl_cids match Go' : 'CONFORMANCE FAIL')
 process.exit(ok ? 0 : 1)

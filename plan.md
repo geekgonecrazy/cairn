@@ -140,11 +140,17 @@ no history; message states reflect real delivery.
   > ⚠️ **DEVIATION (see `decisions.md` §Deviations):** built as a `Backend` interface with a
   > **local filesystem** implementation, *not* an `iroh-store` gRPC client — no iroh-store
   > daemon exists in this environment. `blobs/iroh` drops in behind the same interface later.
-- [ ] `webapp` inlay engine: **declared-inlay role renderer** — the primitive vocabulary (`text`,
+- [x] `webapp` inlay engine: **declared-inlay role renderer** — the primitive vocabulary (`text`,
   `number`, `progress_fraction`, `status_enum`, `timestamp`, `image_cid`, `series`,
-  `action_ref`, `input`/`select`, `record`/`list`/`group`/`inlay_ref`) + standard-library
-  cards (poll, approval, task_list, agent_panel) + **text fallback** + **widget placeholder**.
-  Port from `claude-design/cairn-primitives.jsx`.
+  `action_ref`, `input`/`select`, `record`/`list`/`group`/`inlay_ref`) + **text fallback** +
+  **widget placeholder**. Ported from `claude-design/cairn-primitives.jsx`.
+- [x] **Agent-definable inlays** (`inlay_decl`, PROTOCOL.md §3): declarations travel as room
+  events, are learned by verified BLAKE3 hash, and render under **trust-by-author** — an agent
+  in the room composes UI nobody compiled in. See the phasing note below: this REPLACED the
+  standard-library approach, it was not an addition to it.
+  The client ships exactly one declaration, `approval_prompt`, which stays pinned; the example
+  cards (poll, task_list, agent_panel, greenhouse_bench) moved to `cmd/agent`, which publishes
+  them at runtime like any other agent would.
 - [ ] `webapp`: agent panel, approval inlay + broker flow, capabilities card (+ **policy chip**
   `auto`/`human-gated`/`forbidden`), signed audit log, **file/image cards with retrieval
   states** (`available` / `pending — no fat link` / `downloading` / `broken`), composer
@@ -154,8 +160,19 @@ no history; message states reflect real delivery.
 capability and scope **visible**, the human approves, and the client emits a **portable
 signed grant** that verifies standalone — outside Cairn, with no room key — ready for the
 agent to present to the broker. (Minting itself belongs to the external broker.)
-A novel declared inlay renders from primitives + degrades to its text line; files
-send/receive with honest retrieval states.
+An inlay declared **by an agent at runtime** — never compiled into the client — renders from
+primitives, verifies against its content address, and degrades to its text line when the
+declaration has not arrived; files send/receive with honest retrieval states.
+
+> **Phasing note (revised).** The original exit criterion read "a novel declared inlay renders
+> from primitives + degrades to its text line," and the build satisfied it with
+> `greenhouse_bench`: a declaration hardcoded in the client that no renderer special-cases.
+> That tested the RENDERER's generality and nothing about delivery — an agent still could not
+> introduce UI, because there was no way to transport a declaration. The phases were written
+> around a fixed standard library with novel declarations as the exception; the design we
+> actually want is the reverse. Agent-definable inlays are the general case, and the shipped
+> set is the exception, reserved for flows that must not be author-defined (approval). The
+> criterion above is rewritten to test delivery, not just rendering.
 
 ### Phase 3 — Meshtastic transport + **demonstration**  *(vision Phase 3)*
 **Goal:** the bridge-tax payoff, in running code.

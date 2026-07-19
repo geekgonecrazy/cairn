@@ -124,8 +124,23 @@ expires_at }` · `approval_grant` `{ request_id, capability_hash, agent_pub, exp
 `approval_deny` `{ request_id, reason? }` · `credential_minted` `{ request_id }`.
 
 **Inlay UI** — `inlay` `{ decl_cid, surface, bindings?, text }` (declared-inlay CID + mandatory `text`
-fallback) · `inlay_update` `{ target: event_id, state }` (checkpoint) · `inlay_unpin` `{ target }` ·
+fallback) · `inlay_decl` `{ decl }` (publishes a declaration into the room) · `inlay_update`
+`{ target: event_id, state }` (checkpoint) · `inlay_unpin` `{ target }` ·
 `interaction` `{ target, action_ref, args?, capability? }` (capability-bound ⇒ broadcast, §8).
+
+**`inlay_decl` carries no cid.** `decl_cid` is BLAKE3 over the declaration's deterministic CBOR, so
+every receiver derives it from the bytes it actually got; a carried cid could only disagree with its
+own content. A receiver that recomputes a different hash than an instance references simply never
+resolves that instance, and the instance shows its `text` line. This is what lets an **agent define
+UI the client never shipped**: the declaration is data, the renderer is fixed, and neither the sender
+nor the carrier can make a `decl_cid` lie.
+
+**Rendering is default-deny**, in three tiers: declarations the client ships (pinned —
+`approval_prompt` only, because an approval prompt must never be author-defined), declarations an
+admin allowed in that room, and declarations **published by a current room member** (trust-by-author).
+Allowlisting a declaration is *curation*, not a security boundary — the role renderer accepts no
+script, markup, or colour, so the worst a member can declare is a misleading card, which is equally
+true of the chat text beside it. Widgets are the opposite case and stay gated: they are code.
 
 **Call** — `signaling_offer|answer|ice` `{ call_id, sdp|candidate }` · `call_ring` `{ call_id, kind:
 "voice"|"video" }` · `call_bye` `{ call_id }`.

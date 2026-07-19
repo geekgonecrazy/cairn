@@ -47,6 +47,11 @@ const (
 	EventType_INLAY_UPDATE EventType = 31
 	EventType_INLAY_UNPIN  EventType = 32
 	EventType_INTERACTION  EventType = 33
+	// Publishes a declaration into the room so instances can reference it by
+	// decl_cid. This is what makes inlays agent-definable: without it a sender can
+	// only reference UI the receiving client already compiled in. Carries no cid —
+	// every receiver derives it from the bytes (PROTOCOL.md §3).
+	EventType_INLAY_DECL EventType = 34
 	// Call (signaling only; live WebRTC lives in the video component)
 	EventType_SIGNALING_OFFER  EventType = 40
 	EventType_SIGNALING_ANSWER EventType = 41
@@ -104,6 +109,7 @@ var (
 		31: "INLAY_UPDATE",
 		32: "INLAY_UNPIN",
 		33: "INTERACTION",
+		34: "INLAY_DECL",
 		40: "SIGNALING_OFFER",
 		41: "SIGNALING_ANSWER",
 		42: "SIGNALING_ICE",
@@ -142,6 +148,7 @@ var (
 		"INLAY_UPDATE":           31,
 		"INLAY_UNPIN":            32,
 		"INTERACTION":            33,
+		"INLAY_DECL":             34,
 		"SIGNALING_OFFER":        40,
 		"SIGNALING_ANSWER":       41,
 		"SIGNALING_ICE":          42,
@@ -1590,7 +1597,7 @@ const file_cairn_proto_rawDesc = "" +
 	"member_pub\x18\x01 \x01(\fR\tmemberPub\"<\n" +
 	"\x19ListMemberDevicesResponse\x12\x1f\n" +
 	"\vdevice_pubs\x18\x01 \x03(\fR\n" +
-	"devicePubs*\x92\x05\n" +
+	"devicePubs*\xa2\x05\n" +
 	"\tEventType\x12\x1a\n" +
 	"\x16EVENT_TYPE_UNSPECIFIED\x10\x00\x12\b\n" +
 	"\x04CHAT\x10\x01\x12\f\n" +
@@ -1613,7 +1620,9 @@ const file_cairn_proto_rawDesc = "" +
 	"\x05INLAY\x10\x1e\x12\x10\n" +
 	"\fINLAY_UPDATE\x10\x1f\x12\x0f\n" +
 	"\vINLAY_UNPIN\x10 \x12\x0f\n" +
-	"\vINTERACTION\x10!\x12\x13\n" +
+	"\vINTERACTION\x10!\x12\x0e\n" +
+	"\n" +
+	"INLAY_DECL\x10\"\x12\x13\n" +
 	"\x0fSIGNALING_OFFER\x10(\x12\x14\n" +
 	"\x10SIGNALING_ANSWER\x10)\x12\x11\n" +
 	"\rSIGNALING_ICE\x10*\x12\r\n" +

@@ -16,8 +16,8 @@
   length: 0,
 } as Storage
 
-const { SAMPLES } = await import('../src/lib/inlay/samples.ts')
-const { resolveDeclaration, STD_CIDS, declHash, known } = await import('../src/lib/inlay/registry.ts')
+const { resolveDeclaration, STD_CIDS, declHash, known, learnDeclaration, isAllowed } =
+  await import('../src/lib/inlay/registry.ts')
 const { resolve } = await import('../src/lib/inlay/bindings.ts')
 type Node = import('../src/lib/inlay/types.ts').Node
 
@@ -89,42 +89,92 @@ function collectActionRefs(node: Node, out: string[]) {
 
 console.log(`registry: ${known.size} declarations, ${STD_CIDS.size} pre-allowlisted (standard library)\n`)
 
-for (const [name, inst] of Object.entries(SAMPLES)) {
-  console.log(`sample "${name}"`)
-  const decl = resolveDeclaration(inst.decl_cid)
-  if (!decl) {
-    fail(`decl_cid ${inst.decl_cid.slice(0, 8)} not resolvable`)
-    continue
-  }
-  // The text fallback is mandatory — without it there is nothing to degrade to.
-  if (!inst.text || inst.text.trim().length === 0) fail(`"${name}" has no text fallback`)
-
-  if (inst.widget) {
-    console.log(`  widget placeholder (never renders inline) — ok`)
-    continue
-  }
-
-  checkNode(decl.schema, inst.bindings ?? {}, decl.name, fail)
-
-  // Every action_ref must name a declared action.
+// The shipped set is deliberately tiny — approval only. Everything else an
+// agent publishes at runtime, which the section below exercises.
+for (const [cid, decl] of known) {
+  console.log(`shipped "${decl.name}"`)
+  if (!STD_CIDS.has(cid)) fail(`${decl.name} ships but is not pre-allowlisted`)
   const refs: string[] = []
   collectActionRefs(decl.schema, refs)
   for (const id of refs) {
     if (!(decl.actions ?? []).some((a) => a.id === id)) fail(`action_ref "${id}" has no declared action`)
   }
-  console.log(`  ${decl.name} v${decl.version} · ${inst.decl_cid.slice(0, 8)} · binds resolve · text fallback present`)
+  if (declHash(decl) !== cid) fail(`${decl.name}: declHash is not deterministic`)
+  console.log(`  ${decl.name} v${decl.version} · ${cid.slice(0, 8)} · pinned, content-addressed`)
 }
 
-// The exit criterion depends on greenhouse being a genuinely NOVEL declaration.
-const gh = SAMPLES.greenhouse.decl_cid
 console.log('')
-if (STD_CIDS.has(gh)) fail('greenhouse must NOT be standard library (it proves novel declarations render)')
-else console.log(`novel declaration "greenhouse_bench" (${gh.slice(0, 8)}) is NOT standard library — default-deny applies`)
+if (known.size !== 1) {
+  fail(`the shipped set should be approval_prompt alone; found ${known.size}`)
+} else {
+  console.log('shipped set is approval only — agent-published UI is the general case')
+}
 
-// Hashing must be deterministic (identity is the hash, not the name).
-const decl = resolveDeclaration(gh)!
-if (declHash(decl) !== gh) fail('declHash is not deterministic')
-else console.log('decl_cid is a stable content address')
+
+
+// ---------------------------------------------------------------------------
+// Agent-authored UI: a declaration NOBODY shipped, learned at runtime.
+//
+// This is the property the standard library cannot demonstrate. An agent
+// composes a layout no one anticipated, publishes it as INLAY_DECL, and the
+// receiving client must render it from primitives alone — without the
+// declaration ever having been compiled into the client.
+// ---------------------------------------------------------------------------
+console.log('')
+const agentDecl = {
+  name: 'well_pump_cycle',
+  version: 1,
+  schema: {
+    role: 'group',
+    header: { role: 'text', bind: 'title', emphasis: 'title' },
+    children: [
+      { role: 'status_enum', bind: 'state' },
+      {
+        role: 'record',
+        cols: 2,
+        fields: [
+          { key: 'Pressure', node: { role: 'number', bind: 'psi', unit: 'psi' } },
+          { key: 'Duty', node: { role: 'progress_fraction', bind: 'duty' } },
+        ],
+      },
+      { role: 'series', bind: 'psi_series', label: 'Pressure · last hour' },
+    ],
+  },
+  actions: [{ id: 'prime', label: 'Prime pump', kind: 'immediate' }],
+} as const
+
+const agentBindings = {
+  title: 'Well pump',
+  state: 'running',
+  psi: 41,
+  duty: 0.36,
+  psi_series: [38, 39, 41, 42, 41, 40],
+}
+
+const AUTHOR = 'a'.repeat(64) // an agent's member root
+const cid = learnDeclaration(agentDecl as never, AUTHOR)
+if (!cid) fail('a well-formed agent declaration was refused')
+else if (STD_CIDS.has(cid)) fail('the agent declaration must not be standard library')
+else if (!resolveDeclaration(cid)) fail('learned declaration does not resolve')
+else {
+  checkNode(agentDecl.schema as never, agentBindings, 'well_pump_cycle', fail)
+  console.log(`learned agent declaration "well_pump_cycle" (${cid.slice(0, 8)}) renders from primitives`)
+}
+
+// Hash verification: bytes that do not match their claimed cid are refused, so
+// a decl_cid on the wire cannot be made to lie by sender or carrier.
+if (learnDeclaration(agentDecl as never, AUTHOR, 'f'.repeat(64)) !== null) {
+  fail('a declaration whose bytes mismatch its claimed cid was accepted')
+} else {
+  console.log('declaration with a mismatched cid is refused (content address verified)')
+}
+
+// Trust by author: in-room author renders; a stranger's stays default-deny.
+if (cid) {
+  if (!isAllowed(cid, 'room-1', [AUTHOR])) fail('an in-room author\'s declaration should render')
+  else if (isAllowed(cid, 'room-1', ['b'.repeat(64)])) fail('a non-member author\'s declaration must NOT render')
+  else console.log('trust-by-author: in-room author renders, stranger stays default-deny')
+}
 
 console.log(failures === 0 ? '\nINLAY CHECK PASS' : `\nINLAY CHECK FAILED (${failures})`)
 process.exit(failures === 0 ? 0 : 1)

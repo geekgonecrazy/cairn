@@ -53,7 +53,23 @@ const dec = <T>(b: Uint8Array | undefined): T | null => {
 class Directory {
   /** senderPubHex → trust state. Reactive so message rows re-render on resolve. */
   private entries = $state<Record<string, SenderTrust>>({})
-  private inflight = new Set<string>()
+  /** In-flight resolutions, kept as promises so resolveAwait can join one. */
+  private inflight = new Map<string, Promise<void>>()
+
+  /** Called whenever a sender finishes resolving, so folds that depend on
+   *  identity can re-run. Sender resolution is async and arrives after the fold
+   *  that needed it; without this, anything decided from a member root (names,
+   *  and trust-by-author for published declarations) is frozen at whatever was
+   *  known on first paint. */
+  private listeners: (() => void)[] = []
+
+  onResolved(fn: () => void) {
+    this.listeners.push(fn)
+  }
+
+  private announce() {
+    for (const fn of this.listeners) fn()
+  }
 
   /** Our household root — the only origin whose attestations we accept. */
   private trustedHousehold: Uint8Array | null = null
@@ -68,10 +84,33 @@ class Directory {
 
   /** Resolve a sender if we haven't already. Safe to call on every render. */
   resolve(senderPub: Uint8Array) {
+    void this.start(senderPub)
+  }
+
+  /**
+   * Resolve and WAIT for the answer.
+   *
+   * Fire-and-forget is right for rendering a name: the row shows an honest key
+   * stub and improves when resolution lands, because `entries` is reactive. It
+   * is WRONG when a fold depends on the answer. A declaration's author decides
+   * whether it may render (trust-by-author), the fold reads this map
+   * synchronously, and nothing re-folds on resolve — so the declaration would be
+   * permanently authorless and every agent-published card would degrade to its
+   * text line.
+   */
+  async resolveAwait(senderPub: Uint8Array): Promise<SenderTrust> {
+    await this.start(senderPub)
+    return this.get(hex(senderPub))
+  }
+
+  private start(senderPub: Uint8Array): Promise<void> {
     const key = hex(senderPub)
-    if (this.entries[key] || this.inflight.has(key)) return
-    this.inflight.add(key)
-    void this.fetch(senderPub, key).finally(() => this.inflight.delete(key))
+    if (this.entries[key]) return Promise.resolve()
+    const existing = this.inflight.get(key)
+    if (existing) return existing
+    const p = this.fetch(senderPub, key).finally(() => this.inflight.delete(key))
+    this.inflight.set(key, p)
+    return p
   }
 
   private async fetch(senderPub: Uint8Array, key: string) {
@@ -142,6 +181,7 @@ class Directory {
       const ancestors = [...path.slice(i + 1).map((d) => hex(d.device_pub)), hex(memberPub)]
       if (!ancestors.includes(hex(dr.revoker_pub))) continue
       this.entries = { ...this.entries, [key]: { state: 'revoked', name: att.display_name } }
+      this.announce()
       return
     }
 
@@ -165,6 +205,7 @@ class Directory {
         householdPub: att.origin,
       },
     }
+    this.announce()
   }
 
   // --- member roots (room rosters) ---------------------------------------

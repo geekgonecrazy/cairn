@@ -2,11 +2,19 @@
 // BLAKE3 over the declaration's deterministic CBOR, so identity is the hash, not
 // the name — "two declarations both named task_list are different inlays."
 //
-// The standard library is nothing privileged: just declarations whose hashes the
-// client ships pre-allowlisted. Per-room additions are a default-deny admin
-// surface (plan.md Phase 2). Note the distinction from inlay.md: allowlisting a
-// DECLARATION is curation (the role renderer is safe by construction); it is
-// widgets whose allowlisting is security.
+// What the client SHIPS is deliberately tiny: only approval_prompt, whose flow
+// must stay pinned and auditable. Everything else an agent publishes at runtime
+// (INLAY_DECL) and the client learns by verified hash — see learnDeclaration.
+//
+// This is a deliberate reversal. The original design shipped a standard library
+// of cards (poll, task_list, agent_panel) and treated novel declarations as the
+// exception. That capped agent UI at whatever the client happened to compile in.
+// Agent-definable inlays are the general case; the shipped set is the exception,
+// reserved for flows that must not be author-defined.
+//
+// Note the distinction from inlay.md: allowlisting a DECLARATION is curation
+// (the role renderer is safe by construction); it is widgets whose allowlisting
+// is security.
 
 import { blake3 } from '@noble/hashes/blake3.js'
 import { encode as cborEncode } from '../cbor'
@@ -20,68 +28,14 @@ export function declHash(d: Declaration): string {
 }
 
 // ---------------------------------------------------------------------------
-// Standard library (inlay.md §standard library)
+// The shipped set: approval only.
+//
+// Approval is NOT delegated to a declaration an author supplies, because a
+// spoofable "grant vent.actuate?" card is a phishing surface. The prompt is
+// pinned here and rendered by an audited component (ApprovalInlay.svelte), so
+// the flow stays specific and trackable rather than becoming data anyone can
+// author.
 // ---------------------------------------------------------------------------
-
-const poll: Declaration = {
-  name: 'poll',
-  version: 1,
-  authorless: true, // survives its author; can never be repaired by checkpoint
-  schema: {
-    role: 'group',
-    header: { role: 'text', bind: 'question', emphasis: 'title' },
-    children: [
-      {
-        role: 'list',
-        bind: 'options',
-        empty: 'No options.',
-        item: {
-          role: 'group',
-          children: [
-            { role: 'text', bind: 'label' },
-            { role: 'progress_fraction', bind: 'share', polarity: 'neutral' },
-          ],
-        },
-      },
-    ],
-  },
-  actions: [{ id: 'vote', label: 'Vote', kind: 'immediate', variant: 'primary' }],
-}
-
-const taskList: Declaration = {
-  name: 'task_list',
-  version: 1,
-  bound_events: ['task_request', 'task_update'],
-  schema: {
-    role: 'group',
-    header: { role: 'text', bind: 'title', emphasis: 'title' },
-    children: [
-      {
-        role: 'record',
-        cols: 3,
-        fields: [
-          { key: 'Running', node: { role: 'number', bind: 'summary.running' } },
-          { key: 'Queued', node: { role: 'number', bind: 'summary.queued' } },
-          { key: 'Done today', node: { role: 'number', bind: 'summary.done' } },
-        ],
-      },
-      {
-        role: 'list',
-        bind: 'tasks',
-        empty: 'Nothing queued.',
-        item: {
-          role: 'group',
-          children: [
-            { role: 'text', bind: 'name' },
-            { role: 'status_enum', bind: 'status' },
-            { role: 'progress_fraction', bind: 'progress' },
-          ],
-        },
-      },
-    ],
-  },
-  actions: [{ id: 'add_task', label: 'Add task', kind: 'modal', variant: 'primary' }],
-}
 
 const approvalPrompt: Declaration = {
   name: 'approval_prompt',
@@ -107,108 +61,72 @@ const approvalPrompt: Declaration = {
   ],
 }
 
-const agentPanel: Declaration = {
-  name: 'agent_panel',
-  version: 1,
-  schema: {
-    role: 'group',
-    header: { role: 'text', bind: 'agent', emphasis: 'title' },
-    children: [
-      { role: 'status_enum', bind: 'status' },
-      // Composition: a panel is not one fact, it is a whole assembly.
-      { role: 'inlay_ref', decl_cid: '', bindings: undefined }, // filled below with task_list's cid
-      {
-        role: 'group',
-        header: { role: 'text', value: 'Capabilities', emphasis: 'note' },
-        children: [
-          {
-            role: 'list',
-            bind: 'capabilities',
-            empty: 'No capabilities granted.',
-            item: {
-              role: 'group',
-              children: [
-                { role: 'text', bind: 'name' },
-                // policy chip: auto / human-gated / forbidden
-                { role: 'status_enum', bind: 'policy' },
-              ],
-            },
-          },
-        ],
-      },
-    ],
-  },
-  actions: [
-    { id: 'configure', label: 'Configure', kind: 'modal' },
-    { id: 'logs', label: 'Logs', kind: 'immediate', variant: 'ghost' },
-  ],
-}
-
-// ---------------------------------------------------------------------------
-// A NOVEL declaration — deliberately NOT standard library. It exists to prove
-// the exit criterion: an inlay nobody hardcoded renders from primitives alone,
-// and degrades to its text line. Nothing about it is special-cased anywhere.
-// ---------------------------------------------------------------------------
-
-const greenhouse: Declaration = {
-  name: 'greenhouse_bench',
-  version: 1,
-  schema: {
-    role: 'group',
-    header: { role: 'text', bind: 'title', emphasis: 'title' },
-    children: [
-      { role: 'timestamp', bind: 'updated_at' },
-      { role: 'status_enum', bind: 'status' },
-      {
-        role: 'record',
-        cols: 2,
-        fields: [
-          { key: 'Air temp', node: { role: 'number', bind: 'air_temp', unit: '°C', showTrend: true }, note: 'within 22–26° band' },
-          { key: 'Humidity', node: { role: 'number', bind: 'humidity', unit: '%', showTrend: true }, note: 'target 55–70%' },
-          { key: 'Soil moisture', node: { role: 'number', bind: 'soil', unit: '%' }, note: 'beds nominal' },
-          { key: 'CO₂', node: { role: 'number', bind: 'co2', unit: 'ppm' }, note: 'day cycle' },
-        ],
-      },
-      { role: 'series', bind: 'air_series', polarity: 'positive', band: [22, 26], label: 'Air temp · last 6h' },
-    ],
-  },
-  actions: [
-    { id: 'refresh', label: 'Refresh', kind: 'immediate', variant: 'ghost' },
-    {
-      id: 'vent',
-      label: 'Open roof vent',
-      kind: 'immediate',
-      capability_request: 'vent.actuate(gh_roof)',
-      scope: '30 min · this vent only',
-    },
-  ],
-}
-
-// Wire agent_panel's inlay_ref to the real task_list hash (composition by hash).
-const TASK_LIST_CID = declHash(taskList)
-;(agentPanel.schema as { children: { role: string; decl_cid?: string }[] }).children.forEach((c) => {
-  if (c.role === 'inlay_ref') c.decl_cid = TASK_LIST_CID
-})
-
-/** Everything the client can resolve, by decl_cid. */
+/** Everything the client SHIPS, by decl_cid. Runtime ones live in `learned`. */
 export const known = new Map<string, Declaration>()
-for (const d of [poll, taskList, approvalPrompt, agentPanel, greenhouse]) {
+for (const d of [approvalPrompt]) {
   known.set(declHash(d), d)
 }
 
-/** Standard library = pre-allowlisted hashes. The novel greenhouse is NOT here. */
-export const STD_CIDS = new Set([declHash(poll), declHash(taskList), declHash(approvalPrompt), declHash(agentPanel)])
+/** Pre-allowlisted hashes: the shipped set renders without an admin prompt. */
+export const STD_CIDS = new Set([declHash(approvalPrompt)])
 
 export const CID = {
-  poll: declHash(poll),
-  task_list: TASK_LIST_CID,
   approval_prompt: declHash(approvalPrompt),
-  agent_panel: declHash(agentPanel),
-  greenhouse: declHash(greenhouse),
+}
+
+// ---------------------------------------------------------------------------
+// Learned declarations (INLAY_DECL, PROTOCOL.md §3)
+// ---------------------------------------------------------------------------
+//
+// Agents compose UI the standard library never anticipated, so declarations
+// arrive as room events rather than only shipping with the client. Learned ones
+// live here, keyed by VERIFIED hash: learn() recomputes the cid and refuses any
+// declaration whose bytes do not match, which is what makes a decl_cid on the
+// wire trustworthy without trusting the sender or the carrier.
+//
+// A plain Map, deliberately: this module must stay runnable under tsx for
+// scripts/inlay-check.ts, and runes only work in .svelte.ts. Reactivity is not
+// lost — rebuild() re-creates the message array on every ingest, so a card
+// re-derives once its declaration lands, which is the ordering the DAG makes
+// normal rather than exceptional.
+const learned = new Map<string, { decl: Declaration; authorHex: string }>()
+
+/**
+ * Register a declaration carried by an INLAY_DECL event.
+ *
+ * Returns the cid on success, or null if the bytes hash to something else.
+ * A mismatch is not an error to surface: the instance simply stays unresolved
+ * and shows its text line, exactly as if the declaration never arrived.
+ */
+export function learnDeclaration(decl: Declaration, authorHex: string, claimedCid?: string): string | null {
+  let cid: string
+  try {
+    cid = declHash(decl)
+  } catch {
+    return null // not encodable as deterministic CBOR
+  }
+  if (claimedCid && claimedCid !== cid) return null
+  // First writer wins on the declaration itself — the cid IS the content, so a
+  // second copy is either identical or a different declaration under a different
+  // cid. The AUTHOR can still fill in later: sender resolution is async, so the
+  // first fold often sees the declaration before it can name who published it.
+  const prev = learned.get(cid)
+  if (!prev) learned.set(cid, { decl, authorHex })
+  else if (!prev.authorHex && authorHex) learned.set(cid, { decl: prev.decl, authorHex })
+  return cid
+}
+
+/** Member root that published a learned declaration, for trust-by-author. */
+export function declarationAuthor(cid: string): string | undefined {
+  return learned.get(cid)?.authorHex
+}
+
+export function forgetLearnedDeclarations() {
+  learned.clear()
 }
 
 export function resolveDeclaration(cid: string): Declaration | undefined {
-  return known.get(cid)
+  return known.get(cid) ?? learned.get(cid)?.decl
 }
 
 // --- per-room allowlist (default-deny admin surface) ---
@@ -223,8 +141,31 @@ export function allowedInRoom(room: string): Set<string> {
   }
 }
 
-export function isAllowed(cid: string, room: string): boolean {
-  return STD_CIDS.has(cid) || allowedInRoom(room).has(cid)
+/**
+ * May this declaration render in this room?
+ *
+ * Three tiers, default-deny at the bottom:
+ *   1. standard library — hashes the client ships
+ *   2. explicitly allowed in this room by an admin
+ *   3. TRUST BY AUTHOR — published by a current room member
+ *
+ * Tier 3 is what makes agent-authored UI usable: an agent admitted to a room
+ * composes freely, without a human approving every layout it invents. That is
+ * curation, not a security boundary — the role renderer is safe by construction
+ * (no script, no markup, no colour), so the worst a member can do is post an
+ * ugly or misleading card, which is equally true of the chat text beside it.
+ * Membership is the gate; an unknown author still shows only its text line.
+ *
+ * Widgets are the opposite case and stay gated: they are code, not data.
+ */
+export function isAllowed(cid: string, room: string, roomMemberHexes?: Iterable<string>): boolean {
+  if (STD_CIDS.has(cid) || allowedInRoom(room).has(cid)) return true
+  const author = declarationAuthor(cid)
+  if (!author || !roomMemberHexes) return false
+  for (const m of roomMemberHexes) {
+    if (m === author) return true
+  }
+  return false
 }
 
 /** Admin action: permit a declaration in this room (default-deny until then). */

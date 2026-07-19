@@ -12,7 +12,6 @@ import {
   buildDelete,
   buildPresence,
   buildApprovalEvent,
-  buildInlay,
   buildFileRef,
   roomKeyBytes,
   buildMemberAdd,
@@ -50,7 +49,7 @@ import {
   encodeDeny,
   type Request as ApprovalRequest,
 } from './approval'
-import { SAMPLES } from './inlay/samples'
+import { learnDeclaration } from './inlay/registry'
 import type { InlayInstance } from './inlay/types'
 import { sealFile, type FileRef } from './files'
 import { EventType, type Event } from '../gen/cairn_pb'
@@ -79,6 +78,15 @@ export interface ApprovalView {
   approver?: string
   reason?: string
   expiresAt: number
+}
+
+/** An inlay pinned to the room panel rather than the timeline. */
+export interface PanelInlay {
+  ev: Event
+  idHex: string
+  instance: InlayInstance
+  author: string
+  ts: number
 }
 
 export interface Msg {
@@ -169,6 +177,13 @@ class AppState {
    * via member_add AFTER mount installs correctly but the composer stays hidden.
    */
   hasRoomKey = $state(false)
+  /**
+   * Inlays declared with surface: 'room_panel' — the room's standing furniture
+   * (an agent's status, its capabilities) rather than messages. Folded the same
+   * way as timeline inlays, including inlay_update checkpoints, so a panel stays
+   * current without posting anything into the conversation.
+   */
+  panelInlays = $state<PanelInlay[]>([])
   /** Roster for the current room, folded from member_add events. */
   members = $state<{ pubHex: string; pub: Uint8Array; role: string; mine: boolean }[]>([])
   /** Pending join requests for the current room, folded from ROOM_JOIN_REQUEST
@@ -215,6 +230,12 @@ class AppState {
   init() {
     if (this.stopSSE) return
     this.myPubHex = hex(sessionPub())
+    // Re-fold when a sender resolves. The fold reads identity synchronously —
+    // author names, and which member root published a declaration — but
+    // resolution lands afterwards, so without this the first paint's answer is
+    // the permanent one. That is what left agent-published declarations sitting
+    // at "declaration not allowed in this room" forever.
+    directory.onResolved(() => this.rebuild())
     this.stopSSE = subscribe(
       (ev) => void this.ingest(ev),
       () => (this.connected = true),
@@ -507,25 +528,10 @@ class AppState {
     await this.deliver(ev)
   }
 
-  /** Post a declared inlay (dev affordance: `/inlay <name>` in the composer). */
-  async postInlay(name: string) {
-    const sample = SAMPLES[name]
-    if (!sample) return
-    const ev = await buildInlay(this.currentRoomId, sample, localHeads(this.events))
-    await this.ingest(ev, false)
-    this.rebuild()
-    await this.deliver(ev)
-  }
-
   async sendChat(text: string) {
     const trimmed = text.trim()
     if (!trimmed) return
 
-    // `/inlay <name>` posts a declared inlay instead of a chat message.
-    if (trimmed.startsWith('/inlay')) {
-      await this.postInlay(trimmed.split(/\s+/)[1] ?? 'greenhouse')
-      return
-    }
     const replyTo = this.replyingTo?.ev.eventId
     const q = this.quotingTo
     const quote = q
@@ -1154,6 +1160,14 @@ class AppState {
       }
     }
 
+    // Trust-by-author decides whether a published declaration may render, and the
+    // fold reads the directory synchronously. This one type therefore waits for
+    // resolution instead of firing and forgetting — otherwise the author is
+    // unknown at first paint and nothing ever re-folds to correct it.
+    if (ev.type === EventType.INLAY_DECL && hex(ev.senderPub) !== this.myPubHex) {
+      await directory.resolveAwait(ev.senderPub)
+    }
+
     this.decoded.set(idHex, await openEvent(ev))
     void cachePut(idHex, this.currentRoomId, ev) // local-first: persist for offline
     if (rebuild) this.rebuild()
@@ -1210,11 +1224,22 @@ class AppState {
     const deleted = new Set<string>()
     // target -> sender -> { ev, emoji }
     const reacts = new Map<string, Map<string, { ev: Event; emoji: string[] }>>()
+    // target -> every checkpoint for it. Unlike an edit, an inlay_update is not
+    // last-writer-wins: each one carries only the keys that changed, so the whole
+    // series has to replay in order to reach the current state.
+    const inlayUpdates = new Map<string, { ev: Event; state: Record<string, unknown> }[]>()
+    // decl_cid -> the newest panel-surface instance of it.
+    const panels = new Map<string, PanelInlay>()
 
     for (const ev of this.events) {
       const d = this.decoded.get(hex(ev.eventId))
       if (!d) continue
-      if (d.kind === 'edit') {
+      if (d.kind === 'inlay_update') {
+        const t = hex(d.target)
+        const list = inlayUpdates.get(t) ?? []
+        list.push({ ev, state: d.state })
+        inlayUpdates.set(t, list)
+      } else if (d.kind === 'edit') {
         const t = hex(d.target)
         const cur = latestEdit.get(t)
         if (!cur || laterThan(ev, cur.ev)) latestEdit.set(t, { ev, text: d.text })
@@ -1228,6 +1253,13 @@ class AppState {
         if (!cur || laterThan(ev, cur.ev)) senders.set(sh, { ev, emoji: d.emoji })
         reacts.set(t, senders)
       }
+    }
+
+    // this.events is in arrival order, which for a replayed checkpoint series is
+    // not the order the author sent them in. Replaying out of order would let a
+    // stale tick win, so put each series back into send order before folding.
+    for (const list of inlayUpdates.values()) {
+      list.sort((a, b) => (laterThan(a.ev, b.ev) ? 1 : -1))
     }
 
     const msgs: Msg[] = []
@@ -1253,9 +1285,67 @@ class AppState {
         continue
       }
 
+      // A published declaration is not a message — it is vocabulary. Learn it
+      // (the hash is verified inside) and render nothing for it, so a room that
+      // uses agent-authored UI isn't littered with plumbing rows.
+      if (d?.kind === 'inlay_decl') {
+        const senderHex = hex(ev.senderPub)
+        // Our own sender key is never in the directory (we don't resolve
+        // ourselves), so read our member root directly or our own declarations
+        // would be the one case that never renders.
+        const authorHex =
+          senderHex === this.myPubHex
+            ? (identity.current ? hex(identity.current.memberPub) : '')
+            : (() => {
+                const t = directory.get(senderHex)
+                return t.state === 'verified' ? hex(t.memberPub) : ''
+              })()
+        learnDeclaration(d.decl as never, authorHex)
+        continue
+      }
+
       // A declared inlay renders through the role renderer (or degrades to its
       // mandatory text line).
       if (d?.kind === 'inlay') {
+        // Only the instance's own author may check it in: an inlay renders as
+        // that author's UI, so accepting a stranger's state would let anyone
+        // repaint someone else's progress bar or approval row.
+        const updates = (inlayUpdates.get(idHex) ?? []).filter(
+          (u) => hex(u.ev.senderPub) === hex(ev.senderPub),
+        )
+        // Merge shallowly and into a fresh object: the decoded payload is cached
+        // across rebuilds, so folding in place would compound old checkpoints.
+        // Only bindings move — text stays the instance's original fallback.
+        const instance = updates.length
+          ? {
+              ...d.instance,
+              bindings: updates.reduce(
+                (acc, u) => ({ ...acc, ...u.state }),
+                { ...(d.instance.bindings ?? {}) } as Record<string, unknown>,
+              ),
+            }
+          : d.instance
+
+        // surface: 'room_panel' means "this is room furniture, not a message".
+        // A status panel that scrolled away with the conversation would be
+        // useless the moment anyone spoke, so it goes to the side panel and is
+        // deliberately kept OUT of the timeline. Latest instance per declaration
+        // wins: an agent that re-posts its panel is replacing it, not stacking a
+        // second copy beside the first.
+        if (instance.surface === 'room_panel') {
+          const prev = panels.get(instance.decl_cid)
+          if (!prev || laterThan(ev, prev.ev)) {
+            panels.set(instance.decl_cid, {
+              ev,
+              idHex,
+              instance,
+              author: identity.nameFor(hex(ev.senderPub), this.myPubHex),
+              ts: Number(ev.ts),
+            })
+          }
+          continue
+        }
+
         msgs.push({
           ev,
           idHex,
@@ -1268,7 +1358,7 @@ class AppState {
           deleted: false,
           reactions: [],
           state: this.states.get(idHex) ?? 'delivered',
-          inlay: d.instance,
+          inlay: instance,
         })
         continue
       }
@@ -1376,6 +1466,8 @@ class AppState {
 
     msgs.sort((a, b) => a.ts - b.ts || (a.idHex < b.idHex ? -1 : 1))
     this.messages = msgs
+    // Oldest first, so a panel does not jump position every time it checkpoints.
+    this.panelInlays = [...panels.values()].sort((a, b) => a.ts - b.ts)
   }
 
   dispose() {

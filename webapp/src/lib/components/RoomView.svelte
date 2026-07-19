@@ -3,6 +3,7 @@
   import MessageRow from './MessageRow.svelte'
   import ApprovalInlay from './ApprovalInlay.svelte'
   import InlayCard from '../inlay/InlayCard.svelte'
+  import RoomPanel from './RoomPanel.svelte'
   import FileCard from './FileCard.svelte'
   import Composer from './Composer.svelte'
   import MembersModal from './MembersModal.svelte'
@@ -28,6 +29,10 @@
   const pendingToAdmit = $derived(app.joinRequests.filter((r) => r.pubHex !== myHex))
   let requesting = $state(false)
   let showMembers = $state(false)
+  // The panel only earns its width when something is pinned to it, so the
+  // toggle appears only then rather than sitting there controlling nothing.
+  let showPanel = $state(true)
+  const hasPanel = $derived(app.panelInlays.length > 0)
 
   async function requestJoin() {
     requesting = true
@@ -39,6 +44,7 @@
   }
 </script>
 
+<div class="room-wrap">
 <section class="room">
   <header class="room-header">
     <div class="title">
@@ -76,6 +82,18 @@
               <span class="req-dot" aria-hidden="true">{pendingToAdmit.length}</span>
             {/if}
           </button>
+          {#if hasPanel}
+            <button
+              class="icon-btn"
+              data-toggle={showPanel ? 'on' : 'off'}
+              title={showPanel ? 'Hide side panel' : 'Show side panel'}
+              aria-label={showPanel ? 'Hide side panel' : 'Show side panel'}
+              aria-pressed={showPanel}
+              onclick={() => (showPanel = !showPanel)}
+            >
+              <Icon name="spark" />
+            </button>
+          {/if}
           <button class="icon-btn" title="Info" aria-label="Info"><Icon name="info" /></button>
           <button class="icon-btn" title="More" aria-label="More"><Icon name="kebab" /></button>
         {/if}
@@ -138,7 +156,11 @@
         {#if msg.approval}
           <ApprovalInlay {msg} />
         {:else if msg.inlay}
-          <InlayCard instance={msg.inlay} room={app.currentRoomId} />
+          <InlayCard
+            instance={msg.inlay}
+            room={app.currentRoomId}
+            memberHexes={app.members.map((m) => m.pubHex)}
+          />
         {:else if msg.file}
           <FileCard {msg} />
         {:else}
@@ -153,14 +175,30 @@
   {/if}
 </section>
 
+{#if hasPanel && showPanel}
+  <RoomPanel
+    panels={app.panelInlays}
+    room={app.currentRoomId}
+    memberHexes={app.members.map((m) => m.pubHex)}
+  />
+{/if}
+</div>
+
 <style>
+  .room-wrap {
+    display: flex;
+    min-width: 0;
+    overflow: hidden;
+  }
   .room {
     display: flex;
     flex-direction: column;
     overflow: hidden;
     background: var(--surface);
     min-width: 0;
+    flex: 1 1 auto;
   }
+  .icon-btn[data-toggle='on'] { color: var(--accent); }
   .room-header {
     flex: 0 0 auto;
     display: flex;

@@ -12,10 +12,13 @@
   let {
     instance,
     room,
+    memberHexes,
     onaction,
   }: {
     instance: InlayInstance
     room: string
+    /** Room roster (member-root hexes) — an agent in the room may declare UI. */
+    memberHexes?: string[]
     onaction?: (a: Action) => void
   } = $props()
 
@@ -23,7 +26,7 @@
   let justAllowed = $state(false) // admin allowed it during this session
 
   const decl = $derived(resolveDeclaration(instance.decl_cid))
-  const allowed = $derived(justAllowed || isAllowed(instance.decl_cid, room))
+  const allowed = $derived(justAllowed || isAllowed(instance.decl_cid, room, memberHexes))
   const isStd = $derived(STD_CIDS.has(instance.decl_cid))
 
   const phase = $derived<InlayPhase>(
