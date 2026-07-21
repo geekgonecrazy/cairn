@@ -180,8 +180,9 @@ const signer = {
 const fakeReq = {
   request_id: new TextEncoder().encode('request-0001'),
   agent_pub: new Uint8Array(32).map((_, i) => 0x30 + i),
-  request_hash: new Uint8Array(32).map((_, i) => 0x70 + i),
-  capability: { name: 'x' },
+  payload_type: 'cairn.capability.v1',
+  payload: new TextEncoder().encode('x'),
+  payload_hash: new Uint8Array(32).map((_, i) => 0x70 + i),
   issued_at: 0n,
   expires_at: 0n,
   sig: new Uint8Array(64),
@@ -200,7 +201,7 @@ const gSig = signer.sign(
   (await import('../src/lib/cbor.ts')).encode({
     type: TYPE_GRANT,
     request_id: g.request_id,
-    capability_hash: g.capability_hash,
+    payload_hash: g.payload_hash,
     agent_pub: g.agent_pub,
     approver_pub: g.approver_pub,
     issued_at: 1720000000000n,
@@ -211,8 +212,8 @@ const gSig = signer.sign(
 check(
   'approval GRANT signature',
   hex(gSig),
-  '4192e8498bfc7b96ec92ea054b5446cef0683ad27e6461d3bd6c6a3a16f3ae79' +
-    '7c0cc86e6e9a7edef3144b7eaa8596ed8d99e2201622d5b6405e951a51e02806',
+  '7dc0bc4625cc8a8394a24f7e0333ce4f59f8f0cf3fa2180f6fea09bac4ca1a39' +
+    'd346bce1c77ce0c62ba20778e2fddeb86e92a5232c2275064fbeabc35f9d1909',
 )
 
 const dSig = signer.sign(

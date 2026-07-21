@@ -36,8 +36,20 @@ var (
 	ErrAgentMismatch   = errors.New("approval: grant is bound to a different agent")
 )
 
-// Capability is what is being asked for. Its hash is the binding value carried
-// by the grant, so a grant cannot be silently retargeted to a different action.
+// PayloadTypeCapability tags a payload whose bytes are a deterministic-CBOR
+// Capability (below). It is the one payload type Cairn itself ships, but the
+// envelope is deliberately generic: an approval carries an OPAQUE payload plus a
+// `payload_type` saying how to read it, and binds to it by hash. A different
+// system (e.g. an agent framework's own capability schema) puts its own bytes in
+// the payload under its own type; Cairn moves and witnesses them without needing
+// to understand them, and the broker parses the payload per its declared type.
+const PayloadTypeCapability = "cairn.capability.v1"
+
+// Capability is Cairn's standard payload: what is being asked for. It is carried
+// inside the request's opaque `payload`, and its hash is the binding value the
+// grant commits to, so a grant cannot be silently retargeted to a different
+// action. The human-readable `Scope` lives INSIDE the payload — so it is covered
+// by the hash the approver signs, never displayed alongside it unsigned.
 type Capability struct {
 	Name   string            `cbor:"name"`             // e.g. "vent.actuate"
 	Params map[string]string `cbor:"params,omitempty"` // e.g. {"target": "gh_roof"}
@@ -45,14 +57,43 @@ type Capability struct {
 	TaskID string            `cbor:"task_id,omitempty"`
 }
 
-// HashCapability is BLAKE3-256 over the capability's deterministic CBOR — the
-// `request_hash` / `capability_hash` both sides bind to.
-func HashCapability(c *Capability) ([32]byte, error) {
+// HashPayload is BLAKE3-256 over a payload's exact bytes — the `payload_hash`
+// both sides bind to. The bytes are hashed as-is and never re-encoded, so the
+// commitment is stable across the request, the grant, and the broker.
+func HashPayload(payload []byte) [32]byte { return blake3.Sum256(payload) }
+
+// MarshalCapability encodes a Capability as an approval payload: its type tag and
+// its deterministic-CBOR bytes, ready to hand to NewRequest.
+func MarshalCapability(c *Capability) (payloadType string, payload []byte, err error) {
 	b, err := identity.Marshal(c)
+	if err != nil {
+		return "", nil, err
+	}
+	return PayloadTypeCapability, b, nil
+}
+
+// UnmarshalCapability decodes a Capability payload. It errors on any other
+// payload_type rather than guessing — a caller that gets an error knows the
+// payload is something it does not understand, not an empty capability.
+func UnmarshalCapability(payloadType string, payload []byte) (*Capability, error) {
+	if payloadType != PayloadTypeCapability {
+		return nil, fmt.Errorf("approval: payload_type %q is not a capability", payloadType)
+	}
+	var c Capability
+	if err := identity.Unmarshal(payload, &c); err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
+// HashCapability is BLAKE3-256 over a capability's deterministic CBOR — a
+// convenience over MarshalCapability + HashPayload.
+func HashCapability(c *Capability) ([32]byte, error) {
+	_, b, err := MarshalCapability(c)
 	if err != nil {
 		return [32]byte{}, err
 	}
-	return blake3.Sum256(b), nil
+	return HashPayload(b), nil
 }
 
 // Artifact type tags, part of each artifact's SIGNED bytes.
@@ -89,31 +130,35 @@ func ArtifactType(blob []byte) (string, error) {
 }
 
 // Request is the agent's signed ask, emitted into the room as approval_request.
-// Signed by the agent's own device key.
+// Signed by the agent's own device key. It carries an OPAQUE payload plus a
+// `payload_type` describing it and a `payload_hash` committing to it — all inside
+// the signed bytes, so a verifier that trusts the signature can trust the label.
 type Request struct {
-	Type        string      `cbor:"type"` // always TypeRequest; signed
-	RequestID   []byte      `cbor:"request_id"`
-	AgentPub    []byte      `cbor:"agent_pub"`
-	Capability  *Capability `cbor:"capability"`
-	RequestHash []byte      `cbor:"request_hash"` // BLAKE3 over Capability
-	IssuedAt    int64       `cbor:"issued_at"`    // unix ms
-	ExpiresAt   int64       `cbor:"expires_at"`   // unix ms; mandatory — nothing parks forever
-	Sig         []byte      `cbor:"sig"`
+	Type        string `cbor:"type"` // always TypeRequest; signed
+	RequestID   []byte `cbor:"request_id"`
+	AgentPub    []byte `cbor:"agent_pub"`
+	PayloadType string `cbor:"payload_type"` // how to read Payload (e.g. PayloadTypeCapability)
+	Payload     []byte `cbor:"payload"`      // opaque; the thing being asked for
+	PayloadHash []byte `cbor:"payload_hash"` // BLAKE3 over Payload; the grant's binding value
+	IssuedAt    int64  `cbor:"issued_at"`    // unix ms
+	ExpiresAt   int64  `cbor:"expires_at"`   // unix ms; mandatory — nothing parks forever
+	Sig         []byte `cbor:"sig"`
 }
 
 // Grant is THE deliverable: the human's signed approval. Request-bound
-// (request_id + capability_hash) and agent-bound (agent_pub) so it cannot be
-// replayed by a different agent for a different action. Single-use enforcement
-// (the consumed-id cache) is the broker's job, not Cairn's.
+// (request_id + payload_hash) and agent-bound (agent_pub) so it cannot be
+// replayed by a different agent for a different action. It commits to the payload
+// by hash, not by value — the payload travels in the request the agent presents
+// alongside. Single-use enforcement (the consumed-id cache) is the broker's job.
 type Grant struct {
-	Type           string `cbor:"type"` // always TypeGrant; signed
-	RequestID      []byte `cbor:"request_id"`
-	CapabilityHash []byte `cbor:"capability_hash"`
-	AgentPub       []byte `cbor:"agent_pub"`
-	ApproverPub    []byte `cbor:"approver_pub"`
-	IssuedAt       int64  `cbor:"issued_at"`
-	ExpiresAt      int64  `cbor:"expires_at"`
-	Sig            []byte `cbor:"sig"`
+	Type        string `cbor:"type"` // always TypeGrant; signed
+	RequestID   []byte `cbor:"request_id"`
+	PayloadHash []byte `cbor:"payload_hash"`
+	AgentPub    []byte `cbor:"agent_pub"`
+	ApproverPub []byte `cbor:"approver_pub"`
+	IssuedAt    int64  `cbor:"issued_at"`
+	ExpiresAt   int64  `cbor:"expires_at"`
+	Sig         []byte `cbor:"sig"`
 }
 
 // Deny closes the loop negatively. Timeout-driven denial is the absence of a
@@ -267,7 +312,7 @@ func GrantCovers(g *Grant, r *Request) error {
 	if !bytes.Equal(g.RequestID, r.RequestID) {
 		return ErrRequestMismatch
 	}
-	if !bytes.Equal(g.CapabilityHash, r.RequestHash) {
+	if !bytes.Equal(g.PayloadHash, r.PayloadHash) {
 		return ErrRequestMismatch
 	}
 	if !bytes.Equal(g.AgentPub, r.AgentPub) {
@@ -276,18 +321,17 @@ func GrantCovers(g *Grant, r *Request) error {
 	return nil
 }
 
-// NewRequest builds and signs an agent's capability request, computing the
-// capability hash for the caller.
-func NewRequest(requestID []byte, agent identity.KeyPair, cap *Capability, issuedAt, expiresAt int64) (*Request, error) {
-	h, err := HashCapability(cap)
-	if err != nil {
-		return nil, err
-	}
+// NewRequest builds and signs an agent's request over an opaque payload,
+// computing the payload hash for the caller. The payload bytes are hashed as-is
+// and never re-encoded.
+func NewRequest(requestID []byte, agent identity.KeyPair, payloadType string, payload []byte, issuedAt, expiresAt int64) (*Request, error) {
+	h := HashPayload(payload)
 	r := &Request{
 		RequestID:   requestID,
 		AgentPub:    agent.Pub,
-		Capability:  cap,
-		RequestHash: h[:],
+		PayloadType: payloadType,
+		Payload:     payload,
+		PayloadHash: h[:],
 		IssuedAt:    issuedAt,
 		ExpiresAt:   expiresAt,
 	}
@@ -297,16 +341,26 @@ func NewRequest(requestID []byte, agent identity.KeyPair, cap *Capability, issue
 	return r, nil
 }
 
+// NewCapabilityRequest is the convenience for Cairn's standard payload: it
+// encodes the Capability, tags it, and builds the request.
+func NewCapabilityRequest(requestID []byte, agent identity.KeyPair, cap *Capability, issuedAt, expiresAt int64) (*Request, error) {
+	pt, payload, err := MarshalCapability(cap)
+	if err != nil {
+		return nil, err
+	}
+	return NewRequest(requestID, agent, pt, payload, issuedAt, expiresAt)
+}
+
 // Approve produces the human's signed grant for a request. The caller should
 // have verified the request and shown the human its capability and scope first.
 func Approve(r *Request, approver identity.KeyPair, issuedAt, expiresAt int64) (*Grant, error) {
 	g := &Grant{
-		RequestID:      r.RequestID,
-		CapabilityHash: r.RequestHash,
-		AgentPub:       r.AgentPub,
-		ApproverPub:    approver.Pub,
-		IssuedAt:       issuedAt,
-		ExpiresAt:      expiresAt,
+		RequestID:   r.RequestID,
+		PayloadHash: r.PayloadHash,
+		AgentPub:    r.AgentPub,
+		ApproverPub: approver.Pub,
+		IssuedAt:    issuedAt,
+		ExpiresAt:   expiresAt,
 	}
 	if err := Sign(g, approver.Priv); err != nil {
 		return nil, err

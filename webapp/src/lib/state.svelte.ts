@@ -40,6 +40,7 @@ import { unread } from './unread.svelte'
 import { decode as cborDecode } from './cbor'
 import {
   decodeRequest,
+  decodeCapabilityPayload,
   decodeGrant,
   decodeDeny,
   decodeMinted,
@@ -1368,6 +1369,7 @@ class AppState {
       if (d?.kind === 'approval_request') {
         const req = decodeRequest(d.raw)
         if (!req) continue
+        const cap = decodeCapabilityPayload(req.payload_type, req.payload)
         const ridHex = hex(req.request_id)
         const g = this.approvalFold.grants.get(ridHex)
         const dn = this.approvalFold.denies.get(ridHex)
@@ -1392,10 +1394,10 @@ class AppState {
           approval: {
             request: req,
             requestIdHex: ridHex,
-            capability: req.capability.name,
-            scope: req.capability.scope ?? '',
-            params: req.capability.params
-              ? Object.entries(req.capability.params)
+            capability: cap?.name ?? req.payload_type,
+            scope: cap?.scope ?? '',
+            params: cap?.params
+              ? Object.entries(cap.params)
                   .map(([k, v]) => `${k}=${v}`)
                   .join(' · ')
               : '',

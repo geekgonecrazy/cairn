@@ -24,11 +24,17 @@ export interface Capability {
   task_id?: string
 }
 
+/** The one payload type Cairn ships. MUST match approval/approval.go's
+ *  PayloadTypeCapability. The envelope is generic — a request carries opaque
+ *  `payload` bytes plus this tag saying how to read them. */
+export const PAYLOAD_TYPE_CAPABILITY = 'cairn.capability.v1'
+
 export interface Request {
   request_id: Uint8Array
   agent_pub: Uint8Array
-  capability: Capability
-  request_hash: Uint8Array
+  payload_type: string
+  payload: Uint8Array
+  payload_hash: Uint8Array
   issued_at: number
   expires_at: number
   sig: Uint8Array
@@ -36,7 +42,7 @@ export interface Request {
 
 export interface Grant {
   request_id: Uint8Array
-  capability_hash: Uint8Array
+  payload_hash: Uint8Array
   agent_pub: Uint8Array
   approver_pub: Uint8Array
   issued_at: number
@@ -61,9 +67,38 @@ function capabilityMap(c: Capability): { [k: string]: CborValue } {
   return m
 }
 
-/** BLAKE3 over the capability's deterministic CBOR — the binding value. */
+/** BLAKE3 over a payload's exact bytes — the binding value both sides commit to. */
+export function hashPayload(payload: Uint8Array): Uint8Array {
+  return blake3(payload)
+}
+
+/** Encode a Capability as an approval payload: its type tag + deterministic-CBOR
+ *  bytes. Mirrors approval.go's MarshalCapability. */
+export function encodeCapabilityPayload(c: Capability): { payload_type: string; payload: Uint8Array } {
+  return { payload_type: PAYLOAD_TYPE_CAPABILITY, payload: cborEncode(capabilityMap(c)) }
+}
+
+/** Decode a capability payload for rendering. Returns null for any other
+ *  payload_type — the caller shows the type tag rather than faking a capability. */
+export function decodeCapabilityPayload(payloadType: string, payload: Uint8Array): Capability | null {
+  if (payloadType !== PAYLOAD_TYPE_CAPABILITY) return null
+  try {
+    const c = cborDecode(payload) as Record<string, unknown>
+    return {
+      name: String(c.name ?? ''),
+      params: c.params as Record<string, string> | undefined,
+      scope: c.scope as string | undefined,
+      task_id: c.task_id as string | undefined,
+    }
+  } catch {
+    return null
+  }
+}
+
+/** BLAKE3 over the capability's deterministic CBOR — convenience over
+ *  encodeCapabilityPayload + hashPayload. */
 export function hashCapability(c: Capability): Uint8Array {
-  return blake3(cborEncode(capabilityMap(c)))
+  return blake3(encodeCapabilityPayload(c).payload)
 }
 
 /**
@@ -84,7 +119,7 @@ function grantMap(g: Omit<Grant, 'sig'>, sig: CborValue): { [k: string]: CborVal
   return {
     type: TYPE_GRANT,
     request_id: g.request_id,
-    capability_hash: g.capability_hash,
+    payload_hash: g.payload_hash,
     agent_pub: g.agent_pub,
     approver_pub: g.approver_pub,
     issued_at: g.issued_at,
@@ -109,7 +144,7 @@ function denyMap(d: Omit<Deny, 'sig'>, sig: CborValue): { [k: string]: CborValue
 export function signGrant(req: Request, expiresAt: number, signer: Signer): Grant {
   const base = {
     request_id: req.request_id,
-    capability_hash: req.request_hash, // bind to exactly what was asked
+    payload_hash: req.payload_hash, // bind to exactly what was asked
     agent_pub: req.agent_pub, // bind to exactly who may use it
     approver_pub: signer.pub,
     issued_at: Date.now(),
@@ -143,18 +178,13 @@ export function encodeDeny(d: Deny): Uint8Array {
 export function decodeRequest(b: Uint8Array): Request | null {
   try {
     const o = cborDecode(b) as Record<string, unknown>
-    const cap = o.capability as Record<string, unknown> | undefined
-    if (!o.request_id || !o.agent_pub || !cap) return null
+    if (!o.request_id || !o.agent_pub || !o.payload) return null
     return {
       request_id: o.request_id as Uint8Array,
       agent_pub: o.agent_pub as Uint8Array,
-      capability: {
-        name: String(cap.name ?? ''),
-        params: cap.params as Record<string, string> | undefined,
-        scope: cap.scope as string | undefined,
-        task_id: cap.task_id as string | undefined,
-      },
-      request_hash: o.request_hash as Uint8Array,
+      payload_type: String(o.payload_type ?? ''),
+      payload: o.payload as Uint8Array,
+      payload_hash: o.payload_hash as Uint8Array,
       issued_at: Number(o.issued_at ?? 0),
       expires_at: Number(o.expires_at ?? 0),
       sig: o.sig as Uint8Array,
@@ -170,7 +200,7 @@ export function decodeGrant(b: Uint8Array): Grant | null {
     if (!o.request_id || !o.approver_pub) return null
     return {
       request_id: o.request_id as Uint8Array,
-      capability_hash: o.capability_hash as Uint8Array,
+      payload_hash: o.payload_hash as Uint8Array,
       agent_pub: o.agent_pub as Uint8Array,
       approver_pub: o.approver_pub as Uint8Array,
       issued_at: Number(o.issued_at ?? 0),

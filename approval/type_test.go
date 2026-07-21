@@ -28,12 +28,12 @@ func TestArtifactTagsAreStampedAndEnforced(t *testing.T) {
 	agent, _ := keyPair(t)
 
 	grant := &Grant{
-		RequestID:      []byte("req-1"),
-		CapabilityHash: []byte("cap-hash"),
-		AgentPub:       agent,
-		ApproverPub:    approver,
-		IssuedAt:       1,
-		ExpiresAt:      1 << 40,
+		RequestID:   []byte("req-1"),
+		PayloadHash: []byte("cap-hash"),
+		AgentPub:    agent,
+		ApproverPub: approver,
+		IssuedAt:    1,
+		ExpiresAt:   1 << 40,
 	}
 	if err := Sign(grant, approverPriv); err != nil {
 		t.Fatalf("sign grant: %v", err)

@@ -490,7 +490,7 @@ func main() {
 		Params: map[string]string{"target": "gh_roof", "position": "open"},
 		Scope:  "Open the greenhouse roof vent for 20 minutes",
 	}
-	areq, err := approval.NewRequest(
+	areq, err := approval.NewCapabilityRequest(
 		reqID,
 		identity.KeyPair{Pub: me.Pub, Priv: me.Priv},
 		capability,
@@ -1041,11 +1041,23 @@ func reportDeny(d *approval.Deny, req *approval.Request) {
 	}
 	fmt.Printf("SIGNATURE       valid (checked standalone, no room key)\n")
 	if req != nil {
-		fmt.Printf("REFUSED         %s (%s)\n", req.Capability.Name, req.Capability.Scope)
+		name, scope := describeCapability(req)
+		fmt.Printf("REFUSED         %s (%s)\n", name, scope)
 	} else {
 		fmt.Printf("REFUSED         request not seen — cannot say what was refused\n")
 	}
 	fmt.Printf("ACTION          do NOT proceed; this is a signed refusal, not a timeout\n")
+}
+
+// describeCapability renders a request's payload for the human-readable log. It
+// decodes the standard capability payload; for any other payload_type it falls
+// back to the type tag rather than pretending it understands the bytes.
+func describeCapability(req *approval.Request) (name, scope string) {
+	cap, err := approval.UnmarshalCapability(req.PayloadType, req.Payload)
+	if err != nil {
+		return req.PayloadType, ""
+	}
+	return cap.Name, cap.Scope
 }
 
 func reportGrant(g *approval.Grant, req *approval.Request) {
@@ -1053,7 +1065,7 @@ func reportGrant(g *approval.Grant, req *approval.Request) {
 	fmt.Printf("request_id      %x\n", g.RequestID)
 	fmt.Printf("approver_pub    %x\n", g.ApproverPub)
 	fmt.Printf("agent_pub       %x\n", g.AgentPub)
-	fmt.Printf("capability_hash %x\n", g.CapabilityHash)
+	fmt.Printf("payload_hash    %x\n", g.PayloadHash)
 	fmt.Printf("expires_at      %s\n", time.UnixMilli(g.ExpiresAt).Format(time.RFC3339))
 
 	// 1. Standalone signature check — no room key, no household, no server.
@@ -1077,18 +1089,15 @@ func reportGrant(g *approval.Grant, req *approval.Request) {
 		fmt.Printf("BINDING         request not seen — cannot confirm what was approved\n")
 		return
 	}
-	capHash, err := approval.HashCapability(req.Capability)
-	if err != nil {
-		fmt.Printf("BINDING         cannot hash capability: %v\n", err)
-		return
-	}
+	payHash := approval.HashPayload(req.Payload)
+	name, scope := describeCapability(req)
 	switch {
-	case !bytes.Equal(g.CapabilityHash, capHash[:]):
-		fmt.Printf("BINDING         MISMATCH — grant is not for the capability requested\n")
+	case !bytes.Equal(g.PayloadHash, payHash[:]):
+		fmt.Printf("BINDING         MISMATCH — grant is not for the payload requested\n")
 	case !bytes.Equal(g.AgentPub, req.AgentPub):
 		fmt.Printf("BINDING         MISMATCH — grant names a different agent\n")
 	default:
-		fmt.Printf("BINDING         ok — %s (%s)\n", req.Capability.Name, req.Capability.Scope)
+		fmt.Printf("BINDING         ok — %s (%s)\n", name, scope)
 	}
 }
 
