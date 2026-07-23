@@ -8,7 +8,7 @@
 // walks a sender's key back to a household root it recognizes — see Chain.
 //
 // Objects are canonicalized with deterministic CBOR (RFC 8949 §4.2) and addressed
-// by their BLAKE3-256 hash. See PROTOCOL.md §1.
+// by their BLAKE3-256 hash. See docs/protocol.md §1.
 package identity
 
 import (
@@ -80,7 +80,7 @@ func Hash(v any) ([32]byte, error) {
 //
 // Every object's `Sig` is Ed25519 over the deterministic-CBOR of the object
 // with Sig cleared — see signingBytes. Struct field CBOR keys are the string
-// names from PROTOCOL.md §1; deterministic encoding sorts them canonically.
+// names from docs/protocol.md §1; deterministic encoding sorts them canonically.
 // ---------------------------------------------------------------------------
 
 // Object type tags. These are part of the SIGNED bytes of every identity-log
@@ -94,7 +94,7 @@ func Hash(v any) ([32]byte, error) {
 //     merely finding two shapes whose canonical encodings collide.
 //
 // Before this, discrimination relied on re-encoded field sets differing between
-// types — true of the current layout, but an accident of it. See decisions.md
+// types — true of the current layout, but an accident of it. See docs/decisions.md
 // §Typed identity-log objects.
 const (
 	TypeAttestation       = "identity_attestation"
@@ -156,7 +156,7 @@ type DeviceDelegation struct {
 
 // SessionDelegation authorizes a short-lived session key under a device key.
 // Browser only; signed by the device key (a WebAuthn passkey). Verifiers accept
-// the WebAuthn signature envelope for the Sig — see PROTOCOL.md §2.3.
+// the WebAuthn signature envelope for the Sig — see docs/protocol.md §2.3.
 type SessionDelegation struct {
 	Type       string `cbor:"type"` // always TypeSessionDelegation; signed
 	SessionPub []byte `cbor:"session_pub"`

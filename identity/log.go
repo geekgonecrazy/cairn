@@ -64,7 +64,7 @@ func (l *DeviceLog) AddAttestation(att *IdentityAttestation) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	key := hex.EncodeToString(att.Pubkey)
-	// kind and origin are immutable (PROTOCOL.md §1): a second, conflicting
+	// kind and origin are immutable (docs/protocol.md §1): a second, conflicting
 	// attestation for the same member is an attack or a bug, never an update.
 	if prev, ok := l.attestations[key]; ok {
 		if prev.Kind != att.Kind || !bytes.Equal(prev.Origin, att.Origin) {

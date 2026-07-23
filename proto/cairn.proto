@@ -10,18 +10,18 @@ option go_package = "github.com/geekgonecrazy/cairn/proto/cairnv1;cairnv1";
 // (LoRa), BLE, and iroh. The *envelope* is protobuf; the *payload* is CBOR
 // encrypted under the room key and is opaque to the router. Payload schemas,
 // signing/hashing, the DAG, sync, and room-key handling are all specified in
-// PROTOCOL.md — this file is only the routable/typed surface.
+// docs/protocol.md — this file is only the routable/typed surface.
 //
 // DEV PHASE: break this freely. Until we declare real users, edit fields/enums
 // without versioning and wipe the DB — no backward-compat, no migrations. Enum
-// numbers only need to stay stable AFTER the real-users switch. See decisions.md.
+// numbers only need to stay stable AFTER the real-users switch. See docs/decisions.md.
 
 // ---------------------------------------------------------------------------
 // Event envelope
 // ---------------------------------------------------------------------------
 
 message Event {
-  // BLAKE3-256 of the canonical signed content (see PROTOCOL.md §Event). The
+  // BLAKE3-256 of the canonical signed content (see docs/protocol.md §Event). The
   // content address of this event; also its identity for parents/reply/react.
   bytes event_id = 1;
 
@@ -49,7 +49,7 @@ message Event {
 
   // Ed25519 by `sender_pub` over `event_id` (which is itself the BLAKE3 of the
   // canonical content). For passkey-signed authority events this is the
-  // WebAuthn signature envelope instead — see PROTOCOL.md §Identity.
+  // WebAuthn signature envelope instead — see docs/protocol.md §Identity.
   bytes sig = 8;
 
   // NOT signed, NOT hashed, NOT stored as canonical: the transport this copy
@@ -88,7 +88,7 @@ enum EventType {
   // Publishes a declaration into the room so instances can reference it by
   // decl_cid. This is what makes inlays agent-definable: without it a sender can
   // only reference UI the receiving client already compiled in. Carries no cid —
-  // every receiver derives it from the bytes (PROTOCOL.md §3).
+  // every receiver derives it from the bytes (docs/protocol.md §3).
   INLAY_DECL   = 34;
 
   // Call (signaling only; live WebRTC lives in the video component)
@@ -129,7 +129,7 @@ enum EventType {
 }
 
 // Per-message transport override the sending client may attach out-of-band
-// (not part of the signed event). See PROTOCOL.md §Transport.
+// (not part of the signed event). See docs/protocol.md §Transport.
 enum TransportHint {
   TRANSPORT_HINT_UNSPECIFIED = 0; // = "any"
   TRANSPORT_HINT_LAN  = 1;
@@ -141,9 +141,9 @@ enum TransportHint {
 // ---------------------------------------------------------------------------
 // Unary API messages
 //
-// Binding is open (ConnectRPC vs. Gin REST over these types) — see decisions.md.
+// Binding is open (ConnectRPC vs. Gin REST over these types) — see docs/decisions.md.
 // The realtime `Subscribe` is NOT here: it is a plain HTTP SSE stream of Events
-// (user preference), documented in PROTOCOL.md §API.
+// (user preference), documented in docs/protocol.md §API.
 // ---------------------------------------------------------------------------
 
 message SendEventRequest {
@@ -179,7 +179,7 @@ message HistoryResponse {
 // Fetch an identity-log object (attestation / delegation / revoke) by hash the
 // first time a client meets an unknown sender.
 message GetIdentityObjectRequest { bytes hash = 1; }
-message GetIdentityObjectResponse { bytes cbor = 1; } // CBOR object; schema in PROTOCOL.md
+message GetIdentityObjectResponse { bytes cbor = 1; } // CBOR object; schema in docs/protocol.md
 
 // Publish an identity-log object. The server VERIFIES the signature before
 // storing; it never mints or vouches for identity, it only carries and serves
@@ -283,5 +283,5 @@ service CairnService {
   rpc ListRooms(ListRoomsRequest) returns (ListRoomsResponse);
   rpc ListSpaceMembers(ListSpaceMembersRequest) returns (ListSpaceMembersResponse);
   rpc ListMemberDevices(ListMemberDevicesRequest) returns (ListMemberDevicesResponse);
-  // Realtime push is SSE (see PROTOCOL.md §API), not a proto stream.
+  // Realtime push is SSE (see docs/protocol.md §API), not a proto stream.
 }

@@ -25,7 +25,7 @@ type Configuration struct {
 	// WebappDir, if set, is served as the SPA at / (built webapp/dist).
 	WebappDir string `yaml:"webappDir" json:"webappDir"`
 	// BlobDir is the local blob backend's directory (the dev stand-in for
-	// iroh-store — see decisions.md §Deviations).
+	// iroh-store — see docs/decisions.md §Deviations).
 	BlobDir string `yaml:"blobDir" json:"blobDir"`
 	// TrustedRoots are hex-encoded household root pubkeys this node recognizes.
 	// Empty during early dev = accept any well-formed signed event (no chain

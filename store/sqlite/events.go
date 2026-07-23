@@ -14,7 +14,7 @@ import (
 // The caller is responsible for having verified ev (event.Verify + identity
 // chain) first — the store persists, it does not judge trust.
 //
-// Head maintenance under out-of-order delivery (PROTOCOL.md §4):
+// Head maintenance under out-of-order delivery (docs/protocol.md §4):
 //   - ev's parents can no longer be heads (ev is their child) → delete them.
 //   - ev is a head UNLESS some already-stored event names ev as a parent (a
 //     child arrived before its parent) → only then insert ev as a head.
@@ -149,7 +149,7 @@ func (s *Store) Heads(roomID []byte) ([][]byte, error) {
 
 // Missing returns events reachable from the room's local heads but not from
 // haveHeads: walk parents back from local heads, stopping whenever we reach an
-// id the peer already has (PROTOCOL.md §6). Returned oldest-first (best-effort
+// id the peer already has (docs/protocol.md §6). Returned oldest-first (best-effort
 // causal order) so a client can apply parents before children.
 func (s *Store) Missing(roomID []byte, haveHeads [][]byte) ([]*cairnv1.Event, error) {
 	have := make(map[string]bool, len(haveHeads))

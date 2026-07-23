@@ -84,7 +84,7 @@ export function validateMnemonicPhrase(s: string): string | null {
  *
  * A different passphrase yields a DIFFERENT household rather than an error —
  * BIP-39's plausible-deniability property. Callers must surface the resulting
- * "nobody recognizes you" state legibly (see decisions.md).
+ * "nobody recognizes you" state legibly (see docs/decisions.md).
  */
 export function householdRootFromMnemonic(mnemonic: string, passphrase = ''): KeyPair {
   const err = validateMnemonicPhrase(mnemonic)

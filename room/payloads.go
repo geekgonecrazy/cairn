@@ -6,11 +6,11 @@ import (
 	"github.com/geekgonecrazy/cairn/identity"
 )
 
-// Payload CBOR schemas (PROTOCOL.md §3). These are the plaintext maps that get
+// Payload CBOR schemas (docs/protocol.md §3). These are the plaintext maps that get
 // deterministic-CBOR encoded, then sealed under the room key. Cross-impl byte
 // identity is NOT required for payloads (each side encodes its own and decodes
 // the other's) — only the event content tuple must match across Go/TS. Struct
-// CBOR keys are the string names from PROTOCOL.md.
+// CBOR keys are the string names from docs/protocol.md.
 
 // Quote is an inline quotation of another message.
 type Quote struct {
@@ -63,7 +63,7 @@ type WrappedKeys map[string][]byte
 
 // MemberAdd introduces a member and hands them (and re-hands existing members)
 // the new epoch's room key, HPKE-wrapped per recipient. Cleartext-CBOR payload
-// (key_epoch 0). See PROTOCOL.md §3, §5.
+// (key_epoch 0). See docs/protocol.md §3, §5.
 type MemberAdd struct {
 	MemberPub   []byte      `cbor:"member_pub"`
 	Role        string      `cbor:"role"`

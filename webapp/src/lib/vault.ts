@@ -1,6 +1,6 @@
 // Persistent browser identity — what replaces the Phase-1 throwaway key.
 //
-// Key tiers and where each lives (PROTOCOL.md §1, decisions.md §Member root
+// Key tiers and where each lives (docs/protocol.md §1, docs/decisions.md §Member root
 // goes offline):
 //
 //   household root  — NEVER IN THE BROWSER AT ALL. Founding and attesting moved
@@ -380,7 +380,7 @@ export function cancelJoin() {
  *  - Without the 24 words, the household is gone from this device for good.
  *  - Room keys are destroyed, so past messages become unreadable even after
  *    rejoining: you are re-admitted at a NEW epoch and pre-join history stays
- *    opaque (PROTOCOL.md §3).
+ *    opaque (docs/protocol.md §3).
  *  - It revokes nothing. Other members still trust this device key until a
  *    DeviceRevoke says otherwise — and this device can no longer issue one.
  *

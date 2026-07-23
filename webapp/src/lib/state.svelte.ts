@@ -1,7 +1,7 @@
 // Reactive app state (Svelte 5 runes). The DAG is the truth: selecting a room
 // loads history via Sync, then keeps it live over SSE. Outgoing events are signed
 // + room-encrypted client-side. Derived views fold deterministically over the raw
-// events (PROTOCOL.md §4): a message's rendered text = its latest edit; a
+// events (docs/protocol.md §4): a message's rendered text = its latest edit; a
 // deletion tombstones it; reactions = the union of each sender's latest set.
 
 import { cairn, subscribe, utf8, hex, needsIdentityPublish, describeSendFailure } from './api'
@@ -428,7 +428,7 @@ class AppState {
     }
   }
 
-  /** Bidirectional frontier sync (PROTOCOL.md §6): send our heads, apply the
+  /** Bidirectional frontier sync (docs/protocol.md §6): send our heads, apply the
    *  server's missing subgraph, then push any events the server doesn't have. */
   private async reconcile(id: string) {
     try {
@@ -453,7 +453,7 @@ class AppState {
   }
 
   // Backfill any parent we reference but don't hold, by walking History back
-  // from it (PROTOCOL.md §6.4). Out-of-order / partial delivery is normal; this
+  // from it (docs/protocol.md §6.4). Out-of-order / partial delivery is normal; this
   // keeps the DAG whole so causal folds don't dangle. Bounded to avoid loops.
   private async backfillMissingParents() {
     const missing = () => {
@@ -492,7 +492,7 @@ class AppState {
   // Events the server lacks — the dual of the server's Missing walk: from our
   // heads, walk parents down, stopping whenever we reach an event the server has
   // (its heads). Everything above that frontier is what the server is missing.
-  // (Gaps below a shared head need missing-parent backfill, PROTOCOL.md §6.4 —
+  // (Gaps below a shared head need missing-parent backfill, docs/protocol.md §6.4 —
   // a later hardening; normal causal-order sends never produce them.)
   private eventsServerLacks(serverHeads: Uint8Array[]): Event[] {
     const stop = new Set(serverHeads.map((h) => hex(h)))

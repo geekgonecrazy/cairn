@@ -178,7 +178,7 @@ export function sessionSigner(): { pub: Uint8Array; sign: (m: Uint8Array) => Uin
 }
 
 // ---- room keys (per room, per epoch) ----
-// Each room has a room key per epoch (PROTOCOL.md §5). Membership changes
+// Each room has a room key per epoch (docs/protocol.md §5). Membership changes
 // (member_add / room_key_rotate) mint a new epoch and HPKE-wrap the fresh key to
 // each member. Pre-join history stays opaque: a member only holds the epochs they
 // were given. Keys live in localStorage (shared across same-origin tabs).
@@ -954,7 +954,7 @@ function heldEpochs(room: string): { epoch: number; raw: Uint8Array }[] {
  *
  * shareHistory wraps the OLDER epoch keys we hold to the newcomer as well, so
  * they can read messages sent before they joined. Default false — pre-join
- * opacity is the protocol's stated rule (plan.md Phase 1), and disclosing the
+ * opacity is the protocol's stated rule (docs/plan.md Phase 1), and disclosing the
  * backlog must be a deliberate act.
  *
  * IRREVERSIBLE: once an old epoch key is wrapped to someone, they hold it
@@ -1012,7 +1012,7 @@ export async function buildMemberAdd(
  * which is what lets a newly paired device read the backlog. Unlike the
  * member_add case this discloses nothing: every one of those keys is already
  * held by the member doing the rotating, and a paired device belongs to that
- * same member root. PROTOCOL.md §5 scopes pre-join opacity to new *members*;
+ * same member root. docs/protocol.md §5 scopes pre-join opacity to new *members*;
  * it says nothing about a member's own devices.
  */
 export async function buildRoomKeyRotate(

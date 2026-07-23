@@ -1,6 +1,6 @@
 // Package sqlite is the pure-Go (modernc, no cgo) store.Store backend. One
 // binary schema, no migrations during the dev phase — CheckDb (re)creates it and
-// you wipe the DB file to reset (PROTOCOL.md §10). One file per entity concern.
+// you wipe the DB file to reset (docs/protocol.md §10). One file per entity concern.
 package sqlite
 
 import (
@@ -39,7 +39,7 @@ func New(path string) (*Store, error) {
 func (s *Store) Close() error { return s.db.Close() }
 
 // schema is the whole DB in one statement set. Dev phase: edit in place, no
-// migrations. Mirrors PROTOCOL.md §10, except the identity log is a single
+// migrations. Mirrors docs/protocol.md §10, except the identity log is a single
 // content-addressed table (identity_log) indexed by the pubkey each object
 // authorizes — serves both the chain-walk resolver and GetIdentityObject(hash).
 const schema = `

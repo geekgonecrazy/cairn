@@ -54,7 +54,7 @@ func SubmitEvent(ev *cairnv1.Event) error {
 		return fmt.Errorf("core: sender not verified: %w", err)
 	}
 
-	// Presence is ephemeral (PROTOCOL.md §3): fan it out live, but never persist
+	// Presence is ephemeral (docs/protocol.md §3): fan it out live, but never persist
 	// it — it must not join the DAG or show up in history/sync.
 	if ev.Type == cairnv1.EventType_PRESENCE {
 		hub.broadcast(ev)

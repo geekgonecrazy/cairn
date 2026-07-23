@@ -2,7 +2,7 @@
 // key (per epoch), the AES-256-GCM payload framing, and the payload CBOR
 // schemas. The server never sees a room key — it stores and routes ciphertext.
 //
-// Payload framing (PROTOCOL.md §2.2):
+// Payload framing (docs/protocol.md §2.2):
 //
 //	payload   = uvarint(key_epoch) || nonce(12) || AES-256-GCM_seal(room_key[epoch], nonce, plaintext, aad)
 //	plaintext = det-CBOR(<type payload map>)          // §3
@@ -47,7 +47,7 @@ func NewRoomKey() ([]byte, error) {
 // AAD builds the additional authenticated data binding the ciphertext to the
 // envelope fields it belongs with: sender_pub || room_id || ts(le64) ||
 // uint16(type). It uses only pre-hash fields, so there is no circularity with
-// event_id (PROTOCOL.md §2.2).
+// event_id (docs/protocol.md §2.2).
 func AAD(senderPub, roomID []byte, ts int64, typ cairnv1.EventType) []byte {
 	aad := make([]byte, 0, len(senderPub)+len(roomID)+8+2)
 	aad = append(aad, senderPub...)
@@ -128,7 +128,7 @@ func PayloadEpoch(payload []byte) (uint64, error) {
 
 // FrameCleartext frames an unencrypted payload as key_epoch 0 (uvarint(0)||cbor),
 // used by member_add/room_key_rotate and identity events whose payloads carry
-// their own key material in cleartext-CBOR (PROTOCOL.md §2.2).
+// their own key material in cleartext-CBOR (docs/protocol.md §2.2).
 func FrameCleartext(cbor []byte) []byte {
 	return append([]byte{0x00}, cbor...) // uvarint(0) is a single 0x00 byte
 }

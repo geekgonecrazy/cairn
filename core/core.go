@@ -56,7 +56,7 @@ func Setup() error {
 	}
 
 	// Data plane. NOTE: this is the local filesystem backend standing in for
-	// iroh-store — see decisions.md §Deviations. Swapping in blobs/iroh here is
+	// iroh-store — see docs/decisions.md §Deviations. Swapping in blobs/iroh here is
 	// the only change needed above the Backend interface.
 	bs, err := local.New(config.Config.BlobDir)
 	if err != nil {

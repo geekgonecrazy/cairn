@@ -2,8 +2,8 @@
 // Chat carries only a tiny `file_ref` envelope; the bytes ride separately and may
 // arrive over any transport (or not yet at all — see RetrievalState).
 //
-// ⚠️ DEVIATION FROM plan.md — READ THIS (also recorded in decisions.md §Deviations):
-// plan.md specifies `blobs` as an **iroh-store gRPC client**. No iroh-store daemon
+// ⚠️ DEVIATION FROM docs/plan.md — READ THIS (also recorded in docs/decisions.md §Deviations):
+// docs/plan.md specifies `blobs` as an **iroh-store gRPC client**. No iroh-store daemon
 // exists in this environment, so instead this package defines a pluggable Backend
 // interface with a local filesystem implementation (blobs/local) for development.
 // `blobs/iroh` implementing the same Backend drops in later and nothing above the
@@ -56,7 +56,7 @@ var (
 // KeySize is the per-file AES-256 key length.
 const KeySize = 32
 
-// FileRef is the envelope that rides on chat (PROTOCOL.md §3 file_ref). It is
+// FileRef is the envelope that rides on chat (docs/protocol.md §3 file_ref). It is
 // small enough for a ~200 B LoRa frame; the bytes it points at are not.
 type FileRef struct {
 	Hash       []byte `cbor:"hash"`        // BLAKE3-256 of the ENCRYPTED bytes
@@ -67,7 +67,7 @@ type FileRef struct {
 	ThumbHash  []byte `cbor:"thumb_hash,omitempty"`
 }
 
-// RetrievalState is what the UI must say honestly about a file (plan.md §4):
+// RetrievalState is what the UI must say honestly about a file (docs/plan.md §4):
 // never a fake "available", never an endless spinner.
 type RetrievalState string
 

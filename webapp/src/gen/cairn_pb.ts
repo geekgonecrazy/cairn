@@ -17,7 +17,7 @@ export const file_cairn: GenFile = /*@__PURE__*/
  */
 export type Event = Message<"cairn.v1.Event"> & {
   /**
-   * BLAKE3-256 of the canonical signed content (see PROTOCOL.md §Event). The
+   * BLAKE3-256 of the canonical signed content (see docs/protocol.md §Event). The
    * content address of this event; also its identity for parents/reply/react.
    *
    * @generated from field: bytes event_id = 1;
@@ -71,7 +71,7 @@ export type Event = Message<"cairn.v1.Event"> & {
   /**
    * Ed25519 by `sender_pub` over `event_id` (which is itself the BLAKE3 of the
    * canonical content). For passkey-signed authority events this is the
-   * WebAuthn signature envelope instead — see PROTOCOL.md §Identity.
+   * WebAuthn signature envelope instead — see docs/protocol.md §Identity.
    *
    * @generated from field: bytes sig = 8;
    */
@@ -737,7 +737,7 @@ export enum EventType {
    * Publishes a declaration into the room so instances can reference it by
    * decl_cid. This is what makes inlays agent-definable: without it a sender can
    * only reference UI the receiving client already compiled in. Carries no cid —
-   * every receiver derives it from the bytes (PROTOCOL.md §3).
+   * every receiver derives it from the bytes (docs/protocol.md §3).
    *
    * @generated from enum value: INLAY_DECL = 34;
    */
@@ -859,7 +859,7 @@ export const EventTypeSchema: GenEnum<EventType> = /*@__PURE__*/
 
 /**
  * Per-message transport override the sending client may attach out-of-band
- * (not part of the signed event). See PROTOCOL.md §Transport.
+ * (not part of the signed event). See docs/protocol.md §Transport.
  *
  * @generated from enum cairn.v1.TransportHint
  */
@@ -967,7 +967,7 @@ export const CairnService: GenService<{
     output: typeof ListSpaceMembersResponseSchema;
   },
   /**
-   * Realtime push is SSE (see PROTOCOL.md §API), not a proto stream.
+   * Realtime push is SSE (see docs/protocol.md §API), not a proto stream.
    *
    * @generated from rpc cairn.v1.CairnService.ListMemberDevices
    */

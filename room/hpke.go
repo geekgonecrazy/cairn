@@ -12,7 +12,7 @@ import (
 )
 
 // Room keys are handed to members by wrapping them with HPKE to each member's
-// public key (PROTOCOL.md §5). We reuse the member's Ed25519 identity key as the
+// public key (docs/protocol.md §5). We reuse the member's Ed25519 identity key as the
 // HPKE recipient key by converting it to X25519 (the standard birational map,
 // same as libsodium crypto_sign_ed25519_*_to_curve25519) — so no separate KEM
 // key needs to be published or attested.

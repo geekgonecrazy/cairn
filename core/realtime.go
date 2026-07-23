@@ -9,7 +9,7 @@ import (
 // Hub is the realtime fan-out behind the SSE stream. It is deliberately lossy:
 // a slow subscriber's buffer is allowed to drop frames, because the client
 // re-syncs via Sync on (re)connect — a missed SSE frame is never a lost message
-// (PROTOCOL.md §8). This keeps one stalled browser from backing up the server.
+// (docs/protocol.md §8). This keeps one stalled browser from backing up the server.
 type Hub struct {
 	mu   sync.RWMutex
 	subs map[*Subscriber]struct{}

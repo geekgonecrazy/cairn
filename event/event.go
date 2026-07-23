@@ -1,7 +1,7 @@
 // Package event implements the Cairn event envelope: canonical content,
 // content-addressed event_id, and signature. The SAME signed bytes travel over
 // every transport; the payload is opaque (CBOR encrypted under the room key by
-// package room). See PROTOCOL.md §2.
+// package room). See docs/protocol.md §2.
 //
 // Canonical content (deterministic CBOR array, RFC 8949 §4.2):
 //

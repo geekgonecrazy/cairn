@@ -9,7 +9,7 @@ import (
 
 // A room is an append-only set of signed events with causal `parents`. Merge is
 // hash-set union (event_id dedups) → commutative, associative, idempotent, so
-// the same set yields the same view on every node. See PROTOCOL.md §4.
+// the same set yields the same view on every node. See docs/protocol.md §4.
 //
 // This file holds the pure, store-independent DAG primitives. Head maintenance
 // against persisted storage lives in store/sqlite; incremental sync (the

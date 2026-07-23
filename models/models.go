@@ -19,7 +19,7 @@ type Room struct {
 }
 
 // Space is a policy boundary over a set of rooms: who may be admitted (kind and
-// origin). See PROTOCOL.md §3 space_create/space_update.
+// origin). See docs/protocol.md §3 space_create/space_update.
 type Space struct {
 	SpaceID     []byte `json:"space_id"`
 	Name        string `json:"name"`

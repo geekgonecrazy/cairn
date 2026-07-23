@@ -50,7 +50,7 @@ const (
 	// Publishes a declaration into the room so instances can reference it by
 	// decl_cid. This is what makes inlays agent-definable: without it a sender can
 	// only reference UI the receiving client already compiled in. Carries no cid —
-	// every receiver derives it from the bytes (PROTOCOL.md §3).
+	// every receiver derives it from the bytes (docs/protocol.md §3).
 	EventType_INLAY_DECL EventType = 34
 	// Call (signaling only; live WebRTC lives in the video component)
 	EventType_SIGNALING_OFFER  EventType = 40
@@ -197,7 +197,7 @@ func (EventType) EnumDescriptor() ([]byte, []int) {
 }
 
 // Per-message transport override the sending client may attach out-of-band
-// (not part of the signed event). See PROTOCOL.md §Transport.
+// (not part of the signed event). See docs/protocol.md §Transport.
 type TransportHint int32
 
 const (
@@ -255,7 +255,7 @@ func (TransportHint) EnumDescriptor() ([]byte, []int) {
 
 type Event struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// BLAKE3-256 of the canonical signed content (see PROTOCOL.md §Event). The
+	// BLAKE3-256 of the canonical signed content (see docs/protocol.md §Event). The
 	// content address of this event; also its identity for parents/reply/react.
 	EventId []byte `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
 	// Ed25519 public key of the *device* or *session* key that signed this event.
@@ -278,7 +278,7 @@ type Event struct {
 	Payload []byte `protobuf:"bytes,7,opt,name=payload,proto3" json:"payload,omitempty"`
 	// Ed25519 by `sender_pub` over `event_id` (which is itself the BLAKE3 of the
 	// canonical content). For passkey-signed authority events this is the
-	// WebAuthn signature envelope instead — see PROTOCOL.md §Identity.
+	// WebAuthn signature envelope instead — see docs/protocol.md §Identity.
 	Sig []byte `protobuf:"bytes,8,opt,name=sig,proto3" json:"sig,omitempty"`
 	// NOT signed, NOT hashed, NOT stored as canonical: the transport this copy
 	// arrived on (populated by the receiver for reachability learning).

@@ -10,9 +10,9 @@ import (
 )
 
 // SubscribeSSE is the realtime endpoint (GET /v1/subscribe). It is a plain HTTP
-// text/event-stream — the decided realtime transport (decisions.md), matching
+// text/event-stream — the decided realtime transport (docs/decisions.md), matching
 // flockledger's SSE precedent, NOT a Connect server-stream. Each new Event is
-// pushed as its protobuf bytes, base64 in the SSE data field (PROTOCOL.md §8).
+// pushed as its protobuf bytes, base64 in the SSE data field (docs/protocol.md §8).
 // The client re-syncs via Sync on connect, so a dropped frame is never a lost
 // message.
 func SubscribeSSE(w http.ResponseWriter, r *http.Request) {

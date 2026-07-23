@@ -17,11 +17,11 @@ import (
 // local room keys, the household identity log, and the per-peer sync frontier.
 type Store interface {
 	// CheckDb creates the schema if absent. Dev phase: no migrations — wipe the
-	// DB file to reset (see PROTOCOL.md §10).
+	// DB file to reset (see docs/protocol.md §10).
 	CheckDb() error
 	Close() error
 
-	// --- events / DAG (PROTOCOL.md §4) ---
+	// --- events / DAG (docs/protocol.md §4) ---
 
 	// PutEvent stores a (pre-verified) event idempotently and maintains room
 	// heads. stored is false if the event_id was already present.
@@ -31,7 +31,7 @@ type Store interface {
 	// Heads returns the room's current frontier (events with no child), sorted.
 	Heads(roomID []byte) ([][]byte, error)
 	// Missing returns the subgraph reachable from the room's local heads but not
-	// from haveHeads — the sync diff the caller lacks (PROTOCOL.md §6).
+	// from haveHeads — the sync diff the caller lacks (docs/protocol.md §6).
 	Missing(roomID []byte, haveHeads [][]byte) ([]*cairnv1.Event, error)
 	// History walks parents backward from `before` (or from heads if empty),
 	// newest first, up to limit events.
@@ -66,7 +66,7 @@ type Store interface {
 	PutRoomKey(roomID []byte, epoch uint64, key []byte) error
 	GetRoomKey(roomID []byte, epoch uint64) ([]byte, error)
 
-	// --- identity log (PROTOCOL.md §1) ---
+	// --- identity log (docs/protocol.md §1) ---
 
 	PutAttestation(*identity.IdentityAttestation) error
 	PutDeviceDelegation(*identity.DeviceDelegation) error
@@ -86,7 +86,7 @@ type Store interface {
 	// get the signed revocation to verify, not an assertion to trust.
 	identity.Resolver
 
-	// --- sync frontier (per-peer outbox cursor, PROTOCOL.md §6) ---
+	// --- sync frontier (per-peer outbox cursor, docs/protocol.md §6) ---
 
 	PutPeerFrontier(peerPub, roomID []byte, heads [][]byte) error
 	GetPeerFrontier(peerPub, roomID []byte) ([][]byte, error)

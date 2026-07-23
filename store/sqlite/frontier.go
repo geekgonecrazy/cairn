@@ -1,7 +1,7 @@
 package sqlite
 
 // The per-peer sync frontier is the durable "what's undelivered" cursor — a diff
-// over the DAG, not a queue (decisions.md / PROTOCOL.md §6). We store the set of
+// over the DAG, not a queue (docs/decisions.md / docs/protocol.md §6). We store the set of
 // head ids we last knew a peer had for a room; "undelivered to peer X" is then
 // the local subgraph not reachable from that frontier (Missing).
 

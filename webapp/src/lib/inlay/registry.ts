@@ -75,7 +75,7 @@ export const CID = {
 }
 
 // ---------------------------------------------------------------------------
-// Learned declarations (INLAY_DECL, PROTOCOL.md §3)
+// Learned declarations (INLAY_DECL, docs/protocol.md §3)
 // ---------------------------------------------------------------------------
 //
 // Agents compose UI the standard library never anticipated, so declarations

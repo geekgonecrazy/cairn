@@ -69,7 +69,7 @@ export interface Declaration {
 /** Instance data filling the declaration's binds. */
 export type Bindings = Record<string, unknown>
 
-/** The inlay event payload (PROTOCOL.md §3): decl_cid + optional bindings, and a
+/** The inlay event payload (docs/protocol.md §3): decl_cid + optional bindings, and a
  *  MANDATORY text fallback — "rendering degrades; delivery does not." */
 export interface InlayInstance {
   decl_cid: string

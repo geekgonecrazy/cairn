@@ -2,7 +2,7 @@ package identity
 
 // Household-root bootstrap and recovery — the apex of the delegation chain.
 //
-// SHAPE (resolves the PROTOCOL.md §298 / plan.md §5 open question):
+// SHAPE (resolves the docs/protocol.md §298 / docs/plan.md §5 open question):
 //
 // The household root is an OFFLINE-ONLY apex. It signs exactly one kind of
 // object — IdentityAttestation, binding a member root to this household — and
@@ -13,7 +13,7 @@ package identity
 //
 // Recovery is therefore "re-derive the root from the words, then re-attest a
 // fresh member root" — not "restore a backup". Losing every device loses the
-// per-room message keys (pre-join history stays opaque, per PROTOCOL.md §3),
+// per-room message keys (pre-join history stays opaque, per docs/protocol.md §3),
 // but the household identity itself survives in the words.
 //
 // The mnemonic is BIP-39 with 256 bits of entropy (24 words). The BIP-39 seed
@@ -159,7 +159,7 @@ func Bootstrap() (*Household, error) {
 // household, signed by the root re-derived from mnemonic. This is the single
 // operation the offline apex exists to perform.
 //
-// kind and displayName are immutable once attested (PROTOCOL.md §1), so callers
+// kind and displayName are immutable once attested (docs/protocol.md §1), so callers
 // must not treat this as an editable profile. operatedBy names the operating
 // human member root for KindAgent and must be nil otherwise.
 func ProvisionMember(
