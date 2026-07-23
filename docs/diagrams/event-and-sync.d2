@@ -1,0 +1,26 @@
+# The event envelope and how two nodes converge (frontier sync).
+# The same signed bytes travel over every transport; the server is one node that
+# happens to be always on.
+direction: down
+
+envelope: "Event envelope" {
+  style.fill: "#f8fafc"
+  content: "content = det-CBOR([ sender_pub, room_id, ts, sort(parents), type, payload ])" { style.font-size: 12; style.fill: "#eff6ff" }
+  id: "event_id = BLAKE3-256(content)" { style.font-size: 12; style.fill: "#eef2ff" }
+  sig: "sig = Ed25519(sender_priv, event_id)" { style.font-size: 12; style.fill: "#ecfdf5" }
+  pay: "payload = uvarint(epoch) || nonce || AES-256-GCM(room_key, plaintext, aad)" { style.font-size: 12; style.fill: "#fefce8" }
+  content -> id -> sig
+  content -> pay
+}
+
+sync: "Frontier sync (per room, per peer)" {
+  style.fill: "#f8fafc"
+  a: "Node A\nheads = {h1, h2}" { style.fill: "#ecfdf5" }
+  b: "Node B\nheads = {h2, h3}" { style.fill: "#eff6ff" }
+  a -> b: "SyncRequest{ have_heads }" { style.stroke: "#334155" }
+  b -> a: "missing (reachable from B's heads, not A's) + B.heads" { style.stroke: "#334155" }
+  a -> b: "push what B lacks (SendEvent)" { style.stroke: "#334155" }
+  note: "merge = hash-set union → same DAG → same view.\nDedup by event_id; out-of-order is normal; a dropped\nnudge is never a lost message (re-sync on reconnect)." { style.font-size: 12; style.fill: "#fff7ed" }
+}
+
+envelope -> sync: "signed events flow over any transport" { style.stroke: "#4338ca" }

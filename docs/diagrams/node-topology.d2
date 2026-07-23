@@ -1,0 +1,41 @@
+# Node & transport topology — the target model. A "node" is a keyholder that folds
+# the converging DAG; the home server is just a node that happens to be permanent.
+# Trust is a chain-walk to a known root, identical on every node.
+direction: right
+
+core: "core (Go)\nstore · chain gate · fold · sync driver" {
+  style.fill: "#eef2ff"; style.stroke: "#4338ca"; style.bold: true
+}
+
+server: "Home server\ncairnd — ALWAYS ON" {
+  style.fill: "#ecfdf5"
+  t: "transports: HTTP, LAN" { style.font-size: 12 }
+  r: "role: store-and-forward rendezvous" { style.font-size: 12 }
+}
+mobile: "Mobile (Wails3)\nembeds core" {
+  style.fill: "#fefce8"
+  t: "transports: HTTP, LAN, BLE, Meshtastic" { style.font-size: 12 }
+  r: "full peer — signs, folds, syncs offline" { style.font-size: 12 }
+}
+browser: "Browser (PWA)\ncore → WASM" {
+  style.fill: "#fff7ed"
+  t: "transport: HTTP only" { style.font-size: 12 }
+  r: "passkey ceremony stays in JS" { style.font-size: 12 }
+}
+
+core -> server: "compiled native" { style.stroke: "#4338ca" }
+core -> mobile: "compiled native" { style.stroke: "#4338ca" }
+core -> browser: "compiled to WASM" { style.stroke: "#4338ca"; style.stroke-dash: 3 }
+
+server <-> mobile: "sync: LAN / HTTP" { style.stroke: "#047857" }
+mobile <-> mobile2: "sync: BLE / mesh (no infra)" { style.stroke: "#047857" }
+mobile2: "Mobile (field)\nembeds core + radio" { style.fill: "#fefce8" }
+browser <-> server: "sync via a permanent node" { style.stroke: "#a16207"; style.stroke-dash: 3 }
+
+roadmap: |md
+  **Built today:** one node (cairnd) reached over HTTP+SSE; browser runs a parallel
+  TS port. **Target:** `transport/` interface + `Node` abstraction so BLE/mesh plug
+  in; symmetric node-to-node sync; browser becomes a Go-WASM node (retires the TS
+  port). Browsers never do BLE/mesh — they reach the mesh *through* a permanent or
+  mobile node.
+| { style.font-size: 13; near: bottom-center }

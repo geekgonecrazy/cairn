@@ -1,0 +1,19 @@
+# Adding a user (member) to a household.
+# The household root lives only in the founder's 24 words and never touches a
+# browser — attestation happens at the CLI (cairnctl). Every member, including
+# the founder, joins the same way and holds their own personal 24 words.
+shape: sequence_diagram
+
+nm: "New member\n(their device)"
+founder: "Founder\n(cairnctl + household words)"
+carrier: "Carrier\n(cairnd — a permanent node)"
+
+nm -> nm: "Derive MEMBER root from own 24 words (offline);\ngenerate first DEVICE key"
+nm -> nm: "member root signs the first\ndevice_delegation (then goes offline)"
+nm -> founder: "join code = { member_pub, device_pub }"
+founder -> founder: "cairnctl attest: enter household 24 words →\nderive household root → sign identity_attestation\n(binds member_pub to this household)"
+founder -> nm: "invite = signed identity_attestation"
+nm -> carrier: "PutIdentityObject(attestation, device_delegation)"
+carrier -> carrier: "verify each object's self-signature;\nfirst attestation ADOPTS the household root\n(founding window) → now enforcing"
+carrier -> nm: "stored"
+nm -> carrier: "SendEvent(...) — now chains to a trusted root ✓"

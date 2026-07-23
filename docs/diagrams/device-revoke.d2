@@ -1,0 +1,34 @@
+# Removing a device — revocation and its two-part cascade.
+# Authentication cascades automatically (any verifier that has seen the revoke
+# rejects the whole subtree). Message-key access does NOT cascade for free: a
+# revoked device physically still holds keys it was wrapped, so rotation must
+# exclude the ENTIRE subtree.
+direction: down
+
+mr: "Member root\n(or an ancestor device)" { shape: hexagon; style.fill: "#ecfdf5" }
+laptop: "Laptop" { style.fill: "#f1f5f9" }
+phone: "Phone  ← revoke this" { style.fill: "#fee2e2"; style.stroke: "#b91c1c"; style.bold: true }
+tablet: "Tablet\n(paired from phone)" { style.fill: "#fee2e2"; style.stroke: "#b91c1c" }
+
+mr -> laptop: "device_delegation"
+laptop -> phone: "device_delegation"
+phone -> tablet: "device_delegation"
+
+mr -> phone: "device_revoke\n{ device_pub=phone, revoker_pub=ancestor }" { style.stroke: "#b91c1c"; style.stroke-dash: 3 }
+
+auth: |md
+  **1 — Authentication cascade (free).** Every chain through the phone now fails
+  at the revocation hop, so the **tablet dies too** without being named. Converges
+  on every verifier, even one offline at the time (the log is an order-independent
+  set; *revocation wins*). Revoked keys can never be re-paired.
+| { style.font-size: 13 }
+
+key: |md
+  **2 — Message-key cascade (must be enacted).** The phone & tablet still hold the
+  current room key. A remaining key-holder emits **room_key_rotate** to a new epoch,
+  wrapped to the device keys of the **surviving** subtree only (`DeviceLog.Subtree`
+  is excluded). Pre-revocation history stays readable — keys can't be un-shared.
+| { style.font-size: 13 }
+
+phone -> auth: "" { style.opacity: 0 }
+tablet -> key: "" { style.opacity: 0 }

@@ -4,7 +4,7 @@ How Cairn represents everything as signed events, how identity works from the
 household root down to a browser tab, and how rooms stay end-to-end encrypted
 across joins, leaves, and new devices.
 
-This is the architecture companion to `PROTOCOL.md` (the terse wire spec) and
+This is the architecture companion to `protocol.md` (the terse wire spec) and
 `decisions.md` (why things are the way they are). Where they disagree with the
 code, the code wins — file references are given so you can check.
 
@@ -80,6 +80,8 @@ browser can never silently drift.
 
 ### The DAG and frontier sync
 
+![The event envelope and frontier sync between two nodes](diagrams/event-and-sync.svg)
+
 `parents` make each room a causal DAG. A sender records the heads it had seen;
 convergence is by the DAG with a deterministic tiebreak, never by clock. Delivery
 is frontier-based: a client sends the heads it holds (`SyncRequest.have_heads`)
@@ -105,13 +107,13 @@ From `proto/cairn.proto:60-129`. `EVENT_TYPE_UNSPECIFIED = 0`.
 **Agent**
 - `TASK_REQUEST = 10`, `TASK_UPDATE = 11`, `NOTIFY = 12`, `COMMAND = 13`.
 
-**Authority** (see `approval-and-inlays.md`)
+**Authority** (see `approvals-and-inlays.md`)
 - `APPROVAL_REQUEST = 20` — an agent's signed capability ask.
 - `APPROVAL_GRANT = 21` — a human's signed approval.
 - `APPROVAL_DENY = 22` — a human's signed refusal.
 - `CREDENTIAL_MINTED = 23` — a broker's mint confirmation.
 
-**Inlay UI** (see `approval-and-inlays.md`)
+**Inlay UI** (see `approvals-and-inlays.md`)
 - `INLAY = 30` — an inlay instance.
 - `INLAY_UPDATE = 31` — a checkpoint updating an instance's bindings.
 - `INLAY_UNPIN = 32`.
@@ -146,6 +148,8 @@ household root  (the household id; signs member attestations)
               └── device key  (a tablet paired FROM the phone — devices pair devices)
                     └── session key  (one per browser tab; short-lived)
 ```
+
+![The three-tier delegation chain: household root → member root → device tree → session key](diagrams/trust-hierarchy.svg)
 
 ### The household root
 
@@ -228,6 +232,8 @@ for. It must be empty for humans and services. `kind` and `origin` are immutable
 
 ### Verifying a sender (the chain walk)
 
+![The VerifySender walk from a signing key up to a trusted household root](diagrams/chain-verify.svg)
+
 `VerifySender` (`identity/chain.go:74-125`) is how any client turns a
 `sender_pub` into a trusted identity, or rejects it. It walks:
 
@@ -257,6 +263,8 @@ anything the sender asserted.
 ---
 
 ## 5. Onboarding a human
+
+![Adding a member: the member derives their own root, the founder attests it with the household words](diagrams/add-member.svg)
 
 A household is founded once (on `cairnctl`). Everyone else **joins**. The browser
 flow is three steps (`webapp/src/lib/vault.ts`):
@@ -308,6 +316,8 @@ opacity (§9) is deliberate, not a gap.
 
 ## 6. Adding a device (pairing)
 
+![QR pairing: a public key goes one way, a signed delegation comes back; the parent is the approving device](diagrams/device-pairing.svg)
+
 Pairing links a new device to an existing one. No secret ever travels — a public
 key goes one way, a signed delegation comes back (`webapp/src/lib/vault.ts`):
 
@@ -335,6 +345,8 @@ device that did not exist. §12 is what fixes that.
 ---
 
 ## 7. Removing a device (revoke)
+
+![Revocation and its two-part cascade: authentication dies for the whole subtree; keys must be rotated to exclude it](diagrams/device-revoke.svg)
 
 A device is revoked with a `DeviceRevoke`, and the rule that matters is: **only an
 ancestor may revoke** — the target's parent, grandparent, or the member root at
@@ -389,6 +401,8 @@ Trusted roots come from `trusted-roots.txt` beside the config (written by
 
 ## 9. Rooms and spaces
 
+![Rooms, spaces, and the two membership tiers: spaces grant discovery, rooms grant key-holding access](diagrams/rooms-spaces.svg)
+
 Two nested concepts with **different jobs**:
 
 - A **space** is a discovery scope. Being a space member lets you *see* the rooms
@@ -409,6 +423,8 @@ Membership is always keyed on the **member root**, never a device or session key
 ---
 
 ## 10. Room encryption
+
+![Room-key epochs: join and leave both rotate; keys are HPKE-wrapped to member devices](diagrams/room-keys.svg)
 
 A **room key** is a random 32-byte AES-256 key, one per **epoch**
 (`room/room.go:27,39-45`). Epochs start at 1; epoch 0 means "not room-encrypted".
@@ -485,7 +501,7 @@ excludes revoked devices.
 
 By default a newcomer receives only the current and future epoch keys, so
 everything sent before they joined stays opaque — the same practical property as
-Megolm. This is deliberate (`PROTOCOL.md` §5).
+Megolm. This is deliberate (`protocol.md` §5).
 
 If the adder opts in with `shareHistory`, `buildMemberAdd` also wraps every
 *older* epoch key it holds to the newcomer's devices, nested as
@@ -541,7 +557,7 @@ distinction from §11's member case:
   of those keys, and the paired device is the same member root. Wrapping them to
   your phone reveals nothing you can't already read on your laptop.
 
-So `PROTOCOL.md` §5's pre-join opacity is scoped to new *members*, not to a
+So `protocol.md` §5's pre-join opacity is scoped to new *members*, not to a
 member's own devices. If a device was paired before this was in place, the manual
 **Rotate key** button (`rotateKey`) does the same re-share — which is exactly what
 the "this device has no key for this room" error tells the user to press.

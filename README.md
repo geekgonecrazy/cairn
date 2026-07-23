@@ -2,16 +2,41 @@
 
 A local-first, end-to-end-encrypted comms client for **humans *and* agents**, built on a
 custom Go protocol: a per-room signed event DAG over Ed25519 identities, with pluggable
-transports (LAN today; Meshtastic, BLE, and iroh later).
+transports (LAN/HTTP today; Meshtastic, BLE, and iroh planned).
 
 Every message is a signed event in an append-only, per-room DAG. Rooms are E2EE. Identities
 are Ed25519 delegation chains, not accounts on a server. The server is **convenience, not
 authority** — it adds history continuity and a blob gateway, but events are verifiable on
-their own and the DAG converges without it.
+their own and the DAG converges without it. A "node" is any keyholder that folds that DAG;
+the home server is just a node that happens to be always on.
 
-See [`PROJECT.md`](./PROJECT.md) for the architecture, [`PROTOCOL.md`](./PROTOCOL.md) for the
-wire contract, [`plan.md`](./plan.md) for the phased build plan, and
-[`decisions.md`](./decisions.md) for settled decisions and **⚠️ known deviations**.
+---
+
+## Documentation
+
+Everything lives in [`docs/`](./docs) — start at the [documentation index](./docs/README.md).
+
+- [**Architecture**](./docs/architecture.md) — nodes, transports, sync, and how one `core`
+  runs on a server, a phone (Wails3), and in a browser. The mobile / BLE / Meshtastic story.
+- [**Events & E2EE**](./docs/events-and-e2ee.md) — the crypto in depth: the household &
+  member roots, the delegation chain, adding users and devices, revocation, rooms, and how
+  room keys rotate. Illustrated with diagrams.
+- [**Protocol**](./docs/protocol.md) — the terse wire contract (envelope, payloads, DAG, sync,
+  SQLite schema).
+- [**Approvals & inlays**](./docs/approvals-and-inlays.md) — portable signed capability grants
+  and the agent-definable inlay UI.
+- [**Plan**](./docs/plan.md) · [**Milestones**](./docs/milestones.md) ·
+  [**Decisions**](./docs/decisions.md) — the phased build plan, exit criteria, and the settled
+  decisions + ⚠️ known deviations.
+- [`PROJECT.md`](./PROJECT.md) — a one-page orientation for contributors.
+
+### Architecture in one picture
+
+One `core` (Go) is the node. The server, a phone, and a browser differ only in which
+transports they can reach and whether they're always on — not in authority, because there
+isn't any. Full detail in [`docs/architecture.md`](./docs/architecture.md).
+
+![Node & transport topology](./docs/diagrams/node-topology.svg)
 
 ---
 
@@ -61,8 +86,9 @@ go run ./cmd/cairnd
 ```
 
 The household's words are never typed into the browser — they can vouch for anyone as anyone,
-so they stay on the server (see `decisions.md` §Founding and attestation move to the CLI). An
-un-founded node refuses every event: an empty trust list is default-deny, not open.
+so they stay on the server (see [`docs/decisions.md`](./docs/decisions.md) §Founding and
+attestation move to the CLI). An un-founded node refuses every event: an empty trust list is
+default-deny, not open.
 
 **2 — Frontend** (Vite dev server, proxies the API to cairnd):
 
@@ -109,10 +135,10 @@ Then open **http://localhost:8099/__hub/** (`/` redirects there).
   a stranger's household verifies its own signature perfectly.
 - **Add a second person.** Same thing: they join in a fresh browser, you run `cairnctl attest`
   with their code. `go run ./cmd/cairnctl roots` shows what this node trusts.
-- **Open two browser windows.** Since Phase 4 the member + device keys persist in
-  `localStorage`, so two *tabs* are now one member. For two distinct participants use a normal
-  and a private window (or two browser profiles), each with its own household. Send a message in
-  one and watch it converge in the other over SSE.
+- **Open two browser windows.** The member + device keys persist in `localStorage`, so two
+  *tabs* are one member. For two distinct participants use a normal and a private window (or two
+  browser profiles), each with its own household. Send a message in one and watch it converge in
+  the other over SSE.
 - **Create a room.** A new household has **no rooms** — the sidebar is empty by design.
   Hit **+** to create one; you become its first member and it mints the room key. Add someone
   with **Members & keys** → paste their member key (from their **Identity & devices → You**).
@@ -144,7 +170,8 @@ Then open **http://localhost:8099/__hub/** (`/` redirects there).
 ## A headless client (`cmd/agent`)
 
 Proof that the protocol is client-agnostic: a plain Go program with an Ed25519 keypair,
-speaking the same signed events as the browser.
+speaking the same signed events as the browser. It is a **full node** — the same thing an
+embedded on-device `core` will be.
 
 ```sh
 # create a room, admit a human by their MEMBER key, post inlays + a capability request
@@ -181,7 +208,7 @@ go run ./cmd/cairnd -configFile config.yaml
 | `sqlitePath` | `cairn.db` | SQLite file |
 | `webappDir` | `webapp/dist` | built SPA to serve (skipped if absent) |
 | `blobDir` | `cairn-blobs` | local blob store directory |
-| `trustedRoots` | *(empty)* | hex household root pubkeys. **Empty = accept any well-formed signed event** (dev). Once set, senders must chain to one of these roots. |
+| `trustedRoots` | *(empty)* | hex household root pubkeys. **Empty = awaiting founding**: the node refuses every event until the first attestation adopts a household root, then enforces against it (persisted across restarts). Set it to pin exactly the roots you trust and be strict from t=0. Never an "accept anything" mode. |
 
 **Dev-phase policy:** there are no migrations. Resetting takes **both sides**, in this order:
 
@@ -189,12 +216,13 @@ go run ./cmd/cairnd -configFile config.yaml
    (DevTools → Application → Storage → *Clear site data*). This drops the IndexedDB DAG cache
    (`cairn`), the identity vault and room keys (`localStorage`), and the session key
    (`sessionStorage`).
-2. **Then** stop the server and delete `cairn.db*` and `cairn-blobs/`.
+2. **Then** stop the server and delete `cairn.db*` and `cairn-blobs/`, and — if you want a new
+   household — `trusted-roots.txt`.
 
 > ⚠️ **Order matters.** Cairn is local-first: a client holds the full DAG and pushes anything
-> the server lacks on reconnect (frontier sync, §6). Wipe the server with a tab still open and
-> that client immediately re-uploads its history — the database refills itself and it looks
-> like the wipe silently failed. It didn't; the client won.
+> the server lacks on reconnect (frontier sync). Wipe the server with a tab still open and that
+> client immediately re-uploads its history — the database refills itself and it looks like the
+> wipe silently failed. It didn't; the client won.
 
 ---
 
@@ -247,31 +275,42 @@ approval/       portable signed capability artifacts (the human's signature)
 blobs/          data plane: file_ref envelope + Backend (local impl)
 store/          store.Store interface; store/sqlite implementation
 config/ core/ controllers/ router/     wiring, Connect handlers, SSE, blob gateway
-cmd/cairnd/     the server binary
+cmd/cairnd/     the server binary   ·   cmd/cairnctl/  founding + attestation CLI
+cmd/agent/      a headless Go node (demo)   ·   cmd/smoke/  end-to-end check
 webapp/         Svelte + Vite PWA (the UI)
+docs/           architecture, protocol, crypto, plan, decisions, diagrams
 claude-design/  React mockup — visual reference, not shipped
+```
+
+---
+
+## Documentation authoring
+
+Diagrams under [`docs/diagrams/`](./docs/diagrams) are [D2](https://d2lang.com) sources
+(`*.d2`) rendered to committed SVGs. To regenerate after editing a `.d2`:
+
+```sh
+d2 --theme 0 --pad 24 docs/diagrams/<name>.d2 docs/diagrams/<name>.svg
 ```
 
 ---
 
 ## Known caveats
 
-- **⚠️ `blobs` is not iroh-store.** `plan.md` specifies an iroh-store gRPC client; the shipped
-  backend is a local filesystem store behind a `Backend` interface. Content addressing,
-  encryption, range reads, and retrieval states are all real; peer-to-peer fetch and real
-  pinning are not. Full rationale in [`decisions.md`](./decisions.md) §Deviations.
+- **⚠️ `blobs` is not iroh-store.** [`docs/plan.md`](./docs/plan.md) specifies an iroh-store
+  gRPC client; the shipped backend is a local filesystem store behind a `Backend` interface.
+  Content addressing, encryption, range reads, and retrieval states are all real; peer-to-peer
+  fetch and real pinning are not. Full rationale in [`docs/decisions.md`](./docs/decisions.md)
+  §Deviations.
 - **The capability broker is external** and not built here. Cairn delivers a capability
   request, lets you sign a grant **in the UI** with your key, and produces a portable artifact
   the agent carries to the broker. Cairn never mints credentials or evaluates policy.
 - **Device pairing is paste-a-code, not scan-a-code.** The QR is rendered and the payload is
   final, but there is no camera capture yet — you copy the `cairn:pair:1:…` string between
   devices. Camera scanning needs `getUserMedia` and a secure context.
-- **⚠️ Revocation propagates but is NOT ENFORCED by default.** A revoke now reaches other
-  members (`PutIdentityObject` → `ResolveSender`), and clients render a revoked sender as
-  `Name (revoked device)`. But `cairnd`'s chain gate is opt-in: with `trustedRoots` empty
-  (the dev default) it accepts **any** well-formed signed event, so a revoked device can still
-  post. Enforcement requires setting `trustedRoots` to your household root — visible in the UI
-  under **Identity & devices → You → Household**. Until then revocation is advisory: clients
-  label it, the server does not refuse it.
+- **Alternate transports are not built yet.** Everything moves over HTTP (Connect + SSE) today.
+  The `transport/` interface, the pubkey-addressed router, LAN/BLE/Meshtastic, and the Wails3
+  on-device node are planned, not present — see [`docs/architecture.md`](./docs/architecture.md)
+  §Current state vs. target and the phases in [`docs/plan.md`](./docs/plan.md).
 - **Spaces admit-policy, peer-household join, and notification settings are not built.** They
-  are the deferred half of Phase 4 (see `plan.md`).
+  are the deferred half of Phase 4 (see [`docs/plan.md`](./docs/plan.md)).

@@ -1,0 +1,24 @@
+# Verifying a sender (identity.VerifySender) — one walk from a signing key up to a
+# trusted household root. A missing link is "fetch and retry"; a bad sig / expiry /
+# revocation / untrusted root is terminal.
+direction: down
+
+start: "sender_pub\n(session OR device key)" { shape: oval; style.fill: "#fefce8" }
+sess: "session_delegation?\nresolve session → device" { shape: diamond; style.fill: "#f1f5f9" }
+walk: "walk device tree:\ndevice → device_delegation → parent …\n(≤ depth 8, cycle-checked)" { style.fill: "#eff6ff" }
+revoke: "revocation check at EVERY hop\n(revoke binds only from an ancestor)" { style.fill: "#fef2f2"; style.stroke: "#b91c1c" }
+att: "member root → identity_attestation" { style.fill: "#ecfdf5" }
+trust: "attestation.origin ∈ trustedRoots?" { shape: diamond; style.fill: "#f1f5f9" }
+ok: "RESOLVED\n{ member_pub, kind, origin, operated_by }" { shape: oval; style.fill: "#dcfce7"; style.stroke: "#15803d" }
+bad: "REJECT\nErrRevoked / ErrExpired / ErrBadSignature / ErrUntrustedRoot" { shape: oval; style.fill: "#fee2e2"; style.stroke: "#b91c1c" }
+fetch: "ErrUnknownObject\n→ GetIdentityObject(hash), retry" { style.fill: "#fff7ed"; style.stroke: "#c2410c" }
+
+start -> sess
+sess -> walk: "device key"
+walk -> revoke -> att
+att -> trust
+trust -> ok: "yes"
+trust -> bad: "no"
+revoke -> bad: "revoked / expired"
+walk -> fetch: "link missing"
+att -> fetch: "attestation missing"

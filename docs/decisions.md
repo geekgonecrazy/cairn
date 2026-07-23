@@ -5,7 +5,7 @@ user actually *decided*, what's still *open*, and *reference* facts pulled from 
 Nothing in "Open" or "Reference" is a settled decision.
 
 Companion to [`plan.md`](./plan.md) (the build plan) and the design mockup in
-[`claude-design/`](./claude-design). Architecture source of truth: `/root/code/vision/systems/cairn/`
+[`claude-design/`](../claude-design). Architecture source of truth: `/root/code/vision/systems/cairn/`
 (`protocol.md`, `inlay.md`, `ux.md`, `README.md`), `systems/identity/web.md`,
 `systems/data-plane/README.md`.
 
@@ -67,7 +67,7 @@ Companion to [`plan.md`](./plan.md) (the build plan) and the design mockup in
 
 ### Household-root bootstrap & recovery shape — decided 2026-07-18 (Phase 4)
 
-Closes the open question carried in `plan.md` §5 and `PROTOCOL.md` §298. Implemented in
+Closes the open question carried in `plan.md` §5 and `protocol.md` §298. Implemented in
 `identity/household.go`.
 
 - The household root is an **offline-only apex**. It signs exactly one object type —

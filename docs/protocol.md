@@ -1,6 +1,6 @@
 # Cairn — protocol spec
 
-The concrete contract behind [`proto/cairn.proto`](./proto/cairn.proto): identity & crypto, the
+The concrete contract behind [`proto/cairn.proto`](../proto/cairn.proto): identity & crypto, the
 event envelope, payload schemas, the room DAG, sync, room keys, the API, and the SQLite schema. This
 is what an implementer needs to reach the **Phase 1 exit** ("two clients converge a verified
 history"). Grounded in `/root/code/vision/systems/cairn/protocol.md`; where that doc left a knob
@@ -59,7 +59,7 @@ chain doesn't terminate at a known root, if any sig fails, or if any link is exp
 
 ## 2. The Event envelope
 
-Wire fields in [`proto/cairn.proto`](./proto/cairn.proto). Semantics:
+Wire fields in [`proto/cairn.proto`](../proto/cairn.proto). Semantics:
 
 ### 2.1 Canonical content, `event_id`, `sig`
 

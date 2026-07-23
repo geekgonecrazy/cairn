@@ -1,0 +1,17 @@
+# Adding a new device for an existing member (QR pairing).
+# The new device's private key never leaves it; the member root is NOT needed —
+# an already-trusted device signs as the parent, so the device tree grows without
+# any offline apex being present.
+shape: sequence_diagram
+
+new: "New device\n(unpaired)"
+trusted: "Trusted device\n(already in the tree)"
+log: "Identity log\n(carrier / peers)"
+
+new -> new: "generate device keypair"
+new -> trusted: "QR: cairn:pair:1:<device_pub>:<label>"
+trusted -> trusted: "show Fingerprint on BOTH screens;\nhuman compares 40b0-... visually"
+trusted -> trusted: "ApprovePairing: sign device_delegation\n{ device_pub, parent_pub = this device }"
+trusted -> log: "publish device_delegation"
+trusted -> new: "delegation (+ current room keys re-wrapped\nvia room_key_rotate to the new device key)"
+new -> log: "now verifies: new → trusted → … → member root → household root ✓"

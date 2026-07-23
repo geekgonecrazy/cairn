@@ -1,0 +1,31 @@
+# Room-key epochs and rotation. Each room has a symmetric AES-256 key per epoch;
+# payloads name their key_epoch. Join and leave both rotate. Keys are HPKE-wrapped
+# to each member's DEVICE keys (the member root holds no live secret).
+direction: right
+
+e1: "Epoch 1\n(room created)" {
+  style.fill: "#eff6ff"
+  k: "room_key₁" { shape: circle; style.fill: "#dbeafe" }
+  m: "wrapped → Alice's devices" { style.font-size: 12 }
+}
+e2: "Epoch 2\n(Bob added)" {
+  style.fill: "#ecfdf5"
+  k: "room_key₂" { shape: circle; style.fill: "#bbf7d0" }
+  m: "wrapped → Alice + Bob devices" { style.font-size: 12 }
+}
+e3: "Epoch 3\n(Bob removed)" {
+  style.fill: "#fef2f2"
+  k: "room_key₃" { shape: circle; style.fill: "#fecaca" }
+  m: "wrapped → Alice's devices ONLY" { style.font-size: 12 }
+}
+
+e1 -> e2: "MEMBER_ADD\n{ epoch:2, wrapped_keys }" { style.stroke: "#047857" }
+e2 -> e3: "MEMBER_REMOVE + ROOM_KEY_ROTATE\n{ epoch:3, wrapped_keys }" { style.stroke: "#b91c1c" }
+
+note: |md
+  **Pre-join history is opaque** — a new member gets only current+future epoch
+  keys (same property as Megolm). **Post-removal is opaque** to the removed member,
+  but messages they already held stay readable: rotation protects the *future*, not
+  the past. Wrapping is DHKEM(X25519,HKDF-SHA256)/AES-256-GCM over each device's
+  Ed25519 key mapped to X25519.
+| { style.font-size: 13; near: bottom-center }

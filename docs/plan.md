@@ -4,10 +4,15 @@ A phased plan to build **Cairn**: a local-first, E2EE, human + agent comms clien
 custom Go protocol (per-room signed event DAG, Ed25519 identities, pluggable transports).
 
 **Two sources of truth:**
-- **UI / UX** → the design mockup in [`claude-design/`](./claude-design) (Svelte target). The
+- **UI / UX** → the design mockup in [`claude-design/`](../claude-design) (Svelte target). The
   React mockup is a *picture, not a blueprint* — port the look/behavior, not the structure.
 - **Architecture / protocol** → the vision docs at `/root/code/vision/systems/cairn/`
   (`protocol.md`, `inlay.md`, `identity/web.md`) + `systems/data-plane/README.md`.
+
+The **node & transport model** this plan builds toward — one `core` running on the home
+server, a phone, and a browser; the server as "just a permanent node"; BLE/Meshtastic as
+alternate transports — is written up in [`architecture.md`](architecture.md). Read it
+alongside this plan; the phases below are how we get there.
 
 ---
 
@@ -82,7 +87,7 @@ cairn/
 
 **Define the Phase-3 demonstration criteria before Phase 1** (vision requirement): e.g.
 *"two devices converge a 24h, N-event history across LAN↔mesh; broker approval end-to-end;
-no crypto regressions."* Put it in `PROJECT.md` or a `MILESTONES.md`.
+no crypto regressions."* Put it in `PROJECT.md` or a `milestones.md`.
 
 ---
 
@@ -103,7 +108,7 @@ phased plan; 0 and 6 bracket it.
 - [ ] `store`: SQLite schema + migrations (`modernc.org/sqlite`).
 - [ ] `web/`: Svelte+Vite PWA scaffold, SPA base path, port the design system (CSS vars,
   `Icon`, primitives, chips, buttons, modal shell) from the mockup into Svelte components.
-- [ ] `MILESTONES.md` with the Phase-3 demonstration criteria.
+- [ ] `milestones.md` with the Phase-3 demonstration criteria.
 
 **Exit:** a signed `Event` round-trips proto ↔ Go ↔ TS; chain verifies; Svelte shell renders
 an empty room with the design system.
@@ -144,7 +149,7 @@ no history; message states reflect real delivery.
   `number`, `progress_fraction`, `status_enum`, `timestamp`, `image_cid`, `series`,
   `action_ref`, `input`/`select`, `record`/`list`/`group`/`inlay_ref`) + **text fallback** +
   **widget placeholder**. Ported from `claude-design/cairn-primitives.jsx`.
-- [x] **Agent-definable inlays** (`inlay_decl`, PROTOCOL.md §3): declarations travel as room
+- [x] **Agent-definable inlays** (`inlay_decl`, protocol.md §3): declarations travel as room
   events, are learned by verified BLAKE3 hash, and render under **trust-by-author** — an agent
   in the room composes UI nobody compiled in. See the phasing note below: this REPLACED the
   standard-library approach, it was not an addition to it.
@@ -241,6 +246,18 @@ between two devices; approving a capability triggers a biometric ceremony.
   keyboard nav) as a standing requirement, not a phase.
 - **Testing.** DAG convergence tests (partition/merge), crypto conformance, and the Phase-3
   demonstration harness.
+- **Node & transport seam (cut early).** The endgame is one `core` running as a *node* on the
+  server, on mobile (Wails3, embedding `core`), and in the browser — with pluggable transports
+  and symmetric node-to-node sync, the home server being just the always-on node
+  ([`architecture.md`](architecture.md)). Today everything moves over one transport (HTTP)
+  reached one way (`cairnd`'s services), and that assumption is quietly baked into
+  `router`/`controllers`/the SSE `Hub`. **Before Phase 3/5**, introduce a `transport/`
+  interface (`Send(pubkey, frame)`, `Available()`, inbound channel) with the HTTP/SSE path
+  refactored to be its first impl, plus a `Node` abstraction so `core` stops assuming one
+  server. This is additive plumbing — it touches neither the protocol nor the crypto — and
+  every alternate transport (LAN, BLE, mesh, iroh) and the mobile embed slot in behind it.
+  Promote the frontier `Sync` from client-pull-only to a symmetric driver over `peer_frontier`;
+  demote SSE to a nudge.
 
 ---
 
@@ -257,6 +274,17 @@ From `protocol.md` (carry these forward):
 - **RP-ID for the cross-household browser case** — **Phase 4+ federation**.
 - Passkey doc tension: does `approval_grant` carry the raw WebAuthn passkey signature or a
   gesture-gated session-key signature? Lock before **Phase 5** broker/verifier work.
+- **Browser runtime: Go-WASM node vs. frozen TS port** — **the load-bearing decision, lock
+  before Phase 5.** Today the browser is a hand-maintained TypeScript reimplementation of the
+  node, kept byte-parity with Go by conformance vectors. The maximal-Go direction is to compile
+  `core`+`event`+`room`+`identity` to **WASM** so the browser runs the *same* node (HTTP-only
+  transport), retiring the TS port and the parity tax; the WebAuthn/passkey ceremony,
+  `fetch`/SSE glue, and an IndexedDB bridge stay in JS. The alternative is to freeze the TS port
+  and accept the ongoing tax. Decides where transport framing lives (shared Go vs. duplicated)
+  and who signs on device. See [`architecture.md` §4](architecture.md#4-where-the-same-node-runs).
+- **Wails3 topology** — does the native app embed the full Go `core` as an on-device node, or
+  act as a thin client to `cairnd`? Recommendation: **embed** (a thin client gives none of the
+  offline/BLE/mesh value). Lock before **Phase 5**.
 
 ---
 

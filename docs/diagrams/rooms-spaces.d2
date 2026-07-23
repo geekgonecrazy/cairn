@@ -1,0 +1,30 @@
+# Rooms, spaces, and the two membership tiers.
+# A SPACE grants DISCOVERY (see that a room exists). A ROOM grants ACCESS (hold
+# its key, read its messages). Everything you can see is the result of a signed
+# act that named you.
+direction: right
+
+space: "Space  \"Family\"\n(SPACE_CREATE — creator = owner)" {
+  style.fill: "#eef2ff"; style.stroke: "#4338ca"
+
+  general: "#general\n(discoverable)" { style.fill: "#ffffff" }
+  kids: "#kids\n(discoverable)" { style.fill: "#ffffff" }
+  vault: "#parents-only\n(hidden)" { style.fill: "#f8fafc"; style.stroke: "#64748b"; style.stroke-dash: 3 }
+}
+
+alice: "Alice\n(space member + room member)" { style.fill: "#ecfdf5" }
+bob: "Bob\n(space member only)" { style.fill: "#fefce8" }
+stranger: "Stranger\n(no signed act names them)" { style.fill: "#fee2e2" }
+
+alice -> space.general: "MEMBER_ADD (holds key) — reads" { style.stroke: "#047857" }
+alice -> space.vault: "MEMBER_ADD — reads hidden room" { style.stroke: "#047857" }
+bob -> space.general: "SPACE_MEMBER_ADD → discovers, locked" { style.stroke: "#a16207" }
+bob -> space.kids: "discovers (locked) → ROOM_JOIN_REQUEST" { style.stroke: "#a16207"; style.stroke-dash: 3 }
+stranger -> space: "sees nothing" { style.stroke: "#b91c1c"; style.stroke-dash: 3 }
+
+note: |md
+  **Space membership** (`SPACE_MEMBER_ADD`) wraps no key — cheap to grant, leaks
+  nothing. **Room membership** (`MEMBER_ADD`) wraps the room key. A **hidden** room
+  is shown only to someone actually admitted. Only the space **owner** may admit /
+  remove space members — enforced at the fold, on every node.
+| { style.font-size: 13 }
