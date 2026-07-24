@@ -77,18 +77,13 @@ Two terminals.
 git clone https://github.com/geekgonecrazy/cairn.git
 cd cairn
 
-# Found the household. ONCE, on the machine that runs Cairn. It shows a 24-word
-# phrase, asks for three words back, and records the household root in
-# trusted-roots.txt so the server is strict from the first event.
-go run ./cmd/cairnctl init -name "Our household"
-
 go run ./cmd/cairnd
 ```
 
-The household's words are never typed into the browser — they can vouch for anyone as anyone,
-so they stay on the server (see [`docs/decisions.md`](./docs/decisions.md) §Founding and
-attestation move to the CLI). An un-founded node refuses every event: an empty trust list is
-default-deny, not open.
+No founding step: in the v2 trust model there is no household to create — your identity is a
+key you mint in the app. The relay is currently **open** (it accepts any well-signed event
+whose sender resolves to a valid, non-revoked chain); an invite key + allow-list is the next
+slice (see [`docs/decisions.md`](./docs/decisions.md) §Trust model v2).
 
 **2 — Frontend** (Vite dev server, proxies the API to cairnd):
 
@@ -121,31 +116,23 @@ Then open **http://localhost:8099/__hub/** (`/` redirects there).
 
 ## Things to try
 
-- **Set up an identity.** Everyone **joins**, including whoever founded the household — there
-  is no separate founder path in the app. Take *Join a household*, write down **your own**
-  24-word phrase (yours, not the household's), confirm three words back, and copy the join code.
-  Then on the server:
-
-  ```sh
-  go run ./cmd/cairnctl attest <their join code>
-  ```
-
-  It prints an invite to paste back, and the household fingerprint they should see. Compare it
-  out loud — that comparison is load-bearing, because an invite's household is self-declared and
-  a stranger's household verifies its own signature perfectly.
-- **Add a second person.** Same thing: they join in a fresh browser, you run `cairnctl attest`
-  with their code. `go run ./cmd/cairnctl roots` shows what this node trusts.
+- **Set up an identity.** Open the app and choose **Create my identity** — pick a name, write
+  down **your** 24-word recovery phrase, and confirm three words back. That's the whole
+  onboarding: no household, no invite, no CLI. Your identity is a key you own.
+- **Add a second person.** In a fresh browser (a private window or another profile), they choose
+  **Create my identity** too. To talk, add them to a room by their **member key** (they copy it
+  from **Identity & devices → You**).
 - **Open two browser windows.** The member + device keys persist in `localStorage`, so two
-  *tabs* are one member. For two distinct participants use a normal and a private window (or two
-  browser profiles), each with its own household. Send a message in one and watch it converge in
-  the other over SSE.
-- **Create a room.** A new household has **no rooms** — the sidebar is empty by design.
-  Hit **+** to create one; you become its first member and it mints the room key. Add someone
-  with **Members & keys** → paste their member key (from their **Identity & devices → You**).
-  Joining a household does *not* grant room access: those are separate acts.
+  *tabs* are one identity. For two distinct participants use a normal and a private window (or
+  two browser profiles), each with its own identity. Send a message in one and watch it converge
+  in the other over SSE.
+- **Create a space, then a room.** A fresh identity has **no rooms** — the rail is empty by
+  design. Create a space, then a room inside it; you become its first member and it mints the
+  room key. Add someone with **Members & keys** → paste their member key (from their **Identity
+  & devices → You**).
 - **Reset this device** — **Identity & devices → You → Reset this device**. Erases keys, room
   keys and the cached DAG. Not a "log out": there is no server session, the keys *are* the
-  account, and without your 24 words the household is gone from this device.
+  account, and without your 24 words your identity is gone from this device.
 - **Add another device.** On the new device choose *Add this device to my account* — it shows a
   QR code and waits. On a device you already use: **Identity & devices → Pair → Scan QR code**,
   compare the fingerprint on both screens, approve. The new device is delegated by the one that
@@ -208,7 +195,10 @@ go run ./cmd/cairnd -configFile config.yaml
 | `sqlitePath` | `cairn.db` | SQLite file |
 | `webappDir` | `webapp/dist` | built SPA to serve (skipped if absent) |
 | `blobDir` | `cairn-blobs` | local blob store directory |
-| `trustedRoots` | *(empty)* | hex household root pubkeys. **Empty = awaiting founding**: the node refuses every event until the first attestation adopts a household root, then enforces against it (persisted across restarts). Set it to pin exactly the roots you trust and be strict from t=0. Never an "accept anything" mode. |
+
+> **No `trustedRoots` in v2.** The old household chain gate is gone — the relay currently
+> accepts any well-signed event (an invite key + allow-list is the next slice). See
+> [`docs/decisions.md`](./docs/decisions.md) §Trust model v2.
 
 **Dev-phase policy:** there are no migrations. Resetting takes **both sides**, in this order:
 
@@ -216,8 +206,7 @@ go run ./cmd/cairnd -configFile config.yaml
    (DevTools → Application → Storage → *Clear site data*). This drops the IndexedDB DAG cache
    (`cairn`), the identity vault and room keys (`localStorage`), and the session key
    (`sessionStorage`).
-2. **Then** stop the server and delete `cairn.db*` and `cairn-blobs/`, and — if you want a new
-   household — `trusted-roots.txt`.
+2. **Then** stop the server and delete `cairn.db*` and `cairn-blobs/`.
 
 > ⚠️ **Order matters.** Cairn is local-first: a client holds the full DAG and pushes anything
 > the server lacks on reconnect (frontier sync). Wipe the server with a tab still open and that
@@ -235,7 +224,7 @@ go vet ./...
 cd webapp
 npm run check                  # svelte-check + tsc
 npm run conformance            # browser event_ids must match Go byte-for-byte
-npm run identity-conformance   # browser household derivation + attestation sigs match Go
+npm run identity-conformance   # browser member-key derivation + self-attestation sigs match Go
 npm run inlay-check            # every declaration's binds resolve against its bindings
 npm run build
 ```
@@ -275,7 +264,7 @@ approval/       portable signed capability artifacts (the human's signature)
 blobs/          data plane: file_ref envelope + Backend (local impl)
 store/          store.Store interface; store/sqlite implementation
 config/ core/ controllers/ router/     wiring, Connect handlers, SSE, blob gateway
-cmd/cairnd/     the server binary   ·   cmd/cairnctl/  founding + attestation CLI
+cmd/cairnd/     the server binary   ·   cmd/cairnctl/  node admin (relay invites — WIP)
 cmd/agent/      a headless Go node (demo)   ·   cmd/smoke/  end-to-end check
 webapp/         Svelte + Vite PWA (the UI)
 docs/           architecture, protocol, crypto, plan, decisions, diagrams
