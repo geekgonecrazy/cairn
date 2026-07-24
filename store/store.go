@@ -91,7 +91,18 @@ type Store interface {
 	PutPeerFrontier(peerPub, roomID []byte, heads [][]byte) error
 	GetPeerFrontier(peerPub, roomID []byte) ([][]byte, error)
 
-	// --- process metadata (small key/value; e.g. the adopted household root) ---
+	// --- relay access (operational admission; slice 2) ---
+
+	// AllowMember adds a member root to the relay's allow-list (idempotent).
+	AllowMember(memberPub []byte, via string, at int64) error
+	IsAllowed(memberPub []byte) (bool, error)
+	ListAllowed() ([]*models.AllowedMember, error)
+	RemoveAllowed(memberPub []byte) error
+	// ConsumeInvite atomically records a single-use invite id as consumed by
+	// memberPub; returns false if it was already consumed (the single-use gate).
+	ConsumeInvite(id, memberPub []byte, at int64) (consumed bool, err error)
+
+	// --- process metadata (small key/value; e.g. the relay keypair seed) ---
 
 	PutMeta(key, value string) error
 	// GetMeta returns the value and whether the key was present.

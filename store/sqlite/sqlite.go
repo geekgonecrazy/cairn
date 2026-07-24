@@ -121,6 +121,16 @@ CREATE TABLE IF NOT EXISTS peer_frontier (
 );
 
 CREATE TABLE IF NOT EXISTS meta ( key TEXT PRIMARY KEY, value TEXT );
+
+-- Relay access (slice 2): the allow-list of member roots this relay will carry,
+-- and the ids of single-use invite tokens already redeemed. Operational, not a
+-- trust anchor (docs/decisions.md §Trust model v2).
+CREATE TABLE IF NOT EXISTS allow_list (
+  member_pub BLOB PRIMARY KEY, added_at INTEGER, via TEXT
+);
+CREATE TABLE IF NOT EXISTS consumed_invites (
+  id BLOB PRIMARY KEY, consumed_at INTEGER, member_pub BLOB
+);
 `
 
 // CheckDb creates the schema if it does not yet exist.

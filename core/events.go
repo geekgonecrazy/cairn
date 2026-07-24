@@ -1,12 +1,16 @@
 package core
 
 import (
+	"crypto/ed25519"
+	"errors"
 	"fmt"
 	"log"
 	"time"
 
+	"github.com/geekgonecrazy/cairn/config"
 	"github.com/geekgonecrazy/cairn/event"
 	"github.com/geekgonecrazy/cairn/identity"
+	"github.com/geekgonecrazy/cairn/relay"
 	cairnv1 "github.com/geekgonecrazy/cairn/proto/cairnv1"
 )
 
@@ -29,12 +33,19 @@ func SubmitEvent(ev *cairnv1.Event) error {
 	}
 
 	// Resolve the sender's chain (device → member root, revocation enforced). This
-	// is identity resolution, not trust: any valid member chain is accepted. A
-	// refusal the operator cannot see is indistinguishable from a client bug, so
-	// log it.
-	if _, err := identity.VerifySender(ev.SenderPub, st, time.Now().UnixMilli()); err != nil {
+	// is identity resolution, not trust. A refusal the operator cannot see is
+	// indistinguishable from a client bug, so log it.
+	res, err := identity.VerifySender(ev.SenderPub, st, time.Now().UnixMilli())
+	if err != nil {
 		log.Printf("REJECT event type=%s sender=%x: %v", ev.Type, ev.SenderPub, err)
 		return fmt.Errorf("core: sender not verified: %w", err)
+	}
+
+	// Relay access gate (slice 2): the sender's member must be carried by this
+	// relay. Operational admission, not identity trust — see package relay.
+	if err := enforceAccess(res.MemberPub); err != nil {
+		log.Printf("REJECT event type=%s member=%x: %v", ev.Type, res.MemberPub, err)
+		return err
 	}
 
 	// Presence is ephemeral (docs/protocol.md §3): fan it out live, but never
@@ -60,4 +71,55 @@ func SubmitEvent(ev *cairnv1.Event) error {
 		hub.broadcast(ev)
 	}
 	return nil
+}
+
+// ErrNotAllowed is returned when the relay is invite-only and the sender's member
+// root is not on the allow-list. Terminal for that sender until an invite or the
+// operator admits them.
+var ErrNotAllowed = errors.New("core: sender not admitted to this relay (needs an invite)")
+
+// enforceAccess is the relay allow-list gate. When the relay is OPEN
+// (config.RequireInvite=false) it admits any resolved sender and records them
+// trust-on-first-use, so the operator can see who's been carried and switch to
+// invite-only later. When invite-only, the member must already be on the list.
+func enforceAccess(memberPub []byte) error {
+	ok, err := st.IsAllowed(memberPub)
+	if err != nil {
+		return err
+	}
+	if ok {
+		return nil
+	}
+	if !config.Config.RequireInvite {
+		return st.AllowMember(memberPub, "tofu", time.Now().UnixMilli())
+	}
+	return ErrNotAllowed
+}
+
+// RedeemInvite verifies a relay-signed invite, marks it consumed (single-use),
+// and adds memberPub to the allow-list. Backs the RedeemInvite RPC so a freshly
+// created identity can admit itself with an invite the operator handed out.
+func RedeemInvite(inviteStr string, memberPub []byte) error {
+	if len(memberPub) != ed25519.PublicKeySize {
+		return fmt.Errorf("core: member_pub must be %d bytes", ed25519.PublicKeySize)
+	}
+	inv, err := relay.ParseInvite(inviteStr)
+	if err != nil {
+		return err
+	}
+	if !inv.Verify(relayPub) {
+		return fmt.Errorf("core: invite is not signed by this relay")
+	}
+	now := time.Now().UnixMilli()
+	if inv.ExpiresAt != 0 && now > inv.ExpiresAt {
+		return fmt.Errorf("core: invite has expired")
+	}
+	consumed, err := st.ConsumeInvite(inv.ID, memberPub, now)
+	if err != nil {
+		return err
+	}
+	if !consumed {
+		return fmt.Errorf("core: invite has already been used")
+	}
+	return st.AllowMember(memberPub, "invite", now)
 }

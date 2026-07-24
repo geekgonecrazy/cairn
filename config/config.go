@@ -24,6 +24,12 @@ type Configuration struct {
 	// BlobDir is the local blob backend's directory (the dev stand-in for
 	// iroh-store — see docs/decisions.md §Deviations).
 	BlobDir string `yaml:"blobDir" json:"blobDir"`
+	// RequireInvite gates the write path on the relay allow-list (slice 2). When
+	// false (default, dev), the relay is OPEN: it admits any valid sender and
+	// records them trust-on-first-use, so the operator can see who's been carried
+	// and switch to invite-only later. When true, a member must be on the
+	// allow-list (added by an invite the operator issued, or `cairnctl allow`).
+	RequireInvite bool `yaml:"requireInvite" json:"requireInvite"`
 	// TLSCertFile/TLSKeyFile, if both set, make cairnd serve HTTPS instead of
 	// cleartext.
 	//

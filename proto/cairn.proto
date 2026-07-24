@@ -187,6 +187,19 @@ message GetIdentityObjectResponse { bytes cbor = 1; } // CBOR object; schema in 
 message PutIdentityObjectRequest { bytes cbor = 1; }
 message PutIdentityObjectResponse { bytes hash = 1; } // BLAKE3-256 content address
 
+// Relay access (slice 2; docs/decisions.md §Trust model v2). RelayInfo returns
+// the relay's own pubkey — a client pins it to know it is talking to the right
+// relay and to verify invite tokens against it. RedeemInvite exchanges a
+// relay-signed, single-use invite for a place on the allow-list. This is
+// OPERATIONAL admission (who may use the relay), not identity trust.
+message RelayInfoRequest {}
+message RelayInfoResponse { bytes relay_pub = 1; }
+message RedeemInviteRequest {
+  string invite     = 1; // cairn:invite:1:… (relay-signed, single-use)
+  bytes  member_pub = 2; // the member root to admit
+}
+message RedeemInviteResponse {}
+
 // Resolve a sender key to the identity-log objects that place it.
 //
 // GetIdentityObject is keyed by HASH, but a client meeting an unknown sender
@@ -283,5 +296,8 @@ service CairnService {
   rpc ListRooms(ListRoomsRequest) returns (ListRoomsResponse);
   rpc ListSpaceMembers(ListSpaceMembersRequest) returns (ListSpaceMembersResponse);
   rpc ListMemberDevices(ListMemberDevicesRequest) returns (ListMemberDevicesResponse);
+  // Relay access (slice 2).
+  rpc RelayInfo(RelayInfoRequest) returns (RelayInfoResponse);
+  rpc RedeemInvite(RedeemInviteRequest) returns (RedeemInviteResponse);
   // Realtime push is SSE (see docs/protocol.md §API), not a proto stream.
 }

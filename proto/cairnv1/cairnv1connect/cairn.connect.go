@@ -56,6 +56,11 @@ const (
 	// CairnServiceListMemberDevicesProcedure is the fully-qualified name of the CairnService's
 	// ListMemberDevices RPC.
 	CairnServiceListMemberDevicesProcedure = "/cairn.v1.CairnService/ListMemberDevices"
+	// CairnServiceRelayInfoProcedure is the fully-qualified name of the CairnService's RelayInfo RPC.
+	CairnServiceRelayInfoProcedure = "/cairn.v1.CairnService/RelayInfo"
+	// CairnServiceRedeemInviteProcedure is the fully-qualified name of the CairnService's RedeemInvite
+	// RPC.
+	CairnServiceRedeemInviteProcedure = "/cairn.v1.CairnService/RedeemInvite"
 )
 
 // CairnServiceClient is a client for the cairn.v1.CairnService service.
@@ -69,6 +74,9 @@ type CairnServiceClient interface {
 	ListRooms(context.Context, *connect.Request[cairnv1.ListRoomsRequest]) (*connect.Response[cairnv1.ListRoomsResponse], error)
 	ListSpaceMembers(context.Context, *connect.Request[cairnv1.ListSpaceMembersRequest]) (*connect.Response[cairnv1.ListSpaceMembersResponse], error)
 	ListMemberDevices(context.Context, *connect.Request[cairnv1.ListMemberDevicesRequest]) (*connect.Response[cairnv1.ListMemberDevicesResponse], error)
+	// Relay access (slice 2).
+	RelayInfo(context.Context, *connect.Request[cairnv1.RelayInfoRequest]) (*connect.Response[cairnv1.RelayInfoResponse], error)
+	RedeemInvite(context.Context, *connect.Request[cairnv1.RedeemInviteRequest]) (*connect.Response[cairnv1.RedeemInviteResponse], error)
 }
 
 // NewCairnServiceClient constructs a client for the cairn.v1.CairnService service. By default, it
@@ -136,6 +144,18 @@ func NewCairnServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(cairnServiceMethods.ByName("ListMemberDevices")),
 			connect.WithClientOptions(opts...),
 		),
+		relayInfo: connect.NewClient[cairnv1.RelayInfoRequest, cairnv1.RelayInfoResponse](
+			httpClient,
+			baseURL+CairnServiceRelayInfoProcedure,
+			connect.WithSchema(cairnServiceMethods.ByName("RelayInfo")),
+			connect.WithClientOptions(opts...),
+		),
+		redeemInvite: connect.NewClient[cairnv1.RedeemInviteRequest, cairnv1.RedeemInviteResponse](
+			httpClient,
+			baseURL+CairnServiceRedeemInviteProcedure,
+			connect.WithSchema(cairnServiceMethods.ByName("RedeemInvite")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -150,6 +170,8 @@ type cairnServiceClient struct {
 	listRooms         *connect.Client[cairnv1.ListRoomsRequest, cairnv1.ListRoomsResponse]
 	listSpaceMembers  *connect.Client[cairnv1.ListSpaceMembersRequest, cairnv1.ListSpaceMembersResponse]
 	listMemberDevices *connect.Client[cairnv1.ListMemberDevicesRequest, cairnv1.ListMemberDevicesResponse]
+	relayInfo         *connect.Client[cairnv1.RelayInfoRequest, cairnv1.RelayInfoResponse]
+	redeemInvite      *connect.Client[cairnv1.RedeemInviteRequest, cairnv1.RedeemInviteResponse]
 }
 
 // SendEvent calls cairn.v1.CairnService.SendEvent.
@@ -197,6 +219,16 @@ func (c *cairnServiceClient) ListMemberDevices(ctx context.Context, req *connect
 	return c.listMemberDevices.CallUnary(ctx, req)
 }
 
+// RelayInfo calls cairn.v1.CairnService.RelayInfo.
+func (c *cairnServiceClient) RelayInfo(ctx context.Context, req *connect.Request[cairnv1.RelayInfoRequest]) (*connect.Response[cairnv1.RelayInfoResponse], error) {
+	return c.relayInfo.CallUnary(ctx, req)
+}
+
+// RedeemInvite calls cairn.v1.CairnService.RedeemInvite.
+func (c *cairnServiceClient) RedeemInvite(ctx context.Context, req *connect.Request[cairnv1.RedeemInviteRequest]) (*connect.Response[cairnv1.RedeemInviteResponse], error) {
+	return c.redeemInvite.CallUnary(ctx, req)
+}
+
 // CairnServiceHandler is an implementation of the cairn.v1.CairnService service.
 type CairnServiceHandler interface {
 	SendEvent(context.Context, *connect.Request[cairnv1.SendEventRequest]) (*connect.Response[cairnv1.SendEventResponse], error)
@@ -208,6 +240,9 @@ type CairnServiceHandler interface {
 	ListRooms(context.Context, *connect.Request[cairnv1.ListRoomsRequest]) (*connect.Response[cairnv1.ListRoomsResponse], error)
 	ListSpaceMembers(context.Context, *connect.Request[cairnv1.ListSpaceMembersRequest]) (*connect.Response[cairnv1.ListSpaceMembersResponse], error)
 	ListMemberDevices(context.Context, *connect.Request[cairnv1.ListMemberDevicesRequest]) (*connect.Response[cairnv1.ListMemberDevicesResponse], error)
+	// Relay access (slice 2).
+	RelayInfo(context.Context, *connect.Request[cairnv1.RelayInfoRequest]) (*connect.Response[cairnv1.RelayInfoResponse], error)
+	RedeemInvite(context.Context, *connect.Request[cairnv1.RedeemInviteRequest]) (*connect.Response[cairnv1.RedeemInviteResponse], error)
 }
 
 // NewCairnServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -271,6 +306,18 @@ func NewCairnServiceHandler(svc CairnServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(cairnServiceMethods.ByName("ListMemberDevices")),
 		connect.WithHandlerOptions(opts...),
 	)
+	cairnServiceRelayInfoHandler := connect.NewUnaryHandler(
+		CairnServiceRelayInfoProcedure,
+		svc.RelayInfo,
+		connect.WithSchema(cairnServiceMethods.ByName("RelayInfo")),
+		connect.WithHandlerOptions(opts...),
+	)
+	cairnServiceRedeemInviteHandler := connect.NewUnaryHandler(
+		CairnServiceRedeemInviteProcedure,
+		svc.RedeemInvite,
+		connect.WithSchema(cairnServiceMethods.ByName("RedeemInvite")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/cairn.v1.CairnService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case CairnServiceSendEventProcedure:
@@ -291,6 +338,10 @@ func NewCairnServiceHandler(svc CairnServiceHandler, opts ...connect.HandlerOpti
 			cairnServiceListSpaceMembersHandler.ServeHTTP(w, r)
 		case CairnServiceListMemberDevicesProcedure:
 			cairnServiceListMemberDevicesHandler.ServeHTTP(w, r)
+		case CairnServiceRelayInfoProcedure:
+			cairnServiceRelayInfoHandler.ServeHTTP(w, r)
+		case CairnServiceRedeemInviteProcedure:
+			cairnServiceRedeemInviteHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -334,4 +385,12 @@ func (UnimplementedCairnServiceHandler) ListSpaceMembers(context.Context, *conne
 
 func (UnimplementedCairnServiceHandler) ListMemberDevices(context.Context, *connect.Request[cairnv1.ListMemberDevicesRequest]) (*connect.Response[cairnv1.ListMemberDevicesResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cairn.v1.CairnService.ListMemberDevices is not implemented"))
+}
+
+func (UnimplementedCairnServiceHandler) RelayInfo(context.Context, *connect.Request[cairnv1.RelayInfoRequest]) (*connect.Response[cairnv1.RelayInfoResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cairn.v1.CairnService.RelayInfo is not implemented"))
+}
+
+func (UnimplementedCairnServiceHandler) RedeemInvite(context.Context, *connect.Request[cairnv1.RedeemInviteRequest]) (*connect.Response[cairnv1.RedeemInviteResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cairn.v1.CairnService.RedeemInvite is not implemented"))
 }

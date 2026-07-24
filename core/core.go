@@ -5,11 +5,14 @@
 package core
 
 import (
+	"crypto/ed25519"
 	"fmt"
+	"log"
 
 	"github.com/geekgonecrazy/cairn/blobs"
 	"github.com/geekgonecrazy/cairn/blobs/local"
 	"github.com/geekgonecrazy/cairn/config"
+	"github.com/geekgonecrazy/cairn/relay"
 	"github.com/geekgonecrazy/cairn/store"
 	"github.com/geekgonecrazy/cairn/store/sqlite"
 )
@@ -18,6 +21,11 @@ var (
 	st        store.Store
 	blobStore blobs.Backend
 	hub       *Hub
+
+	// The relay's own identity: persisted, and what clients pin. Invite tokens
+	// are signed under relayPriv. See package relay.
+	relayPub  ed25519.PublicKey
+	relayPriv ed25519.PrivateKey
 )
 
 // Setup selects and opens the store, creates the schema, and builds the realtime
@@ -52,6 +60,19 @@ func Setup() error {
 	blobStore = bs
 
 	hub = newHub()
+
+	// The relay's own keypair (persisted; clients pin the pubkey). Invites are
+	// signed under it.
+	pub, priv, err := relay.LoadOrCreateKey(st)
+	if err != nil {
+		return err
+	}
+	relayPub, relayPriv = pub, priv
+	if config.Config.RequireInvite {
+		log.Printf("relay %x — invite-only (allow-list enforced)", relayPub)
+	} else {
+		log.Printf("relay %x — OPEN (any valid sender admitted, recorded trust-on-first-use)", relayPub)
+	}
 	return nil
 }
 
@@ -60,3 +81,7 @@ func Store() store.Store { return st }
 
 // Blobs exposes the data-plane backend (the blob gateway serves it).
 func Blobs() blobs.Backend { return blobStore }
+
+// RelayPub is this relay's public key — what a client pins to know it is talking
+// to the right relay, and what invite tokens verify against.
+func RelayPub() []byte { return relayPub }
