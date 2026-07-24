@@ -18,17 +18,16 @@ export const cairn: Client<typeof CairnService> = createClient(CairnService, tra
 
 /**
  * True when the carrier REFUSED an event because it lacks identity objects it can
- * be given — the household isn't founded on this carrier yet, or a chain link we
- * haven't pushed. The recovery is to publish our identity and retry (the chain
- * gate's FailedPrecondition). This is distinct from a TERMINAL denial
- * (PermissionDenied: revoked / untrusted / expired), which retrying can't fix.
+ * be given — a chain link we haven't pushed yet. The recovery is to publish our
+ * identity and retry (FailedPrecondition). Distinct from a TERMINAL denial
+ * (PermissionDenied: revoked / expired / bad signature), which retrying can't fix.
  */
 export function needsIdentityPublish(e: unknown): boolean {
   return e instanceof ConnectError && e.code === Code.FailedPrecondition
 }
 
-/** True when the carrier permanently rejected the sender (revoked / untrusted /
- *  expired). No retry will help; surface it rather than silently queueing. */
+/** True when the carrier permanently rejected the sender (revoked / expired / bad
+ *  signature). No retry will help; surface it rather than silently queueing. */
 export function isSenderRejected(e: unknown): boolean {
   return e instanceof ConnectError && e.code === Code.PermissionDenied
 }
@@ -38,9 +37,9 @@ export function isSenderRejected(e: unknown): boolean {
  * server's own message rather than replacing it with a friendly guess.
  *
  * The rule here is that the carrier's reason is the most useful thing we have —
- * "chain does not terminate at a trusted root" tells you exactly what is wrong,
- * where "couldn't send" tells you nothing and sends you reading logs. We add
- * context about what to DO, and keep the raw text.
+ * "device revoked" tells you exactly what is wrong, where "couldn't send" tells
+ * you nothing and sends you reading logs. We add context about what to DO, and
+ * keep the raw text.
  */
 export function describeSendFailure(e: unknown): string {
   if (!(e instanceof ConnectError)) {
@@ -51,15 +50,6 @@ export function describeSendFailure(e: unknown): string {
   if (e.code === Code.PermissionDenied) {
     // Terminal: the carrier will never accept this sender as-is. Retrying is
     // pointless, so say what it actually means.
-    if (/trusted root|untrusted/i.test(raw)) {
-      return (
-        `The server does not trust your household, so it rejected this. ` +
-        `That usually means it adopted a DIFFERENT household first — e.g. this ` +
-        `identity was set up again after the server had already seen another one. ` +
-        `Pin your household root in the server's trustedRoots, or reset its database. ` +
-        `(server: ${raw})`
-      )
-    }
     if (/revoked/i.test(raw)) {
       return `This device has been revoked, so the server rejected it. (server: ${raw})`
     }

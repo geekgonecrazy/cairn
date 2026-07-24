@@ -1,62 +1,45 @@
 <script lang="ts">
-  // First-run onboarding: create a household (and record its 24 words) or
-  // recover an existing one. Gated and unskippable — the recovery phrase is
-  // shown exactly once and cannot be re-derived from Cairn afterwards, so the
-  // confirm step verifies the human actually wrote it down (MILESTONES Phase 4).
+  // First-run onboarding (v2 trust model): create a self-sovereign identity and
+  // record its 24 words, add this device to an existing account, or restore from
+  // a recovery phrase. There is no household to join — identity is a key you
+  // create here (docs/decisions.md §Trust model v2). Gated and unskippable: the
+  // recovery phrase is shown once and cannot be re-derived from Cairn, so the
+  // confirm step verifies the human actually wrote it down.
   import QRCode from 'qrcode'
   import Icon from '../Icon.svelte'
   import { identity } from '../identity.svelte'
   import {
-    beginJoin,
-    completeJoin,
-    pendingJoin,
-    cancelJoin,
+    createIdentity,
     beginDevicePairing,
     pendingDevicePairing,
     cancelDevicePairing,
     type Identity,
   } from '../vault'
-  import { validateMnemonicPhrase, MNEMONIC_WORDS, parseAttestation, fingerprint } from '../identity'
+  import { validateMnemonicPhrase, MNEMONIC_WORDS, fingerprint } from '../identity'
 
   let { onready }: { onready: (id: Identity) => void } = $props()
 
-  type Step =
-    | 'welcome' | 'phrase' | 'confirm' | 'recover'
-    | 'join' | 'join-wait' | 'found' | 'pair-wait'
-  // A household is founded ONCE. Resume a join if one is already in flight,
-  // otherwise start at the path most people actually need: joining.
-  let step = $state<Step>(pendingJoin() ? 'join-wait' : 'welcome')
-
-  let joinName = $state('')
-  let joinCode = $state(pendingJoin()?.code ?? '')
-  let inviteBlob = $state('')
-  let joinError = $state('')
-  let inviteHouseholdFp = $state('')
-  let inviteFrom = $state('')
+  type Step = 'welcome' | 'create' | 'phrase' | 'confirm' | 'recover' | 'pair-wait'
+  let step = $state<Step>('welcome')
 
   let displayName = $state('')
   let deviceLabel = $state(defaultDeviceLabel())
+  let createError = $state('')
   let mnemonic = $state('')
   // Held in MEMORY until the phrase is confirmed. Nothing is written to storage
-  // before `commit` — persisting at mint time meant a reload on the phrase
-  // screen dropped the user into a working app having never confirmed (or read)
-  // the words, which are then gone for good since they are never stored.
+  // before `commit` — persisting at mint time meant a reload on the phrase screen
+  // dropped the user into a working app having never confirmed (or read) the
+  // words, which are then gone for good since they are never stored.
   let pendingIdentity: Identity | null = null
   let pendingCommit: (() => void) | null = null
 
-  // Confirm step: re-enter three words chosen at random from the phrase. Every
-  // member has exactly one phrase — their own. The household's lives with
-  // whoever runs the server and is never shown here.
-  let quizPurpose = $state<'household' | 'member' | 'join'>('household')
+  // Confirm step: re-enter three words chosen at random from the phrase.
   let quizIndexes = $state<number[]>([])
   let quizAnswers = $state<string[]>(['', '', ''])
   let quizError = $state('')
 
   // Recovery step.
   let recoveryPhrase = $state('')
-  let recoveryHouseholdPhrase = $state('')
-  let recoveryPassphrase = $state('')
-  let recoveryName = $state('')
   let recoveryError = $state('')
   let busy = $state(false)
 
@@ -120,7 +103,7 @@
   // Resume a pairing that was already in flight when the tab reloaded.
   $effect(() => {
     const pending = pendingDevicePairing()
-    if (pending && step === 'welcome' && !pendingJoin()) {
+    if (pending && step === 'welcome') {
       pairCode = pending.code
       pairFingerprint = fingerprint(pending.devicePub)
       void QRCode.toDataURL(pending.code, { width: 220, margin: 1 })
@@ -143,6 +126,22 @@
 
   const words = $derived(mnemonic ? mnemonic.split(' ') : [])
 
+  function startCreate() {
+    createError = ''
+    if (!displayName.trim()) {
+      createError = 'Enter the name people will know you by.'
+      return
+    }
+    // Mint a member key from fresh words, self-attest a profile, and sign this
+    // device's delegation — all held in memory until the words are confirmed.
+    const res = createIdentity(displayName.trim(), deviceLabel.trim() || 'this browser')
+    pendingIdentity = res.identity
+    pendingCommit = res.commit
+    mnemonic = res.memberMnemonic
+    startQuiz()
+    step = 'phrase'
+  }
+
   function checkQuiz() {
     const ok = quizIndexes.every(
       (wordIdx, i) => quizAnswers[i].trim().toLowerCase() === words[wordIdx],
@@ -151,15 +150,9 @@
       quizError = "That doesn't match. Check your written copy — order matters."
       return
     }
-      // Confirmed: only NOW does anything reach storage.
+    // Confirmed: only NOW does anything reach storage.
     if (!pendingCommit) return
     pendingCommit()
-    if (quizPurpose === 'join') {
-      // The join is only half done — the newcomer still needs an attestation
-      // from someone who holds the household words.
-      step = 'join-wait'
-      return
-    }
     if (pendingIdentity) onready(pendingIdentity)
   }
 
@@ -172,15 +165,10 @@
     }
     busy = true
     try {
-      // One path for everyone: re-derive the member root from these words and
-      // pair it with the attestation published when this member joined. There is
-      // no household-phrase branch on purpose — those words belong on the server,
-      // and asking for them here would undo the reason attestation moved to the CLI.
+      // Re-derive the member key from these words and pair it with the
+      // self-attestation this member published — looked up on the carrier.
       onready(
-        await identity.recoverFromCarrier(
-          recoveryPhrase,
-          deviceLabel.trim() || 'this browser',
-        ),
+        await identity.recoverFromCarrier(recoveryPhrase, deviceLabel.trim() || 'this browser'),
       )
     } catch (e) {
       recoveryError = e instanceof Error ? e.message : String(e)
@@ -189,28 +177,6 @@
     }
   }
 
-  function startJoin() {
-    joinError = ''
-    if (!joinName.trim()) {
-      joinError = 'Enter the name your household will know you by.'
-      return
-    }
-    // A joiner gets their OWN recovery phrase — they never see the household's.
-    // It derives their member root, which signs this device's delegation and is
-    // then dropped, so it must be written down here or it is gone.
-    const res = beginJoin(joinName.trim(), deviceLabel.trim() || 'this browser')
-    joinCode = res.code
-    pendingCommit = res.commit
-    mnemonic = res.memberMnemonic
-    quizPurpose = 'join'
-    startQuiz()
-    step = 'phrase'
-  }
-
-  /** What the phrase on screen is FOR — they are not interchangeable. */
-  const phraseTitle = 'Your personal recovery phrase'
-  const phraseStepOf = ''
-
   /** Pick three distinct positions, sorted so prompts read in phrase order. */
   function startQuiz() {
     const picks = new Set<number>()
@@ -218,52 +184,6 @@
     quizIndexes = [...picks].sort((a, b) => a - b)
     quizAnswers = ['', '', '']
     quizError = ''
-  }
-
-  /**
-   * Inspect the invite BEFORE accepting it. An attestation's `origin` is
-   * self-declared: a household that isn't yours signs with its own root and the
-   * signature verifies perfectly. A newcomer has no trusted root yet, so there
-   * is no cryptographic way to tell the difference — the human must compare the
-   * household fingerprint out-of-band, exactly as device pairing does.
-   */
-  function inspectInvite() {
-    joinError = ''
-    inviteHouseholdFp = ''
-    inviteFrom = ''
-    if (!inviteBlob.trim()) return
-    try {
-      const att = parseAttestation(inviteBlob)
-      inviteHouseholdFp = fingerprint(att.origin)
-      inviteFrom = att.display_name
-    } catch (e) {
-      joinError = e instanceof Error ? e.message : String(e)
-    }
-  }
-
-  function finishJoin() {
-    joinError = ''
-    try {
-      onready(completeJoin(inviteBlob))
-    } catch (e) {
-      joinError = e instanceof Error ? e.message : String(e)
-    }
-  }
-
-  function abandonJoin() {
-    cancelJoin()
-    joinCode = ''
-    inviteBlob = ''
-    joinError = ''
-    step = 'welcome'
-  }
-
-  async function copyText(s: string) {
-    try {
-      await navigator.clipboard.writeText(s)
-    } catch {
-      /* clipboard blocked; the text is on screen */
-    }
   }
 
   async function copyPhrase() {
@@ -285,8 +205,8 @@
         on your devices — you create it here, and it's yours.
       </p>
       <div class="actions col">
-        <button class="primary" onclick={() => (step = 'join')}>
-          Join a household
+        <button class="primary" onclick={() => (step = 'create')}>
+          Create my identity
         </button>
         <button class="ghost" onclick={startDevicePairing}>
           Add this device to my account
@@ -296,12 +216,36 @@
         </button>
       </div>
       <p class="footnote">
-        Everyone joins — including whoever set the household up. Founding it is a one-time
-        <code>cairnctl init</code> on the server.
-        <button class="link" onclick={() => (step = 'found')}>
-          Nobody has set ours up yet
-        </button>
+        There's nothing to join and no invite to wait for — your identity is a key you own.
+        People come to trust it when you pair with them or share a room.
       </p>
+
+    {:else if step === 'create'}
+      <h1>Create your identity</h1>
+      <p class="lede">
+        This mints a key that is yours. You'll get a recovery phrase to write down — it's the
+        only way to restore this identity on another device.
+      </p>
+      <label class="field">
+        <span>Your name</span>
+        <!-- svelte-ignore a11y_autofocus -->
+        <input
+          autofocus
+          bind:value={displayName}
+          placeholder="Sam"
+          maxlength="64"
+          onkeydown={(e) => e.key === 'Enter' && startCreate()}
+        />
+      </label>
+      <label class="field">
+        <span>Name for this device</span>
+        <input bind:value={deviceLabel} placeholder="Sam's laptop" maxlength="64" />
+      </label>
+      {#if createError}<p class="error" role="alert">{createError}</p>{/if}
+      <div class="actions">
+        <button class="ghost" onclick={() => (step = 'welcome')}>Back</button>
+        <button class="primary" onclick={startCreate}>Create</button>
+      </div>
 
     {:else if step === 'pair-wait'}
       <h1>Show this to a device you already use</h1>
@@ -326,108 +270,12 @@
         <button class="ghost" onclick={abandonDevicePairing}>Cancel</button>
       </div>
 
-    {:else if step === 'found'}
-      <h1>Founding happens on the server</h1>
-      <p class="lede">
-        A household is created with the <code>cairnctl</code> command on the machine running
-        Cairn, not in the browser. Two reasons: the household's 24 words are the most powerful
-        secret in the system — they can vouch for anyone as anyone — and they should never be
-        typed into a web page. And founding decides what the server trusts, which is server
-        configuration.
-      </p>
-      <p class="lede">On that machine, run:</p>
-      <code class="code">cairnctl init -name "Our household"</code>
-      <p class="lede">
-        It shows the phrase once, writes the household root to the server's trusted list, and
-        tells you to restart Cairn. Then come back here and <strong>join</strong> — everyone
-        joins, including whoever founded it.
-      </p>
-      <div class="actions">
-        <button class="primary" onclick={() => (step = 'join')}>Join a household</button>
-      </div>
-
-    {:else if step === 'join'}
-      <h1>Join a household</h1>
-      <p class="lede">
-        You'll get a join code to send to someone already in the household. They approve it and
-        send back an invite — no password, and nothing secret travels either way.
-      </p>
-      <label class="field">
-        <span>Your name</span>
-        <!-- svelte-ignore a11y_autofocus -->
-        <input
-          autofocus
-          bind:value={joinName}
-          placeholder="Sam"
-          maxlength="64"
-          onkeydown={(e) => e.key === 'Enter' && startJoin()}
-        />
-      </label>
-      <label class="field">
-        <span>Name for this device</span>
-        <input bind:value={deviceLabel} placeholder="Sam's laptop" maxlength="64" />
-      </label>
-      {#if joinError}<p class="error" role="alert">{joinError}</p>{/if}
-      <div class="actions">
-        <button class="ghost" onclick={() => (step = 'welcome')}>Back</button>
-        <button class="primary" onclick={startJoin}>Get my join code</button>
-      </div>
-
-    {:else if step === 'join-wait'}
-      <h1>Send this to your household</h1>
-      <p class="lede">
-        Give this code to someone already in the household. In Cairn they open
-        <strong>Identity &amp; devices → Members → Add someone</strong>, paste it, and send you
-        back an invite.
-      </p>
-      <code class="code">{joinCode}</code>
-      <div class="actions" style="margin-bottom:18px">
-        <button class="ghost" onclick={() => copyText(joinCode)}>Copy join code</button>
-      </div>
-
-      <label class="field">
-        <span>Paste the invite they send back</span>
-        <textarea
-          bind:value={inviteBlob}
-          rows="3"
-          placeholder="cairn:att:1:…"
-          spellcheck="false"
-          autocapitalize="none"
-          oninput={inspectInvite}
-        ></textarea>
-      </label>
-
-      {#if inviteHouseholdFp}
-        <div class="verify">
-          <div class="small muted">This invite is for <strong>{inviteFrom}</strong>, from household</div>
-          <div class="mono big">{inviteHouseholdFp}</div>
-          <p class="small muted" style="margin:8px 0 0">
-            Ask the person who sent it to read out their household fingerprint
-            (<strong>Identity &amp; devices → You → Household</strong>). If it doesn't match
-            these characters exactly, this invite is from a different household — don't accept it.
-          </p>
-        </div>
-      {/if}
-
-      {#if joinError}<p class="error" role="alert">{joinError}</p>{/if}
-      <div class="actions">
-        <button class="ghost" onclick={abandonJoin}>Cancel</button>
-        <button class="primary" disabled={!inviteHouseholdFp} onclick={finishJoin}>
-          It matches — join
-        </button>
-      </div>
-
     {:else if step === 'phrase'}
-      {#if phraseStepOf}<p class="step-of">Phrase {phraseStepOf}</p>{/if}
-      <h1>{phraseTitle}</h1>
-
+      <h1>Your recovery phrase</h1>
       <p class="lede">
-        This is <strong>your</strong> phrase. It restores your account on a new device, and it
-        is the only way to revoke a device you can no longer get to. It is not the household's
-        phrase — that one lives on the server with whoever runs it, and you never need it.
-      </p>
-      <p class="lede">
-        Losing a phone is ordinary, so keep this somewhere you can actually reach.
+        This restores your account on a new device, and it is the only way to revoke a device
+        you can no longer get to. Losing a phone is ordinary, so keep this somewhere you can
+        actually reach.
       </p>
       <p class="lede">
         Cairn does not store it and <strong>cannot show it to you again</strong>. Write it on
@@ -446,8 +294,7 @@
     {:else if step === 'confirm'}
       <h1>Check your copy</h1>
       <p class="lede">
-        Type these three words from <strong>{phraseTitle.toLowerCase()}</strong> — the phrase you
-        just wrote down{phraseStepOf ? ` (${phraseStepOf})` : ''}.
+        Type these three words from your recovery phrase — the one you just wrote down.
       </p>
       {#each quizIndexes as wordIdx, i}
         <label class="field">
@@ -470,13 +317,13 @@
     {:else if step === 'recover'}
       <h1>Restore your account</h1>
       <p class="lede">
-        Enter <strong>your personal recovery phrase</strong> — the one that is yours, not the
-        household's. This restores the same account on this device, so rooms and rosters still
-        know you. It does <strong>not</strong> bring back message history: room keys were never
-        in any phrase, and past messages stay unreadable until someone re-admits you.
+        Enter <strong>your recovery phrase</strong>. This restores the same account on this
+        device, so rooms and rosters still know you. It does <strong>not</strong> bring back
+        message history: room keys were never in any phrase, and past messages stay unreadable
+        until someone re-admits you.
       </p>
       <label class="field">
-        <span>Your personal recovery phrase</span>
+        <span>Your recovery phrase</span>
         <textarea
           bind:value={recoveryPhrase}
           rows="3"
@@ -485,37 +332,10 @@
           spellcheck="false"
         ></textarea>
       </label>
-
-      <details class="adv">
-        <summary>I founded this household (I have its phrase too)</summary>
-        <p class="hint">
-          Only the founder holds the household phrase. With it, this works completely offline;
-          without it, your account is looked up on the server, where it was published when you
-          joined.
-        </p>
-        <label class="field">
-          <span>Household recovery phrase</span>
-          <textarea
-            bind:value={recoveryHouseholdPhrase}
-            rows="3"
-            placeholder="word one, word two, …"
-            autocapitalize="none"
-            spellcheck="false"
-          ></textarea>
-        </label>
-        <label class="field">
-          <span>Display name</span>
-          <input bind:value={recoveryName} placeholder="Sam" maxlength="64" />
-        </label>
-        <label class="field">
-          <span>Household passphrase</span>
-          <input bind:value={recoveryPassphrase} type="password" autocomplete="off" />
-          <small class="hint">
-            A wrong passphrase doesn't error — it silently derives a different household that
-            nobody recognises. Leave blank if you never set one.
-          </small>
-        </label>
-      </details>
+      <label class="field">
+        <span>Name for this device</span>
+        <input bind:value={deviceLabel} placeholder="Sam's laptop" maxlength="64" />
+      </label>
       {#if recoveryError}<p class="error" role="alert">{recoveryError}</p>{/if}
       <div class="actions">
         <button class="ghost" onclick={() => (step = 'welcome')}>Back</button>
@@ -599,22 +419,6 @@
     resize: vertical;
     font-family: var(--font-mono, monospace);
   }
-  .hint {
-    display: block;
-    margin-top: 6px;
-    font-size: 12px;
-    line-height: 1.5;
-    color: var(--text-4, var(--text-3));
-  }
-  .adv {
-    margin-bottom: 14px;
-  }
-  .adv summary {
-    cursor: pointer;
-    font-size: 13px;
-    color: var(--text-3);
-    padding: 6px 0;
-  }
   .words {
     list-style: none;
     display: grid;
@@ -644,35 +448,8 @@
     font-size: 13px;
     margin: 0 0 12px;
   }
-  .verify {
-    margin-bottom: 14px;
-    padding: 12px;
-    border: 1px solid var(--border);
-    border-radius: var(--r-2, 8px);
-    background: var(--surface-2);
-  }
   .mono {
     font-family: var(--font-mono, monospace);
-  }
-  .big {
-    font-size: 18px;
-    letter-spacing: 0.03em;
-    margin-top: 4px;
-  }
-  .small {
-    font-size: 12px;
-    line-height: 1.55;
-  }
-  .muted {
-    color: var(--text-3);
-  }
-  .step-of {
-    margin: 0 0 4px;
-    font-size: 11px;
-    font-weight: 650;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--text-3);
   }
   .qr {
     display: block;
@@ -697,17 +474,6 @@
     font-size: 12px;
     line-height: 1.6;
     color: var(--text-3);
-  }
-  .link {
-    display: inline;
-    padding: 0;
-    min-height: 0;
-    border: 0;
-    background: none;
-    font: inherit;
-    color: var(--accent, #2563eb);
-    text-decoration: underline;
-    cursor: pointer;
   }
   .code {
     display: block;

@@ -60,9 +60,9 @@ class IdentityState {
         // has since disowned. Hiding that would be dishonest in both directions.
         return `${t.name} (revoked device)`
       default:
-        // 'unknown' (not resolved yet) and 'untrusted' (verifies, but belongs to
-        // a household we don't accept) both stay key stubs. Showing a stranger's
-        // self-chosen display name is exactly how impersonation would work.
+        // 'unknown' (not resolved yet) stays a key stub. A resolved sender earns
+        // its name only once its chain verifies; showing a stranger's self-chosen
+        // display name is exactly how impersonation would work.
         return 'cairn:' + senderPubHex.slice(0, 6)
     }
   }
@@ -77,7 +77,6 @@ class IdentityState {
     this.current = loadIdentity()
     this.ready = true
     this.bindSession()
-    directory.setHousehold(this.current?.householdPub ?? null)
     void this.publish()
     void roomStore.refresh()
   }
@@ -193,15 +192,14 @@ class IdentityState {
   set(id: Identity) {
     this.current = id
     this.bindSession()
-    directory.setHousehold(id.householdPub)
     directory.clear() // names resolved under a previous identity no longer apply
     void this.publish()
     void roomStore.refresh()
   }
 
   /** Delegate this tab's session key under the device key, so events it signs
-   *  chain session → device → member → household. Called after load/set because
-   *  the session key slot is scoped to the device key (crypto.ts). */
+   *  chain session → device → member root. Called after load/set because the
+   *  session key slot is scoped to the device key (crypto.ts). */
   bindSession() {
     const id = this.current
     if (!id) return

@@ -263,14 +263,12 @@
           <button class="copy" onclick={() => copy(hex(id.memberPub))}>Copy member key</button>
           <div class="fp">fingerprint {fingerprint(id.memberPub)}</div>
         </dd>
-        <dt>Household</dt>
-        <dd class="mono">{fingerprint(id.householdPub)}</dd>
         <dt>This device</dt>
         <dd>{id.deviceLabel} · <span class="mono">{fingerprint(id.devicePub)}</span></dd>
       </dl>
       <p class="note">
-        Your household root is not stored on this device — it exists only in your 24 words.
-        Cairn cannot show them to you again.
+        Your member key is not stored on this device — it exists only in your 24 words. Cairn
+        cannot show them to you again.
       </p>
 
       <div class="danger">

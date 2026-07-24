@@ -1,17 +1,16 @@
-// Identity-conformance check: the browser's household derivation, attestation
-// signing bytes, and pairing encoding must match Go's `identity` package
-// EXACTLY. Golden values below were produced by Go (identity/conformance_test.go
-// asserts the same constants).
+// Identity-conformance check: the browser's member-root derivation, self-attestation
+// signing bytes, and pairing encoding must match Go's `identity` package EXACTLY.
+// Golden values below were produced by Go (identity/conformance_test.go asserts the
+// same constants).
 //
-// Any drift means a household bootstrapped in a browser derives a different
-// root, or signs over different bytes, and its events fail chain-walk
-// verification server-side. Release-blocking.
+// Any drift means a key derived in a browser signs over different bytes than Go,
+// and its events fail chain-walk verification elsewhere. Release-blocking.
 //
 // Run: `npm run identity-conformance`.
 
 import {
-  householdRootFromMnemonic,
-  provisionMember,
+  memberRootFromMnemonic,
+  newSelfAttestation,
   verifyAttestation,
   objectHash,
   newPairingRequest,
@@ -23,7 +22,6 @@ import {
   newMnemonic,
   approvePairing,
   revokeDevice,
-  memberRootFromMnemonic,
 } from '../src/lib/identity.ts'
 import { signGrant, signDeny, TYPE_GRANT, TYPE_DENY } from '../src/lib/approval.ts'
 import { ed25519 } from '@noble/curves/ed25519.js'
@@ -37,21 +35,22 @@ const M =
   'abandon abandon abandon abandon abandon abandon abandon art'
 
 const GOLDEN = {
-  rootPub: '32320b447bf42226bac93895f0fae6e17b7e01c71114afb875bbcc3018d9f2fb',
-  rootPubPass: '3ad8f11fdced46794845eb00de0dc716012cf1cda63340445ca869a5d20fca7f',
+  // v2: a member IS this key; there is no household root above it.
+  memberRootPub: '5c76722a889dec8d4736408eb6e741787750a30f61c98fef5d29a7226e061b51',
+  // A member's SELF-signed attestation (kind=human, "Sam", issued_at 1720000000000).
   attSig:
-    '8f1e097a73031890084a894c01fe74bf6edf210ba9c5b5716419b6d0c409621a' +
-    '49c4cba9e71c9cb49a4b8e5d8ac5af664990c0f0f4083d9757d9941b3f3ac707',
-  attHash: '3881da6f4d41eafce59092690a44dcf2af64bdabeb0f5bbd6785ffe80ea7955c',
+    '7697ffb5ef8b9d4c10c399cec91922ede6aa924959c9d2461221c017bd2e8ec1' +
+    '16f73cfcc76013bc6d08e1c37cab303b831f140b903348324cf92985c347bc06',
+  attHash: '4f433634bec07067d9673c629d9c812f401e6bf7ed797fcc16c0ccba0f1a1679',
   pairEncoded: "cairn:pair:1:oKGio6SlpqeoqaqrrK2ur7CxsrO0tba3uLm6u7y9vr8:Sam's phone",
   fingerprint: 'a0a1-a2a3-a4a5-a6a7',
-  memberRootPub: '5c76722a889dec8d4736408eb6e741787750a30f61c98fef5d29a7226e061b51',
+  // Device delegation / revoke for device 0xa0..0xbf, signed by the member root.
   delegationSig:
-    '31c61e17088c202fe7a594f2e418a7c5e1108cd746684d5a164e13afdecc3e46' +
-    'ea8d26a2fa48f4bc0520c5baf158de3194393d4cca88c1b89f524ee1745c8408',
+    '325186565b8ea2c171b13e2ac665325ca42729db6df2e6682241c255a95752b3' +
+    'd031c1e3732631127a480d6f3c8fcb823628d729b97e651eb76fa466ff0c7109',
   revokeSig:
-    '94fdd5259a246a127ff63e7944a6bb754296aca3bf1fcc2caa8b1622ca11c89d' +
-    'c2e04d8f7b955442cbc29765681a69f409695d50802470bbe6bd9ead005f3606',
+    '07e7ae3a05fe56c43d3562a5c6334a1755301125b30c7cda3aa8e5987a2c039d' +
+    'ff1338748bc0dcfdbcf9334528959071b5f3fda9d093913a531ae434898ed206',
 }
 
 let failures = 0
@@ -73,23 +72,12 @@ function assert(name: string, cond: boolean) {
 
 console.log('identity conformance (browser vs Go golden vectors)')
 
-// --- household derivation ---
-check('household root from mnemonic', hex(householdRootFromMnemonic(M, '').pub), GOLDEN.rootPub)
-check('household root with passphrase', hex(householdRootFromMnemonic(M, 'trezor').pub), GOLDEN.rootPubPass)
-
 // --- member root derivation ---
-// Same words as the household above; the HKDF label is the only difference, and
-// it MUST produce a different key — otherwise a member could sign attestations
-// as their own household.
 check('member root from mnemonic', hex(memberRootFromMnemonic(M, '').pub), GOLDEN.memberRootPub)
-assert(
-  'member root differs from household root',
-  hex(memberRootFromMnemonic(M, '').pub) !== hex(householdRootFromMnemonic(M, '').pub),
-)
 
-// --- attestation signing bytes ---
-const memberPub = new Uint8Array(32).map((_, i) => i)
-const att = provisionMember(M, '', memberPub, 'human', 'Sam', null, 1720000000000n)
+// --- self-attestation signing bytes ---
+const member = memberRootFromMnemonic(M, '')
+const att = newSelfAttestation(member, 'human', 'Sam', null, 1720000000000n)
 check('attestation signature', hex(att.sig!), GOLDEN.attSig)
 check('attestation content hash', hex(objectHash(att as unknown as Record<string, unknown>)), GOLDEN.attHash)
 assert('attestation self-verifies', verifyAttestation(att))
@@ -104,10 +92,9 @@ assert('pairing round trip', hex(parsePairingRequest(GOLDEN.pairEncoded).deviceP
 // --- delegation & revoke signing bytes ---
 //
 // These are the objects a device signs to admit or retire ANOTHER device. Drift
-// here means one side admits a device the other rejects — and it went unpinned
-// until the delegation tree landed, which is how member_pub could be renamed to
-// parent_pub / revoker_pub with every suite still green.
-const parentKeys = householdRootFromMnemonic(M, '')
+// here means one side admits a device the other rejects. Signed by the member
+// root as parent / revoker.
+const parentKeys = memberRootFromMnemonic(M, '')
 const dd = approvePairing(req, parentKeys.pub, parentKeys.priv, 1720000000000n)
 check('device delegation signature', hex(dd.sig!), GOLDEN.delegationSig)
 assert('delegation names its parent', hex(dd.parent_pub) === hex(parentKeys.pub))
@@ -147,7 +134,7 @@ assert('short mnemonic rejected', validateMnemonicPhrase('abandon abandon') !== 
 assert('typo rejected', validateMnemonicPhrase(M.replace('art', 'zzzz')) !== null)
 assert(
   'case/whitespace normalized',
-  hex(householdRootFromMnemonic(`  ${M.toUpperCase().replace(/ /g, '  ')}  `).pub) === GOLDEN.rootPub,
+  hex(memberRootFromMnemonic(`  ${M.toUpperCase().replace(/ /g, '  ')}  `).pub) === GOLDEN.memberRootPub,
 )
 assert('generated mnemonic is 24 words', newMnemonic().split(' ').length === 24)
 assert('normalize is idempotent', normalizeMnemonic(normalizeMnemonic(M)) === normalizeMnemonic(M))
@@ -168,9 +155,8 @@ for (const [name, bad] of Object.entries({
 }
 
 // --- portable approval artifacts (must verify STANDALONE, outside Cairn) ---
-// A grant leaves Cairn and is checked by a broker with no event envelope, so
-// its signed type tag is what tells it from a deny. Golden values from Go
-// (scratch generator mirroring approval.Sign).
+// A grant leaves Cairn and is checked by a broker with no event envelope, so its
+// signed type tag is what tells it from a deny. Golden values from Go.
 const APPROVER_SEED = new Uint8Array(32).map((_, i) => i + 1)
 const approverPub = ed25519.getPublicKey(APPROVER_SEED)
 const signer = {

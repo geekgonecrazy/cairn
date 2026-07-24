@@ -1,10 +1,10 @@
-// Sender directory: resolves a sender pubkey to an ATTESTED display name by
+// Sender directory: resolves a sender pubkey to a self-attested display name by
 // fetching its identity-log chain and verifying it locally.
 //
-// The server is a carrier, not an authority — it hands back signed objects and
-// we check every signature here. A name is only shown once the chain verifies
-// AND terminates at a household we accept; anything else stays an honest key
-// stub, because a name is a trust claim and a wrong one is worse than none.
+// The server is a carrier, not an authority — it hands back signed objects and we
+// check every signature here. A name is shown once the chain verifies and the
+// member's self-attestation checks out; trust in that key is an edge decision
+// (docs §Trust model v2), and verification tiers arrive with the relay directory.
 
 import { cairn, hex } from './api'
 import {
@@ -24,9 +24,8 @@ const MAX_CHAIN_DEPTH = 8
 
 export type SenderTrust =
   | { state: 'unknown' } // not resolved yet, or the server has no chain for it
-  | { state: 'verified'; name: string; memberPub: Uint8Array; householdPub: Uint8Array }
+  | { state: 'verified'; name: string; memberPub: Uint8Array }
   | { state: 'revoked'; name: string }
-  | { state: 'untrusted'; reason: string } // resolved but does NOT belong to our household
 
 function verifyDetached(
   obj: Record<string, unknown>,
@@ -69,13 +68,6 @@ class Directory {
 
   private announce() {
     for (const fn of this.listeners) fn()
-  }
-
-  /** Our household root — the only origin whose attestations we accept. */
-  private trustedHousehold: Uint8Array | null = null
-
-  setHousehold(pub: Uint8Array | null) {
-    this.trustedHousehold = pub
   }
 
   get(senderPubHex: string): SenderTrust {
@@ -130,9 +122,9 @@ class Directory {
       .map((b) => dec<DeviceRevoke>(b))
       .filter((d): d is DeviceRevoke => d !== null)
 
-    // Walk the chain ourselves: session → device → … → device → member →
-    // household. Devices pair devices, so the device segment is a WALK; every
-    // hop is checked and a break anywhere means we show no name.
+    // Walk the chain ourselves: session → device → … → device → member root.
+    // Devices pair devices, so the device segment is a WALK; every hop is checked
+    // and a break anywhere means we show no name.
     let devicePub = senderPub
     if (sd) {
       if (!verifyDetached(sd as unknown as Record<string, unknown>, sd.device_pub)) return
@@ -185,25 +177,14 @@ class Directory {
       return
     }
 
-    // The chain is internally sound — but soundness is not membership. An
-    // attestation's origin is self-declared, so a stranger's household verifies
-    // its own chain perfectly. Only OUR household earns a name.
-    if (!this.trustedHousehold || hex(att.origin) !== hex(this.trustedHousehold)) {
-      this.entries = {
-        ...this.entries,
-        [key]: { state: 'untrusted', reason: 'not in your household' },
-      }
-      return
-    }
-
+    // The chain is internally sound and self-attested. v2: trust is decided at
+    // the edge (pairing / a shared room), not by a household — so a resolved,
+    // non-revoked sender is shown with its self-asserted name. Proper verification
+    // tiers (display / relay-vouched / verified petname) arrive with the relay
+    // directory (docs §Trust model v2, slice 3).
     this.entries = {
       ...this.entries,
-      [key]: {
-        state: 'verified',
-        name: att.display_name,
-        memberPub: att.pubkey,
-        householdPub: att.origin,
-      },
+      [key]: { state: 'verified', name: att.display_name, memberPub: att.pubkey },
     }
     this.announce()
   }
@@ -231,15 +212,9 @@ class Directory {
       try {
         const res = await cairn.resolveSender({ senderPub: memberPub })
         const att = dec<IdentityAttestation>(res.attestation)
-        // Same rule as sender names: the attestation must verify AND belong to
-        // our household, or we show a key stub rather than a self-chosen name.
-        if (
-          att &&
-          verifyAttestation(att) &&
-          hex(att.pubkey) === key &&
-          this.trustedHousehold &&
-          hex(att.origin) === hex(this.trustedHousehold)
-        ) {
+        // v2: a self-attestation that verifies and names this member root is
+        // enough to show its self-asserted name (trust is an edge decision).
+        if (att && verifyAttestation(att) && hex(att.pubkey) === key) {
           this.memberNames = { ...this.memberNames, [key]: att.display_name }
         }
       } catch {

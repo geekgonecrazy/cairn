@@ -1,12 +1,16 @@
 // Browser half of the Cairn identity chain — the exact mirror of Go's
-// `identity` package. See identity/household.go for the authoritative comments
-// on the household-root shape; this file must stay byte-compatible with it.
+// `identity` package. See identity/member.go and identity/identity.go for the
+// authoritative comments; this file must stay byte-compatible with them.
 //
-// PARITY IS LOAD-BEARING. A household bootstrapped in the browser has to derive
-// the same root pubkey, and sign attestations over the same canonical bytes, as
-// Go — otherwise events signed here fail chain-walk verification server-side.
-// `npm run conformance` asserts the golden vectors that prove it; do not change
-// a derivation here without re-running it.
+// PARITY IS LOAD-BEARING. A member key derived in the browser must derive the
+// same pubkey, and sign attestations/delegations over the same canonical bytes,
+// as Go — otherwise events signed here fail chain-walk verification elsewhere.
+// `npm run identity-conformance` asserts the golden vectors that prove it; do not
+// change a derivation here without re-running it.
+//
+// v2 trust model: identity is a self-sovereign member key + device tree. There is
+// no household root and no attestation-by-household (docs/decisions.md §Trust
+// model v2). A member self-attests; trust in that key is decided at the edge.
 
 import { ed25519 } from '@noble/curves/ed25519.js'
 import { sha512 } from '@noble/hashes/sha2.js'
@@ -18,13 +22,12 @@ import {
   mnemonicToSeedSync,
 } from '@scure/bip39'
 import { wordlist } from '@scure/bip39/wordlists/english.js'
-import { encode as cborEncode, decode as cborDecode, type CborValue } from './cbor'
+import { encode as cborEncode, type CborValue } from './cbor'
 
 /** 24 words = 256 bits of entropy. Shorter phrases are rejected, not stretched. */
 export const MNEMONIC_WORDS = 24
 
-/** Domain separation label. MUST match identity/household.go. */
-const HKDF_INFO_HOUSEHOLD_ROOT = 'cairn/household-root/v1'
+/** Domain separation label. MUST match identity/member.go. */
 const HKDF_INFO_MEMBER_ROOT = 'cairn/member-root/v1'
 
 export type Kind = 'human' | 'agent' | 'service'
@@ -32,10 +35,6 @@ export type Kind = 'human' | 'agent' | 'service'
 /**
  * Object type tags — part of the SIGNED bytes of every identity-log object.
  * MUST match identity/identity.go's Type* constants.
- *
- * Two jobs: parsing dispatches on the tag instead of decoding an object as each
- * candidate shape, and the signature is domain-separated so a session
- * delegation can never verify as a device delegation.
  */
 export const TYPE_ATTESTATION = 'identity_attestation'
 export const TYPE_DEVICE_DELEGATION = 'device_delegation'
@@ -57,8 +56,8 @@ export function newMnemonic(): string {
 /**
  * Canonicalize a human-typed phrase: lowercase, single-spaced. Case and
  * whitespace are what people get wrong copying words off paper; neither should
- * change the derived household. Deliberately does NOT spell-correct — a typo
- * must fail the checksum rather than snap to a stranger's household.
+ * change the derived key. Deliberately does NOT spell-correct — a typo must fail
+ * the checksum rather than snap to a stranger's identity.
  */
 export function normalizeMnemonic(s: string): string {
   return s.trim().split(/\s+/).join(' ').toLowerCase()
@@ -76,64 +75,37 @@ export function validateMnemonicPhrase(s: string): string | null {
   return null
 }
 
-// --- household root -------------------------------------------------------
+// --- member key -----------------------------------------------------------
 
 /**
- * Derive the household root keypair from a mnemonic. Same words → same
- * household id, which is what makes recovery work.
+ * Derive a member keypair from its recovery phrase. Same words → same member
+ * key (the identity itself), which is what makes recovery work.
  *
- * A different passphrase yields a DIFFERENT household rather than an error —
- * BIP-39's plausible-deniability property. Callers must surface the resulting
- * "nobody recognizes you" state legibly (see docs/decisions.md).
- */
-export function householdRootFromMnemonic(mnemonic: string, passphrase = ''): KeyPair {
-  const err = validateMnemonicPhrase(mnemonic)
-  if (err) throw new Error(err)
-  const seed = mnemonicToSeedSync(normalizeMnemonic(mnemonic), passphrase)
-  // Domain-separate before touching Ed25519 (mirrors Go's hkdf.New/ReadFull).
-  const info = new TextEncoder().encode(HKDF_INFO_HOUSEHOLD_ROOT)
-  const sk = hkdf(sha512, seed, undefined, info, 32)
-  return { priv: sk, pub: ed25519.getPublicKey(sk) }
-}
-
-/**
- * Derive a MEMBER root keypair from that member's own mnemonic — a different
- * set of words from the household's.
+ * A member key is the top of its own device tree: it signs the member's FIRST
+ * device delegation and is then put away, never persisted. Every device after
+ * that is paired from an existing device, which signs as parent — that is what
+ * makes device revocation meaningful (a stolen device holds no key that can
+ * admit a replacement) and why room keys wrap to DEVICE keys rather than to this
+ * one.
  *
- * A member root is an offline apex, exactly like the household root: it signs
- * the member's FIRST device delegation and is then put away, never persisted.
- * Every device after that is paired from an existing device, which signs as
- * parent. That is what makes device revocation meaningful (a stolen device
- * holds no key that can admit a replacement) and why room keys wrap to DEVICE
- * keys rather than to this one.
- *
- * Domain-separated from the household derivation, so the same words can never
- * produce both and neither can forge the other.
+ * A different passphrase yields a DIFFERENT key rather than an error — BIP-39's
+ * plausible-deniability property. Callers must surface the resulting "nobody
+ * recognizes you" state legibly (see docs/decisions.md).
  */
 export function memberRootFromMnemonic(mnemonic: string, passphrase = ''): KeyPair {
   const err = validateMnemonicPhrase(mnemonic)
   if (err) throw new Error(err)
   const seed = mnemonicToSeedSync(normalizeMnemonic(mnemonic), passphrase)
+  // Domain-separate before touching Ed25519 (mirrors Go's hkdf.New/ReadFull).
   const info = new TextEncoder().encode(HKDF_INFO_MEMBER_ROOT)
   const sk = hkdf(sha512, seed, undefined, info, 32)
   return { priv: sk, pub: ed25519.getPublicKey(sk) }
 }
 
-/** A freshly minted member root: the words are shown ONCE and never stored. */
+/** A freshly minted member key: the words are shown ONCE and never stored. */
 export function newMemberRoot(): { mnemonic: string; keys: KeyPair } {
   const mnemonic = newMnemonic()
   return { mnemonic, keys: memberRootFromMnemonic(mnemonic) }
-}
-
-export interface Household {
-  rootPub: Uint8Array
-  mnemonic: string
-}
-
-/** Create a new household. The mnemonic must be shown once and confirmed. */
-export function bootstrapHousehold(): Household {
-  const mnemonic = newMnemonic()
-  return { rootPub: householdRootFromMnemonic(mnemonic).pub, mnemonic }
 }
 
 // --- identity-log objects -------------------------------------------------
@@ -142,7 +114,6 @@ export interface IdentityAttestation {
   type: string // always TYPE_ATTESTATION; signed
   pubkey: Uint8Array
   kind: Kind
-  origin: Uint8Array
   operated_by: Uint8Array | null
   display_name: string
   issued_at: bigint
@@ -221,20 +192,19 @@ export function objectHash(obj: Record<string, unknown>): Uint8Array {
 }
 
 /**
- * Mint the attestation binding a member root to this household, signed by the
- * root re-derived from the mnemonic. kind and display_name are IMMUTABLE once
- * attested — this is not an editable profile.
+ * Mint a member's SELF-signed attestation: its profile (kind, display name, and
+ * for agents the operating human), signed by the member key ITSELF. There is no
+ * household to countersign it — the name/kind are self-asserted labels a peer
+ * decides how much to trust. kind is immutable once published.
  */
-export function provisionMember(
-  mnemonic: string,
-  passphrase: string,
-  memberPub: Uint8Array,
+export function newSelfAttestation(
+  member: KeyPair,
   kind: Kind,
   displayName: string,
   operatedBy: Uint8Array | null,
   issuedAt: bigint,
 ): IdentityAttestation {
-  if (memberPub.length !== 32) throw new Error('member pubkey must be 32 bytes')
+  if (member.pub.length !== 32) throw new Error('member pubkey must be 32 bytes')
   if (kind === 'agent') {
     if (!operatedBy || operatedBy.length !== 32) {
       throw new Error('an agent requires an operated_by member root')
@@ -242,25 +212,26 @@ export function provisionMember(
   } else if (operatedBy && operatedBy.length > 0) {
     throw new Error('operated_by is only valid for agents')
   }
-  const root = householdRootFromMnemonic(mnemonic, passphrase)
   return signObject(
     {
       type: TYPE_ATTESTATION,
-      pubkey: memberPub,
+      pubkey: member.pub,
       kind,
-      origin: root.pub,
       operated_by: operatedBy && operatedBy.length ? operatedBy : null,
       display_name: displayName,
       issued_at: issuedAt,
       sig: null,
     } as unknown as Record<string, unknown>,
-    root.priv,
+    member.priv,
     TYPE_ATTESTATION,
   ) as unknown as IdentityAttestation
 }
 
+/** Verify a self-attestation against the member key that signed it (the same key
+ *  it names). Proves the profile was authored by that key's holder — NOT that you
+ *  should trust the key, which is an edge decision. */
 export function verifyAttestation(att: IdentityAttestation): boolean {
-  return verifyObject(att as unknown as Record<string, unknown>, att.origin, TYPE_ATTESTATION)
+  return verifyObject(att as unknown as Record<string, unknown>, att.pubkey, TYPE_ATTESTATION)
 }
 
 // --- pairing --------------------------------------------------------------
@@ -314,109 +285,6 @@ export function parsePairingRequest(s: string): PairingRequest {
   }
   if (pub.length !== 32) throw new Error('Pairing key must be 32 bytes.')
   return { version, devicePub: pub, label: rest.slice(second + 1) }
-}
-
-// --- member provisioning (joining an existing household) ------------------
-//
-// A household is bootstrapped ONCE. Everyone after the founder JOINS it: the
-// newcomer generates a member key and shows a join code; someone holding the
-// household's 24 words attests it and hands back the attestation. The household
-// root private key never leaves the inviter's re-derivation, and the newcomer's
-// member private key never leaves their device. Nothing secret crosses.
-
-const JOIN_PREFIX = 'cairn:join:'
-const ATT_PREFIX = 'cairn:att:'
-
-export interface JoinRequest {
-  version: number
-  memberPub: Uint8Array
-  /** Self-reported and UNATTESTED until the inviter signs it. */
-  displayName: string
-}
-
-export function newJoinRequest(memberPub: Uint8Array, displayName: string): JoinRequest {
-  if (memberPub.length !== 32) throw new Error('member pubkey must be 32 bytes')
-  if (/[:\n]/.test(displayName)) throw new Error("name must not contain ':' or newlines")
-  return { version: PAIRING_VERSION, memberPub, displayName }
-}
-
-export function encodeJoinRequest(j: JoinRequest): string {
-  return `${JOIN_PREFIX}${j.version}:${b64url(j.memberPub)}:${j.displayName}`
-}
-
-export function parseJoinRequest(s: string): JoinRequest {
-  const t = s.trim()
-  if (!t.startsWith(JOIN_PREFIX)) throw new Error('Not a Cairn join code.')
-  const rest = t.slice(JOIN_PREFIX.length)
-  const a = rest.indexOf(':')
-  const b = rest.indexOf(':', a + 1)
-  if (a < 0 || b < 0) throw new Error('Malformed join code.')
-  const version = Number(rest.slice(0, a))
-  if (version !== PAIRING_VERSION) {
-    throw new Error(`Unsupported join code version ${version}.`)
-  }
-  let pub: Uint8Array
-  try {
-    pub = unb64url(rest.slice(a + 1, b))
-  } catch {
-    throw new Error('Malformed join code.')
-  }
-  if (pub.length !== 32) throw new Error('Join key must be 32 bytes.')
-  return { version, memberPub: pub, displayName: rest.slice(b + 1) }
-}
-
-/** Serialize a signed attestation for hand-carrying back to the new member. */
-export function encodeAttestation(att: IdentityAttestation): string {
-  const payload = cborEncode({
-    type: att.type,
-    pubkey: att.pubkey,
-    kind: att.kind,
-    origin: att.origin,
-    operated_by: att.operated_by,
-    display_name: att.display_name,
-    issued_at: att.issued_at,
-    sig: att.sig,
-  } as CborValue)
-  return `${ATT_PREFIX}${PAIRING_VERSION}:${b64url(payload)}`
-}
-
-/**
- * Parse and VERIFY an attestation blob. Verification is not optional: the blob
- * arrives by copy-paste from another screen, so a bad signature here is the only
- * thing standing between a newcomer and a forged household membership.
- */
-export function parseAttestation(s: string): IdentityAttestation {
-  const t = s.trim()
-  if (!t.startsWith(ATT_PREFIX)) throw new Error('Not a Cairn invite.')
-  const rest = t.slice(ATT_PREFIX.length)
-  const a = rest.indexOf(':')
-  if (a < 0) throw new Error('Malformed invite.')
-  if (Number(rest.slice(0, a)) !== PAIRING_VERSION) {
-    throw new Error('Unsupported invite version.')
-  }
-  let decoded: Record<string, unknown>
-  try {
-    decoded = cborDecode(unb64url(rest.slice(a + 1))) as Record<string, unknown>
-  } catch {
-    throw new Error('Malformed invite — it may have been truncated when copied.')
-  }
-  const att = {
-    type: decoded.type as string,
-    pubkey: decoded.pubkey as Uint8Array,
-    kind: decoded.kind as Kind,
-    origin: decoded.origin as Uint8Array,
-    operated_by: (decoded.operated_by ?? null) as Uint8Array | null,
-    display_name: decoded.display_name as string,
-    issued_at: decoded.issued_at as bigint,
-    sig: decoded.sig as Uint8Array,
-  }
-  if (!(att.pubkey instanceof Uint8Array) || att.pubkey.length !== 32) {
-    throw new Error('Invite is missing a valid member key.')
-  }
-  if (!verifyAttestation(att)) {
-    throw new Error('This invite is not correctly signed by the household. Ask for a new one.')
-  }
-  return att
 }
 
 /**
@@ -473,8 +341,8 @@ export function approvePairing(
 
 /**
  * Delegate a per-tab session key under this device key, so events signed by the
- * session key chain session → device → member → household. Without this a
- * session key is an orphan that no verifier can place.
+ * session key chain session → device → member root. Without this a session key
+ * is an orphan that no verifier can place.
  */
 export function signSessionDelegation(
   sessionPub: Uint8Array,
@@ -534,9 +402,9 @@ export function revokeDevice(
 }
 
 /** Verify a device delegation against the parent it names. Proves only that the
- *  parent admitted this device — NOT that the parent had standing to. Placing
- *  the parent in a tree that reaches a trusted household root is the chain
- *  walk's job (see directory.svelte.ts). */
+ *  parent admitted this device — NOT that the parent had standing to. Placing the
+ *  parent in a tree that terminates at a member root is the chain walk's job (see
+ *  directory.svelte.ts). */
 export function verifyDeviceDelegation(dd: DeviceDelegation): boolean {
   const sig = dd.sig
   if (!sig || sig.length !== 64 || dd.parent_pub?.length !== 32) return false
