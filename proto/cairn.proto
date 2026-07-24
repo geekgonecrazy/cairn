@@ -200,6 +200,18 @@ message RedeemInviteRequest {
 }
 message RedeemInviteResponse {}
 
+// Relay directory (slice 3): the relay's allow-listed members that have published
+// a self-attestation, with their self-asserted profile. Backs add-by-name in the
+// client. This is the "relay-vouched" name tier — as trustworthy as the operator's
+// curation of the allow-list, not a cryptographic guarantee.
+message DirectoryRequest {}
+message DirectoryEntry {
+  bytes  member_pub   = 1;
+  string display_name = 2;
+  string kind         = 3;
+}
+message DirectoryResponse { repeated DirectoryEntry members = 1; }
+
 // Resolve a sender key to the identity-log objects that place it.
 //
 // GetIdentityObject is keyed by HASH, but a client meeting an unknown sender
@@ -296,8 +308,9 @@ service CairnService {
   rpc ListRooms(ListRoomsRequest) returns (ListRoomsResponse);
   rpc ListSpaceMembers(ListSpaceMembersRequest) returns (ListSpaceMembersResponse);
   rpc ListMemberDevices(ListMemberDevicesRequest) returns (ListMemberDevicesResponse);
-  // Relay access (slice 2).
+  // Relay access (slice 2) + directory (slice 3).
   rpc RelayInfo(RelayInfoRequest) returns (RelayInfoResponse);
   rpc RedeemInvite(RedeemInviteRequest) returns (RedeemInviteResponse);
+  rpc Directory(DirectoryRequest) returns (DirectoryResponse);
   // Realtime push is SSE (see docs/protocol.md §API), not a proto stream.
 }

@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file cairn.proto.
  */
 export const file_cairn: GenFile = /*@__PURE__*/
-  fileDesc("CgtjYWlybi5wcm90bxIIY2Fpcm4udjEisQEKBUV2ZW50EhAKCGV2ZW50X2lkGAEgASgMEhIKCnNlbmRlcl9wdWIYAiABKAwSDwoHcm9vbV9pZBgDIAEoDBIKCgJ0cxgEIAEoAxIPCgdwYXJlbnRzGAUgAygMEiEKBHR5cGUYBiABKA4yEy5jYWlybi52MS5FdmVudFR5cGUSDwoHcGF5bG9hZBgHIAEoDBILCgNzaWcYCCABKAwSEwoLYXJyaXZlZF92aWEYDyABKAkiWQoQU2VuZEV2ZW50UmVxdWVzdBIeCgVldmVudBgBIAEoCzIPLmNhaXJuLnYxLkV2ZW50EiUKBGhpbnQYAiABKA4yFy5jYWlybi52MS5UcmFuc3BvcnRIaW50IiUKEVNlbmRFdmVudFJlc3BvbnNlEhAKCGV2ZW50X2lkGAEgASgMIjIKC1N5bmNSZXF1ZXN0Eg8KB3Jvb21faWQYASABKAwSEgoKaGF2ZV9oZWFkcxgCIAMoDCI/CgxTeW5jUmVzcG9uc2USIAoHbWlzc2luZxgBIAMoCzIPLmNhaXJuLnYxLkV2ZW50Eg0KBWhlYWRzGAIgAygMIkAKDkhpc3RvcnlSZXF1ZXN0Eg8KB3Jvb21faWQYASABKAwSDgoGYmVmb3JlGAIgASgMEg0KBWxpbWl0GAMgASgNIjIKD0hpc3RvcnlSZXNwb25zZRIfCgZldmVudHMYASADKAsyDy5jYWlybi52MS5FdmVudCIoChhHZXRJZGVudGl0eU9iamVjdFJlcXVlc3QSDAoEaGFzaBgBIAEoDCIpChlHZXRJZGVudGl0eU9iamVjdFJlc3BvbnNlEgwKBGNib3IYASABKAwiKAoYUHV0SWRlbnRpdHlPYmplY3RSZXF1ZXN0EgwKBGNib3IYASABKAwiKQoZUHV0SWRlbnRpdHlPYmplY3RSZXNwb25zZRIMCgRoYXNoGAEgASgMIhIKEFJlbGF5SW5mb1JlcXVlc3QiJgoRUmVsYXlJbmZvUmVzcG9uc2USEQoJcmVsYXlfcHViGAEgASgMIjkKE1JlZGVlbUludml0ZVJlcXVlc3QSDgoGaW52aXRlGAEgASgJEhIKCm1lbWJlcl9wdWIYAiABKAwiFgoUUmVkZWVtSW52aXRlUmVzcG9uc2UijQEKCFJvb21JbmZvEg8KB3Jvb21faWQYASABKAwSEAoIc3BhY2VfaWQYAiABKAwSDAoEbmFtZRgDIAEoCRISCgpjcmVhdGVkX2F0GAQgASgDEg4KBmpvaW5lZBgFIAEoCBISCgp2aXNpYmlsaXR5GAYgASgJEhgKEHBlbmRpbmdfcmVxdWVzdHMYByABKAUiZAoJU3BhY2VJbmZvEhAKCHNwYWNlX2lkGAEgASgMEgwKBG5hbWUYAiABKAkSEgoKYWRtaXRfa2luZBgDIAEoCRIUCgxhZG1pdF9vcmlnaW4YBCABKAkSDQoFb3duZXIYBSABKAwiJgoQTGlzdFJvb21zUmVxdWVzdBISCgptZW1iZXJfcHViGAEgASgMIlsKEUxpc3RSb29tc1Jlc3BvbnNlEiEKBXJvb21zGAEgAygLMhIuY2Fpcm4udjEuUm9vbUluZm8SIwoGc3BhY2VzGAIgAygLMhMuY2Fpcm4udjEuU3BhY2VJbmZvIjMKD1NwYWNlTWVtYmVySW5mbxISCgptZW1iZXJfcHViGAEgASgMEgwKBHJvbGUYAiABKAkiKwoXTGlzdFNwYWNlTWVtYmVyc1JlcXVlc3QSEAoIc3BhY2VfaWQYASABKAwiRgoYTGlzdFNwYWNlTWVtYmVyc1Jlc3BvbnNlEioKB21lbWJlcnMYASADKAsyGS5jYWlybi52MS5TcGFjZU1lbWJlckluZm8iKgoUUmVzb2x2ZVNlbmRlclJlcXVlc3QSEgoKc2VuZGVyX3B1YhgBIAEoDCKqAQoVUmVzb2x2ZVNlbmRlclJlc3BvbnNlEhoKEnNlc3Npb25fZGVsZWdhdGlvbhgBIAEoDBITCgthdHRlc3RhdGlvbhgDIAEoDBIaChJkZXZpY2VfZGVsZWdhdGlvbnMYBSADKAwSFgoOZGV2aWNlX3Jldm9rZXMYBiADKAxKBAgCEANKBAgEEAVSEWRldmljZV9kZWxlZ2F0aW9uUg1kZXZpY2VfcmV2b2tlIi4KGExpc3RNZW1iZXJEZXZpY2VzUmVxdWVzdBISCgptZW1iZXJfcHViGAEgASgMIjAKGUxpc3RNZW1iZXJEZXZpY2VzUmVzcG9uc2USEwoLZGV2aWNlX3B1YnMYASADKAwqogUKCUV2ZW50VHlwZRIaChZFVkVOVF9UWVBFX1VOU1BFQ0lGSUVEEAASCAoEQ0hBVBABEgwKCEZJTEVfUkVGEAISDAoIUFJFU0VOQ0UQAxIMCghSRUFDVElPThAEEggKBEVESVQQBRIKCgZERUxFVEUQBhIQCgxUQVNLX1JFUVVFU1QQChIPCgtUQVNLX1VQREFURRALEgoKBk5PVElGWRAMEgsKB0NPTU1BTkQQDRIUChBBUFBST1ZBTF9SRVFVRVNUEBQSEgoOQVBQUk9WQUxfR1JBTlQQFRIRCg1BUFBST1ZBTF9ERU5ZEBYSFQoRQ1JFREVOVElBTF9NSU5URUQQFxIJCgVJTkxBWRAeEhAKDElOTEFZX1VQREFURRAfEg8KC0lOTEFZX1VOUElOECASDwoLSU5URVJBQ1RJT04QIRIOCgpJTkxBWV9ERUNMECISEwoPU0lHTkFMSU5HX09GRkVSECgSFAoQU0lHTkFMSU5HX0FOU1dFUhApEhEKDVNJR05BTElOR19JQ0UQKhINCglDQUxMX1JJTkcQKxIMCghDQUxMX0JZRRAsEg4KCk1FTUJFUl9BREQQMhIRCg1NRU1CRVJfUkVNT1ZFEDMSEwoPUk9PTV9LRVlfUk9UQVRFEDQSEAoMU1BBQ0VfQ1JFQVRFEDUSEAoMU1BBQ0VfVVBEQVRFEDYSDwoLUk9PTV9DUkVBVEUQNxIUChBTUEFDRV9NRU1CRVJfQUREEDgSFQoRUk9PTV9KT0lOX1JFUVVFU1QQORIXChNTUEFDRV9NRU1CRVJfUkVNT1ZFEDoSGAoUSURFTlRJVFlfQVRURVNUQVRJT04QPBIVChFERVZJQ0VfREVMRUdBVElPThA9EhEKDURFVklDRV9SRVZPS0UQPiqQAQoNVHJhbnNwb3J0SGludBIeChpUUkFOU1BPUlRfSElOVF9VTlNQRUNJRklFRBAAEhYKElRSQU5TUE9SVF9ISU5UX0xBThABEhcKE1RSQU5TUE9SVF9ISU5UX01FU0gQAhIWChJUUkFOU1BPUlRfSElOVF9CTEUQAxIWChJUUkFOU1BPUlRfSElOVF9BTEwQBDLtBgoMQ2Fpcm5TZXJ2aWNlEkQKCVNlbmRFdmVudBIaLmNhaXJuLnYxLlNlbmRFdmVudFJlcXVlc3QaGy5jYWlybi52MS5TZW5kRXZlbnRSZXNwb25zZRI1CgRTeW5jEhUuY2Fpcm4udjEuU3luY1JlcXVlc3QaFi5jYWlybi52MS5TeW5jUmVzcG9uc2USPgoHSGlzdG9yeRIYLmNhaXJuLnYxLkhpc3RvcnlSZXF1ZXN0GhkuY2Fpcm4udjEuSGlzdG9yeVJlc3BvbnNlElwKEUdldElkZW50aXR5T2JqZWN0EiIuY2Fpcm4udjEuR2V0SWRlbnRpdHlPYmplY3RSZXF1ZXN0GiMuY2Fpcm4udjEuR2V0SWRlbnRpdHlPYmplY3RSZXNwb25zZRJcChFQdXRJZGVudGl0eU9iamVjdBIiLmNhaXJuLnYxLlB1dElkZW50aXR5T2JqZWN0UmVxdWVzdBojLmNhaXJuLnYxLlB1dElkZW50aXR5T2JqZWN0UmVzcG9uc2USUAoNUmVzb2x2ZVNlbmRlchIeLmNhaXJuLnYxLlJlc29sdmVTZW5kZXJSZXF1ZXN0Gh8uY2Fpcm4udjEuUmVzb2x2ZVNlbmRlclJlc3BvbnNlEkQKCUxpc3RSb29tcxIaLmNhaXJuLnYxLkxpc3RSb29tc1JlcXVlc3QaGy5jYWlybi52MS5MaXN0Um9vbXNSZXNwb25zZRJZChBMaXN0U3BhY2VNZW1iZXJzEiEuY2Fpcm4udjEuTGlzdFNwYWNlTWVtYmVyc1JlcXVlc3QaIi5jYWlybi52MS5MaXN0U3BhY2VNZW1iZXJzUmVzcG9uc2USXAoRTGlzdE1lbWJlckRldmljZXMSIi5jYWlybi52MS5MaXN0TWVtYmVyRGV2aWNlc1JlcXVlc3QaIy5jYWlybi52MS5MaXN0TWVtYmVyRGV2aWNlc1Jlc3BvbnNlEkQKCVJlbGF5SW5mbxIaLmNhaXJuLnYxLlJlbGF5SW5mb1JlcXVlc3QaGy5jYWlybi52MS5SZWxheUluZm9SZXNwb25zZRJNCgxSZWRlZW1JbnZpdGUSHS5jYWlybi52MS5SZWRlZW1JbnZpdGVSZXF1ZXN0Gh4uY2Fpcm4udjEuUmVkZWVtSW52aXRlUmVzcG9uc2VCNlo0Z2l0aHViLmNvbS9nZWVrZ29uZWNyYXp5L2NhaXJuL3Byb3RvL2NhaXJudjE7Y2Fpcm52MWIGcHJvdG8z");
+  fileDesc("CgtjYWlybi5wcm90bxIIY2Fpcm4udjEisQEKBUV2ZW50EhAKCGV2ZW50X2lkGAEgASgMEhIKCnNlbmRlcl9wdWIYAiABKAwSDwoHcm9vbV9pZBgDIAEoDBIKCgJ0cxgEIAEoAxIPCgdwYXJlbnRzGAUgAygMEiEKBHR5cGUYBiABKA4yEy5jYWlybi52MS5FdmVudFR5cGUSDwoHcGF5bG9hZBgHIAEoDBILCgNzaWcYCCABKAwSEwoLYXJyaXZlZF92aWEYDyABKAkiWQoQU2VuZEV2ZW50UmVxdWVzdBIeCgVldmVudBgBIAEoCzIPLmNhaXJuLnYxLkV2ZW50EiUKBGhpbnQYAiABKA4yFy5jYWlybi52MS5UcmFuc3BvcnRIaW50IiUKEVNlbmRFdmVudFJlc3BvbnNlEhAKCGV2ZW50X2lkGAEgASgMIjIKC1N5bmNSZXF1ZXN0Eg8KB3Jvb21faWQYASABKAwSEgoKaGF2ZV9oZWFkcxgCIAMoDCI/CgxTeW5jUmVzcG9uc2USIAoHbWlzc2luZxgBIAMoCzIPLmNhaXJuLnYxLkV2ZW50Eg0KBWhlYWRzGAIgAygMIkAKDkhpc3RvcnlSZXF1ZXN0Eg8KB3Jvb21faWQYASABKAwSDgoGYmVmb3JlGAIgASgMEg0KBWxpbWl0GAMgASgNIjIKD0hpc3RvcnlSZXNwb25zZRIfCgZldmVudHMYASADKAsyDy5jYWlybi52MS5FdmVudCIoChhHZXRJZGVudGl0eU9iamVjdFJlcXVlc3QSDAoEaGFzaBgBIAEoDCIpChlHZXRJZGVudGl0eU9iamVjdFJlc3BvbnNlEgwKBGNib3IYASABKAwiKAoYUHV0SWRlbnRpdHlPYmplY3RSZXF1ZXN0EgwKBGNib3IYASABKAwiKQoZUHV0SWRlbnRpdHlPYmplY3RSZXNwb25zZRIMCgRoYXNoGAEgASgMIhIKEFJlbGF5SW5mb1JlcXVlc3QiJgoRUmVsYXlJbmZvUmVzcG9uc2USEQoJcmVsYXlfcHViGAEgASgMIjkKE1JlZGVlbUludml0ZVJlcXVlc3QSDgoGaW52aXRlGAEgASgJEhIKCm1lbWJlcl9wdWIYAiABKAwiFgoUUmVkZWVtSW52aXRlUmVzcG9uc2UiEgoQRGlyZWN0b3J5UmVxdWVzdCJICg5EaXJlY3RvcnlFbnRyeRISCgptZW1iZXJfcHViGAEgASgMEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRIMCgRraW5kGAMgASgJIj4KEURpcmVjdG9yeVJlc3BvbnNlEikKB21lbWJlcnMYASADKAsyGC5jYWlybi52MS5EaXJlY3RvcnlFbnRyeSKNAQoIUm9vbUluZm8SDwoHcm9vbV9pZBgBIAEoDBIQCghzcGFjZV9pZBgCIAEoDBIMCgRuYW1lGAMgASgJEhIKCmNyZWF0ZWRfYXQYBCABKAMSDgoGam9pbmVkGAUgASgIEhIKCnZpc2liaWxpdHkYBiABKAkSGAoQcGVuZGluZ19yZXF1ZXN0cxgHIAEoBSJkCglTcGFjZUluZm8SEAoIc3BhY2VfaWQYASABKAwSDAoEbmFtZRgCIAEoCRISCgphZG1pdF9raW5kGAMgASgJEhQKDGFkbWl0X29yaWdpbhgEIAEoCRINCgVvd25lchgFIAEoDCImChBMaXN0Um9vbXNSZXF1ZXN0EhIKCm1lbWJlcl9wdWIYASABKAwiWwoRTGlzdFJvb21zUmVzcG9uc2USIQoFcm9vbXMYASADKAsyEi5jYWlybi52MS5Sb29tSW5mbxIjCgZzcGFjZXMYAiADKAsyEy5jYWlybi52MS5TcGFjZUluZm8iMwoPU3BhY2VNZW1iZXJJbmZvEhIKCm1lbWJlcl9wdWIYASABKAwSDAoEcm9sZRgCIAEoCSIrChdMaXN0U3BhY2VNZW1iZXJzUmVxdWVzdBIQCghzcGFjZV9pZBgBIAEoDCJGChhMaXN0U3BhY2VNZW1iZXJzUmVzcG9uc2USKgoHbWVtYmVycxgBIAMoCzIZLmNhaXJuLnYxLlNwYWNlTWVtYmVySW5mbyIqChRSZXNvbHZlU2VuZGVyUmVxdWVzdBISCgpzZW5kZXJfcHViGAEgASgMIqoBChVSZXNvbHZlU2VuZGVyUmVzcG9uc2USGgoSc2Vzc2lvbl9kZWxlZ2F0aW9uGAEgASgMEhMKC2F0dGVzdGF0aW9uGAMgASgMEhoKEmRldmljZV9kZWxlZ2F0aW9ucxgFIAMoDBIWCg5kZXZpY2VfcmV2b2tlcxgGIAMoDEoECAIQA0oECAQQBVIRZGV2aWNlX2RlbGVnYXRpb25SDWRldmljZV9yZXZva2UiLgoYTGlzdE1lbWJlckRldmljZXNSZXF1ZXN0EhIKCm1lbWJlcl9wdWIYASABKAwiMAoZTGlzdE1lbWJlckRldmljZXNSZXNwb25zZRITCgtkZXZpY2VfcHVicxgBIAMoDCqiBQoJRXZlbnRUeXBlEhoKFkVWRU5UX1RZUEVfVU5TUEVDSUZJRUQQABIICgRDSEFUEAESDAoIRklMRV9SRUYQAhIMCghQUkVTRU5DRRADEgwKCFJFQUNUSU9OEAQSCAoERURJVBAFEgoKBkRFTEVURRAGEhAKDFRBU0tfUkVRVUVTVBAKEg8KC1RBU0tfVVBEQVRFEAsSCgoGTk9USUZZEAwSCwoHQ09NTUFORBANEhQKEEFQUFJPVkFMX1JFUVVFU1QQFBISCg5BUFBST1ZBTF9HUkFOVBAVEhEKDUFQUFJPVkFMX0RFTlkQFhIVChFDUkVERU5USUFMX01JTlRFRBAXEgkKBUlOTEFZEB4SEAoMSU5MQVlfVVBEQVRFEB8SDwoLSU5MQVlfVU5QSU4QIBIPCgtJTlRFUkFDVElPThAhEg4KCklOTEFZX0RFQ0wQIhITCg9TSUdOQUxJTkdfT0ZGRVIQKBIUChBTSUdOQUxJTkdfQU5TV0VSECkSEQoNU0lHTkFMSU5HX0lDRRAqEg0KCUNBTExfUklORxArEgwKCENBTExfQllFECwSDgoKTUVNQkVSX0FERBAyEhEKDU1FTUJFUl9SRU1PVkUQMxITCg9ST09NX0tFWV9ST1RBVEUQNBIQCgxTUEFDRV9DUkVBVEUQNRIQCgxTUEFDRV9VUERBVEUQNhIPCgtST09NX0NSRUFURRA3EhQKEFNQQUNFX01FTUJFUl9BREQQOBIVChFST09NX0pPSU5fUkVRVUVTVBA5EhcKE1NQQUNFX01FTUJFUl9SRU1PVkUQOhIYChRJREVOVElUWV9BVFRFU1RBVElPThA8EhUKEURFVklDRV9ERUxFR0FUSU9OED0SEQoNREVWSUNFX1JFVk9LRRA+KpABCg1UcmFuc3BvcnRIaW50Eh4KGlRSQU5TUE9SVF9ISU5UX1VOU1BFQ0lGSUVEEAASFgoSVFJBTlNQT1JUX0hJTlRfTEFOEAESFwoTVFJBTlNQT1JUX0hJTlRfTUVTSBACEhYKElRSQU5TUE9SVF9ISU5UX0JMRRADEhYKElRSQU5TUE9SVF9ISU5UX0FMTBAEMrMHCgxDYWlyblNlcnZpY2USRAoJU2VuZEV2ZW50EhouY2Fpcm4udjEuU2VuZEV2ZW50UmVxdWVzdBobLmNhaXJuLnYxLlNlbmRFdmVudFJlc3BvbnNlEjUKBFN5bmMSFS5jYWlybi52MS5TeW5jUmVxdWVzdBoWLmNhaXJuLnYxLlN5bmNSZXNwb25zZRI+CgdIaXN0b3J5EhguY2Fpcm4udjEuSGlzdG9yeVJlcXVlc3QaGS5jYWlybi52MS5IaXN0b3J5UmVzcG9uc2USXAoRR2V0SWRlbnRpdHlPYmplY3QSIi5jYWlybi52MS5HZXRJZGVudGl0eU9iamVjdFJlcXVlc3QaIy5jYWlybi52MS5HZXRJZGVudGl0eU9iamVjdFJlc3BvbnNlElwKEVB1dElkZW50aXR5T2JqZWN0EiIuY2Fpcm4udjEuUHV0SWRlbnRpdHlPYmplY3RSZXF1ZXN0GiMuY2Fpcm4udjEuUHV0SWRlbnRpdHlPYmplY3RSZXNwb25zZRJQCg1SZXNvbHZlU2VuZGVyEh4uY2Fpcm4udjEuUmVzb2x2ZVNlbmRlclJlcXVlc3QaHy5jYWlybi52MS5SZXNvbHZlU2VuZGVyUmVzcG9uc2USRAoJTGlzdFJvb21zEhouY2Fpcm4udjEuTGlzdFJvb21zUmVxdWVzdBobLmNhaXJuLnYxLkxpc3RSb29tc1Jlc3BvbnNlElkKEExpc3RTcGFjZU1lbWJlcnMSIS5jYWlybi52MS5MaXN0U3BhY2VNZW1iZXJzUmVxdWVzdBoiLmNhaXJuLnYxLkxpc3RTcGFjZU1lbWJlcnNSZXNwb25zZRJcChFMaXN0TWVtYmVyRGV2aWNlcxIiLmNhaXJuLnYxLkxpc3RNZW1iZXJEZXZpY2VzUmVxdWVzdBojLmNhaXJuLnYxLkxpc3RNZW1iZXJEZXZpY2VzUmVzcG9uc2USRAoJUmVsYXlJbmZvEhouY2Fpcm4udjEuUmVsYXlJbmZvUmVxdWVzdBobLmNhaXJuLnYxLlJlbGF5SW5mb1Jlc3BvbnNlEk0KDFJlZGVlbUludml0ZRIdLmNhaXJuLnYxLlJlZGVlbUludml0ZVJlcXVlc3QaHi5jYWlybi52MS5SZWRlZW1JbnZpdGVSZXNwb25zZRJECglEaXJlY3RvcnkSGi5jYWlybi52MS5EaXJlY3RvcnlSZXF1ZXN0GhsuY2Fpcm4udjEuRGlyZWN0b3J5UmVzcG9uc2VCNlo0Z2l0aHViLmNvbS9nZWVrZ29uZWNyYXp5L2NhaXJuL3Byb3RvL2NhaXJudjE7Y2Fpcm52MWIGcHJvdG8z");
 
 /**
  * @generated from message cairn.v1.Event
@@ -385,6 +385,68 @@ export const RedeemInviteResponseSchema: GenMessage<RedeemInviteResponse> = /*@_
   messageDesc(file_cairn, 14);
 
 /**
+ * Relay directory (slice 3): the relay's allow-listed members that have published
+ * a self-attestation, with their self-asserted profile. Backs add-by-name in the
+ * client. This is the "relay-vouched" name tier — as trustworthy as the operator's
+ * curation of the allow-list, not a cryptographic guarantee.
+ *
+ * @generated from message cairn.v1.DirectoryRequest
+ */
+export type DirectoryRequest = Message<"cairn.v1.DirectoryRequest"> & {
+};
+
+/**
+ * Describes the message cairn.v1.DirectoryRequest.
+ * Use `create(DirectoryRequestSchema)` to create a new message.
+ */
+export const DirectoryRequestSchema: GenMessage<DirectoryRequest> = /*@__PURE__*/
+  messageDesc(file_cairn, 15);
+
+/**
+ * @generated from message cairn.v1.DirectoryEntry
+ */
+export type DirectoryEntry = Message<"cairn.v1.DirectoryEntry"> & {
+  /**
+   * @generated from field: bytes member_pub = 1;
+   */
+  memberPub: Uint8Array;
+
+  /**
+   * @generated from field: string display_name = 2;
+   */
+  displayName: string;
+
+  /**
+   * @generated from field: string kind = 3;
+   */
+  kind: string;
+};
+
+/**
+ * Describes the message cairn.v1.DirectoryEntry.
+ * Use `create(DirectoryEntrySchema)` to create a new message.
+ */
+export const DirectoryEntrySchema: GenMessage<DirectoryEntry> = /*@__PURE__*/
+  messageDesc(file_cairn, 16);
+
+/**
+ * @generated from message cairn.v1.DirectoryResponse
+ */
+export type DirectoryResponse = Message<"cairn.v1.DirectoryResponse"> & {
+  /**
+   * @generated from field: repeated cairn.v1.DirectoryEntry members = 1;
+   */
+  members: DirectoryEntry[];
+};
+
+/**
+ * Describes the message cairn.v1.DirectoryResponse.
+ * Use `create(DirectoryResponseSchema)` to create a new message.
+ */
+export const DirectoryResponseSchema: GenMessage<DirectoryResponse> = /*@__PURE__*/
+  messageDesc(file_cairn, 17);
+
+/**
  * Resolve a sender key to the identity-log objects that place it.
  *
  * GetIdentityObject is keyed by HASH, but a client meeting an unknown sender
@@ -452,7 +514,7 @@ export type RoomInfo = Message<"cairn.v1.RoomInfo"> & {
  * Use `create(RoomInfoSchema)` to create a new message.
  */
 export const RoomInfoSchema: GenMessage<RoomInfo> = /*@__PURE__*/
-  messageDesc(file_cairn, 15);
+  messageDesc(file_cairn, 18);
 
 /**
  * @generated from message cairn.v1.SpaceInfo
@@ -495,7 +557,7 @@ export type SpaceInfo = Message<"cairn.v1.SpaceInfo"> & {
  * Use `create(SpaceInfoSchema)` to create a new message.
  */
 export const SpaceInfoSchema: GenMessage<SpaceInfo> = /*@__PURE__*/
-  messageDesc(file_cairn, 16);
+  messageDesc(file_cairn, 19);
 
 /**
  * Rooms visible to member_pub: every room it was admitted to (joined), plus the
@@ -516,7 +578,7 @@ export type ListRoomsRequest = Message<"cairn.v1.ListRoomsRequest"> & {
  * Use `create(ListRoomsRequestSchema)` to create a new message.
  */
 export const ListRoomsRequestSchema: GenMessage<ListRoomsRequest> = /*@__PURE__*/
-  messageDesc(file_cairn, 17);
+  messageDesc(file_cairn, 20);
 
 /**
  * @generated from message cairn.v1.ListRoomsResponse
@@ -538,7 +600,7 @@ export type ListRoomsResponse = Message<"cairn.v1.ListRoomsResponse"> & {
  * Use `create(ListRoomsResponseSchema)` to create a new message.
  */
 export const ListRoomsResponseSchema: GenMessage<ListRoomsResponse> = /*@__PURE__*/
-  messageDesc(file_cairn, 18);
+  messageDesc(file_cairn, 21);
 
 /**
  * A member root admitted to a space (the space roster). Names resolve client-side
@@ -563,7 +625,7 @@ export type SpaceMemberInfo = Message<"cairn.v1.SpaceMemberInfo"> & {
  * Use `create(SpaceMemberInfoSchema)` to create a new message.
  */
 export const SpaceMemberInfoSchema: GenMessage<SpaceMemberInfo> = /*@__PURE__*/
-  messageDesc(file_cairn, 19);
+  messageDesc(file_cairn, 22);
 
 /**
  * @generated from message cairn.v1.ListSpaceMembersRequest
@@ -580,7 +642,7 @@ export type ListSpaceMembersRequest = Message<"cairn.v1.ListSpaceMembersRequest"
  * Use `create(ListSpaceMembersRequestSchema)` to create a new message.
  */
 export const ListSpaceMembersRequestSchema: GenMessage<ListSpaceMembersRequest> = /*@__PURE__*/
-  messageDesc(file_cairn, 20);
+  messageDesc(file_cairn, 23);
 
 /**
  * @generated from message cairn.v1.ListSpaceMembersResponse
@@ -597,7 +659,7 @@ export type ListSpaceMembersResponse = Message<"cairn.v1.ListSpaceMembersRespons
  * Use `create(ListSpaceMembersResponseSchema)` to create a new message.
  */
 export const ListSpaceMembersResponseSchema: GenMessage<ListSpaceMembersResponse> = /*@__PURE__*/
-  messageDesc(file_cairn, 21);
+  messageDesc(file_cairn, 24);
 
 /**
  * @generated from message cairn.v1.ResolveSenderRequest
@@ -614,7 +676,7 @@ export type ResolveSenderRequest = Message<"cairn.v1.ResolveSenderRequest"> & {
  * Use `create(ResolveSenderRequestSchema)` to create a new message.
  */
 export const ResolveSenderRequestSchema: GenMessage<ResolveSenderRequest> = /*@__PURE__*/
-  messageDesc(file_cairn, 22);
+  messageDesc(file_cairn, 25);
 
 /**
  * @generated from message cairn.v1.ResolveSenderResponse
@@ -660,7 +722,7 @@ export type ResolveSenderResponse = Message<"cairn.v1.ResolveSenderResponse"> & 
  * Use `create(ResolveSenderResponseSchema)` to create a new message.
  */
 export const ResolveSenderResponseSchema: GenMessage<ResolveSenderResponse> = /*@__PURE__*/
-  messageDesc(file_cairn, 23);
+  messageDesc(file_cairn, 26);
 
 /**
  * @generated from message cairn.v1.ListMemberDevicesRequest
@@ -677,7 +739,7 @@ export type ListMemberDevicesRequest = Message<"cairn.v1.ListMemberDevicesReques
  * Use `create(ListMemberDevicesRequestSchema)` to create a new message.
  */
 export const ListMemberDevicesRequestSchema: GenMessage<ListMemberDevicesRequest> = /*@__PURE__*/
-  messageDesc(file_cairn, 24);
+  messageDesc(file_cairn, 27);
 
 /**
  * The device keys a room key must be wrapped to for this member. Room keys seal
@@ -699,7 +761,7 @@ export type ListMemberDevicesResponse = Message<"cairn.v1.ListMemberDevicesRespo
  * Use `create(ListMemberDevicesResponseSchema)` to create a new message.
  */
 export const ListMemberDevicesResponseSchema: GenMessage<ListMemberDevicesResponse> = /*@__PURE__*/
-  messageDesc(file_cairn, 25);
+  messageDesc(file_cairn, 28);
 
 /**
  * @generated from enum cairn.v1.EventType
@@ -1050,7 +1112,7 @@ export const CairnService: GenService<{
     output: typeof ListMemberDevicesResponseSchema;
   },
   /**
-   * Relay access (slice 2).
+   * Relay access (slice 2) + directory (slice 3).
    *
    * @generated from rpc cairn.v1.CairnService.RelayInfo
    */
@@ -1060,14 +1122,22 @@ export const CairnService: GenService<{
     output: typeof RelayInfoResponseSchema;
   },
   /**
-   * Realtime push is SSE (see docs/protocol.md §API), not a proto stream.
-   *
    * @generated from rpc cairn.v1.CairnService.RedeemInvite
    */
   redeemInvite: {
     methodKind: "unary";
     input: typeof RedeemInviteRequestSchema;
     output: typeof RedeemInviteResponseSchema;
+  },
+  /**
+   * Realtime push is SSE (see docs/protocol.md §API), not a proto stream.
+   *
+   * @generated from rpc cairn.v1.CairnService.Directory
+   */
+  directory: {
+    methodKind: "unary";
+    input: typeof DirectoryRequestSchema;
+    output: typeof DirectoryResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_cairn, 0);
