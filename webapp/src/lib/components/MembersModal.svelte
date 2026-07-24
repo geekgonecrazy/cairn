@@ -4,7 +4,7 @@
   import { directory } from '../directory.svelte'
   import { identity } from '../identity.svelte'
   import { fingerprint } from '../identity'
-  import { hex } from '../api'
+  import { cairn, hex } from '../api'
 
   let { onclose }: { onclose: () => void } = $props()
 
@@ -19,6 +19,33 @@
   let busy = $state(false)
   let error = $state('')
   let copied = $state('')
+
+  // Relay directory: allow-listed members with a published profile, so you can
+  // add someone by name instead of pasting a key. Names are "relay-vouched" — the
+  // operator admitted these keys — not a cryptographic guarantee; the key is the
+  // identity, so compare fingerprints out-of-band for anything sensitive.
+  type DirEntry = { pub: Uint8Array; pubHex: string; name: string; kind: string }
+  let dirEntries = $state<DirEntry[]>([])
+  let dirLoaded = $state(false)
+  $effect(() => {
+    if (dirLoaded) return
+    dirLoaded = true
+    cairn
+      .directory({})
+      .then((res) => {
+        dirEntries = (res.members ?? []).map((m) => ({
+          pub: m.memberPub,
+          pubHex: hex(m.memberPub),
+          name: m.displayName,
+          kind: m.kind,
+        }))
+      })
+      .catch(() => {}) // offline / no directory; the by-key field still works
+  })
+  const inRoom = $derived(new Set(app.members.map((m) => m.pubHex)))
+  const dirCandidates = $derived(
+    dirEntries.filter((e) => e.pubHex !== myHex && !inRoom.has(e.pubHex)),
+  )
 
   async function copy(what: string, text: string) {
     try {
@@ -36,6 +63,18 @@
     try {
       await app.addMember(peerKey, shareHistory)
       peerKey = ''
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'could not add member'
+    } finally {
+      busy = false
+    }
+  }
+
+  async function addByPub(pubHex: string) {
+    error = ''
+    busy = true
+    try {
+      await app.addMember(pubHex, shareHistory)
     } catch (e) {
       error = e instanceof Error ? e.message : 'could not add member'
     } finally {
@@ -178,6 +217,37 @@
         <p class="hint">Share this with another device so it can be added to the room.</p>
       </div>
 
+      {#if dirCandidates.length > 0}
+        <div class="field">
+          <label for="dir-list">From the directory <span class="count">{dirCandidates.length}</span></label>
+          <ul id="dir-list" class="roster">
+            {#each dirCandidates as e (e.pubHex)}
+              <li>
+                <span class="who">
+                  <strong>{e.name || `cairn:${e.pubHex.slice(0, 6)}`}</strong>
+                  {#if e.kind === 'agent'}<span class="role">agent</span>{/if}
+                  <span
+                    class="vouched"
+                    title="The relay operator admitted this key. A label, not proof — compare the fingerprint out-of-band for anything sensitive."
+                    >relay-vouched</span
+                  >
+                </span>
+                <span class="right">
+                  <code class="fpr">{fingerprint(e.pub)}</code>
+                  <button class="btn primary sm" disabled={busy} onclick={() => addByPub(e.pubHex)}>
+                    Add
+                  </button>
+                </span>
+              </li>
+            {/each}
+          </ul>
+          <p class="hint">
+            Names come from the relay's directory. The key is the identity — the name is the
+            operator's label.
+          </p>
+        </div>
+      {/if}
+
       <div class="field">
         <label for="peer">Add a member by key</label>
         <input
@@ -263,6 +333,14 @@
     border-radius: 999px;
     background: var(--surface-2);
     color: var(--text-3);
+  }
+  .vouched {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 999px;
+    background: var(--accent-soft, var(--surface-2));
+    color: var(--accent, var(--text-3));
+    white-space: nowrap;
   }
   .fpr {
     font-family: var(--font-mono, monospace);
