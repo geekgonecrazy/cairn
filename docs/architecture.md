@@ -342,21 +342,27 @@ browser port. `core` is node-logic, not server-logic. **The trust model in force
 today is the household-root model** ([`events-and-e2ee.md`](events-and-e2ee.md)),
 not the §2/§6 v2 design.
 
-**v2 trust — slices 1–2 landed.** Identity is now a self-sovereign member key +
-device tree (no household root; §2), and the relay has an operational allow-list +
-single-use invite key (§6 Access). The directory / add-by-name (§6 Discovery),
-verification tiers, and per-transport gating are still ahead.
+**v2 trust — slices 1–3 + the transport seam landed.** Identity is a self-sovereign
+member key + device tree (§2); the relay has an allow-list + single-use invite key
+(§6 Access) and a directory backing add-by-name (§6 Discovery); and the
+`transport/` interface (§3) is now real, with HTTP/SSE refactored to be its first
+implementation and `core` pumping every transport's inbound through one verified
+verify→store→fold→fan-out path. Still ahead: the actual alternate transports
+(LAN/BLE/Meshtastic), relay-to-relay bridging, symmetric sync, and interest-based
+routing.
 
-**Not built.** No `transport/` interface, no `native/` on-device node. Everything
-moves over one transport (HTTP) reached one way (`cairnd`'s services); fan-out is
-connection-bound (the SSE `Hub`), not pubkey-addressed. The routing table, the
-symmetric sync driver, relay bridging, and interest-based routing are designed
-(here + [`decisions.md`](decisions.md)) but unimplemented.
+**Not built.** No `native/` on-device node, and no alternate transport
+implementations yet — the `transport/` seam exists (§3) but HTTP/SSE is still the
+only transport registered, so everything moves over one path. Fan-out goes through
+the seam but is not yet pubkey-addressed. The routing table, the symmetric sync
+driver, relay-to-relay bridging, and interest-based routing are designed (here +
+[`decisions.md`](decisions.md)) but unimplemented.
 
-**The seam to cut first.** A `Transport` interface (`Send(pubkey, frame)`,
-`Available()`, an inbound channel) with the HTTP/SSE path refactored to be its
-first impl, and a `Node` abstraction so `core` stops assuming "one server over
-HTTP". Additive plumbing — it touches neither the protocol nor the crypto.
-Everything else (symmetric sync, relay bridging, the Wails3 embed, browser-WASM,
-BLE, Meshtastic, and the v2 trust rework) slots in behind it. Phases in
-[`plan.md`](plan.md); exit criteria in [`milestones.md`](milestones.md).
+**The seam is cut.** The `Transport` interface (`Name` / `Available` / `Broadcast`
+/ `Inbound`) exists in `transport/`, with HTTP/SSE as its first implementation and
+`core` registering transports + pumping every transport's inbound through the one
+verify→store→fold→fan-out path. Additive plumbing — it touched neither the
+protocol nor the crypto. What remains behind it: pubkey-addressed routing, the
+symmetric sync driver, the actual LAN/BLE/Meshtastic transports and relay-to-relay
+bridging, plus the Wails3 embed and browser-WASM. Phases in [`plan.md`](plan.md);
+exit criteria in [`milestones.md`](milestones.md).

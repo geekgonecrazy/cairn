@@ -51,7 +51,7 @@ func SubmitEvent(ev *cairnv1.Event) error {
 	// Presence is ephemeral (docs/protocol.md §3): fan it out live, but never
 	// persist it — it must not join the DAG or show up in history/sync.
 	if ev.Type == cairnv1.EventType_PRESENCE {
-		hub.broadcast(ev)
+		broadcast(ev)
 		return nil
 	}
 
@@ -68,7 +68,7 @@ func SubmitEvent(ev *cairnv1.Event) error {
 				log.Printf("core: room-state fold failed for %x: %v", ev.EventId, err)
 			}
 		}
-		hub.broadcast(ev)
+		broadcast(ev)
 	}
 	return nil
 }

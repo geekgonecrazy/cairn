@@ -60,6 +60,10 @@ func Setup() error {
 	blobStore = bs
 
 	hub = newHub()
+	// The HTTP/SSE realtime stream is transport #1 behind the transport seam;
+	// alternate transports (LAN, BLE, Meshtastic, relay-to-relay) register the
+	// same way. See package transport.
+	RegisterTransport(newSSETransport())
 
 	// The relay's own keypair (persisted; clients pin the pubkey). Invites are
 	// signed under it.

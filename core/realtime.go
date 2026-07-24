@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	cairnv1 "github.com/geekgonecrazy/cairn/proto/cairnv1"
+	"github.com/geekgonecrazy/cairn/transport"
 )
 
 // Hub is the realtime fan-out behind the SSE stream. It is deliberately lossy:
@@ -51,3 +52,17 @@ func (h *Hub) broadcast(ev *cairnv1.Event) {
 		}
 	}
 }
+
+// sseTransport adapts the realtime Hub to the transport seam: the HTTP/SSE stream
+// is transport #1. Outbound-only — local client submissions arrive synchronously
+// via the SendEvent RPC, not as peer inbound — so Inbound() never yields.
+type sseTransport struct{ inbound chan *cairnv1.Event }
+
+func newSSETransport() *sseTransport { return &sseTransport{inbound: make(chan *cairnv1.Event)} }
+
+func (*sseTransport) Name() string                     { return "http" }
+func (*sseTransport) Available() bool                  { return true }
+func (*sseTransport) Broadcast(ev *cairnv1.Event)      { hub.broadcast(ev) }
+func (s *sseTransport) Inbound() <-chan *cairnv1.Event { return s.inbound }
+
+var _ transport.Transport = (*sseTransport)(nil)
