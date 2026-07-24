@@ -10,6 +10,11 @@ authority** — it adds history continuity and a blob gateway, but events are ve
 their own and the DAG converges without it. A "node" is any keyholder that folds that DAG;
 the home server is just a node that happens to be always on.
 
+> [!NOTE]
+> **This is a for-fun project — a place to try out some ideas.** It is not a product, not
+> audited, and not something to trust with anything that matters. Expect things to break and
+> change without notice.
+
 ---
 
 ## Documentation
