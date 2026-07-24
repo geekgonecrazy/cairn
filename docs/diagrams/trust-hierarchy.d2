@@ -1,22 +1,17 @@
-# Cairn trust hierarchy — the three-tier Ed25519 delegation chain.
+# Cairn identity — a self-sovereign member root and its device tree (v2).
+# There is NO household root and no trusted-root set. A member root is its own
+# apex: it SELF-signs an identity_attestation carrying its self-asserted profile.
 # No private key is ever copied; trust propagates as signed, content-addressed
-# objects in the household identity log. Edges are labelled by object type.
+# objects in the identity log. Edges are labelled by object type.
 direction: down
 
-hh: "Household root\n(offline apex — 24-word BIP-39, never persisted)" {
-  shape: hexagon
-  style.fill: "#eef2ff"
-  style.stroke: "#4338ca"
-  style.font-size: 15
-  style.bold: true
-}
-
-alice: "Member root — Alice (human)\n(offline apex — her own 24 words)" {
+alice: "Member root — Alice (human)\n(offline apex — her own 24 words)\nSELF-signs her identity_attestation" {
   shape: hexagon
   style.fill: "#ecfdf5"
   style.stroke: "#047857"
+  style.bold: true
 }
-agent: "Member root — Assistant (agent)\noperated_by = Alice" {
+agent: "Member root — Assistant (agent)\noperated_by = Alice\n(also self-attests)" {
   shape: hexagon
   style.fill: "#fff7ed"
   style.stroke: "#c2410c"
@@ -28,9 +23,6 @@ tablet: "Tablet\n(device key)" { style.fill: "#f1f5f9" }
 session: "Session key\n(browser, ~hours)" { style.fill: "#fefce8"; shape: circle }
 agentdev: "Agent instance\n(device key)" { style.fill: "#f1f5f9" }
 
-hh -> alice: "identity_attestation\n(signed by household root)" { style.stroke: "#4338ca" }
-hh -> agent: "identity_attestation" { style.stroke: "#4338ca" }
-
 alice -> laptop: "device_delegation\n(first device — signed by member root)" { style.stroke: "#047857" }
 laptop -> phone: "device_delegation\n(paired from laptop)" { style.stroke: "#334155" }
 phone -> tablet: "device_delegation\n(paired from phone)" { style.stroke: "#334155" }
@@ -38,7 +30,12 @@ phone -> session: "session_delegation\n(signed by device / passkey)" { style.str
 agent -> agentdev: "device_delegation" { style.stroke: "#c2410c" }
 
 explain: |md
-  **Devices form a tree per member.** The member root signs only the *first*
-  device, then goes offline; each later device is paired from an existing one.
-  A verifier walks any key up to a household root it trusts.
+  **Devices form a tree per member.** The member root signs only the *first* device,
+  then goes offline; each later device is paired from an existing one. A verifier
+  walks any signing key up to the member root it belongs to.
+
+  **A valid chain proves identity, not trustworthiness.** It says "this key belongs
+  to member M, who *claims* this name" — nothing more. Whether to trust M is decided
+  at the **edge**: you paired with them, a room you are both in admitted them, or a
+  relay you use lists them.
 | { near: bottom-center; style.font-size: 13 }

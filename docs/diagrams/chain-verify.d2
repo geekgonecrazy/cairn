@@ -1,24 +1,37 @@
-# Verifying a sender (identity.VerifySender) — one walk from a signing key up to a
-# trusted household root. A missing link is "fetch and retry"; a bad sig / expiry /
-# revocation / untrusted root is terminal.
+# Verifying a sender (identity.VerifySender) — one walk from a signing key down to
+# the member root it belongs to. A missing link is "fetch and retry"; a bad sig,
+# expiry, or revocation is terminal.
+#
+# v2: there is NO trusted-root check here. VerifySender RESOLVES identity; it does
+# not decide trust, and admission to a relay is a separate, operational gate.
 direction: down
 
 start: "sender_pub\n(session OR device key)" { shape: oval; style.fill: "#fefce8" }
 sess: "session_delegation?\nresolve session → device" { shape: diamond; style.fill: "#f1f5f9" }
-walk: "walk device tree:\ndevice → device_delegation → parent …\n(≤ depth 8, cycle-checked)" { style.fill: "#eff6ff" }
+walk: "walk device tree:\ndevice → device_delegation → parent …\n(≤ MaxChainDepth 8, cycle-checked)" { style.fill: "#eff6ff" }
 revoke: "revocation check at EVERY hop\n(revoke binds only from an ancestor)" { style.fill: "#fef2f2"; style.stroke: "#b91c1c" }
-att: "member root → identity_attestation" { style.fill: "#ecfdf5" }
-trust: "attestation.origin ∈ trustedRoots?" { shape: diamond; style.fill: "#f1f5f9" }
-ok: "RESOLVED\n{ member_pub, kind, origin, operated_by }" { shape: oval; style.fill: "#dcfce7"; style.stroke: "#15803d" }
-bad: "REJECT\nErrRevoked / ErrExpired / ErrBadSignature / ErrUntrustedRoot" { shape: oval; style.fill: "#fee2e2"; style.stroke: "#b91c1c" }
+att: "member root → SELF-signed\nidentity_attestation" { style.fill: "#ecfdf5" }
+ok: "RESOLVED\n{ member_pub, kind, operated_by, display_name }" { shape: oval; style.fill: "#dcfce7"; style.stroke: "#15803d" }
+bad: "REJECT\nErrRevoked / ErrExpired / ErrBadSignature\nErrChainTooDeep / ErrChainCycle" { shape: oval; style.fill: "#fee2e2"; style.stroke: "#b91c1c" }
 fetch: "ErrUnknownObject\n→ GetIdentityObject(hash), retry" { style.fill: "#fff7ed"; style.stroke: "#c2410c" }
 
 start -> sess
 sess -> walk: "device key"
 walk -> revoke -> att
-att -> trust
-trust -> ok: "yes"
-trust -> bad: "no"
+att -> ok: "self-signature verifies"
+att -> bad: "bad self-sig / pubkey mismatch"
 revoke -> bad: "revoked / expired"
 walk -> fetch: "link missing"
 att -> fetch: "attestation missing"
+
+gate: |md
+  **Resolution is not admission.** `RESOLVED` only means *"this key provably belongs
+  to member M, who claims this profile."* Two further, independent decisions follow:
+
+  - **Operational — may M use this relay?** The allow-list gate
+    (`core.enforceAccess`): an **open** relay auto-admits and records the member
+    trust-on-first-use; an **invite-only** relay rejects with `ErrNotAllowed`
+    until an invite is redeemed.
+  - **Trust — should *you* believe M is who they claim?** An **edge** decision:
+    pairing, a shared room, or the relay directory. Never the chain's answer.
+| { near: bottom-center; style.font-size: 13 }

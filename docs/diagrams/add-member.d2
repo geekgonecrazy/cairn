@@ -1,19 +1,30 @@
-# Adding a user (member) to a household.
-# The household root lives only in the founder's 24 words and never touches a
-# browser — attestation happens at the CLI (cairnctl). Every member, including
-# the founder, joins the same way and holds their own personal 24 words.
+# A member joins a relay (v2). There is no household and no founder to attest you:
+# a member is a self-sovereign key that SELF-attests. The relay decides only
+# whether it will CARRY you (operational admission), never who you are.
 shape: sequence_diagram
 
 nm: "New member\n(their device)"
-founder: "Founder\n(cairnctl + household words)"
-carrier: "Carrier\n(cairnd — a permanent node)"
+relay: "Relay\n(cairnd — a permanent node)"
+peer: "Existing member\n(already on this relay)"
 
 nm -> nm: "Derive MEMBER root from own 24 words (offline);\ngenerate first DEVICE key"
 nm -> nm: "member root signs the first\ndevice_delegation (then goes offline)"
-nm -> founder: "join code = { member_pub, device_pub }"
-founder -> founder: "cairnctl attest: enter household 24 words →\nderive household root → sign identity_attestation\n(binds member_pub to this household)"
-founder -> nm: "invite = signed identity_attestation"
-nm -> carrier: "PutIdentityObject(attestation, device_delegation)"
-carrier -> carrier: "verify each object's self-signature;\nfirst attestation ADOPTS the household root\n(founding window) → now enforcing"
-carrier -> nm: "stored"
-nm -> carrier: "SendEvent(...) — now chains to a trusted root ✓"
+nm -> nm: "member root SELF-signs identity_attestation\n{ pubkey, kind, display_name } — no third party"
+
+nm -> relay: "RelayInfo() — before anything else"
+relay -> nm: "{ relay_pub, require_invite }\nclient PINS relay_pub"
+
+nm -> relay: "if require_invite: RedeemInvite(invite, member_pub)"
+relay -> relay: "verify token sig under relay_priv;\nsingle-use → add member_pub to ALLOW-LIST"
+relay -> nm: "admitted"
+
+nm -> relay: "PutIdentityObject(attestation, device_delegation)"
+relay -> relay: "verify each object's SELF-signature\n(no root to chain to — none exists)"
+relay -> nm: "stored"
+
+nm -> relay: "SendEvent(...)"
+relay -> relay: "enforceAccess: on the allow-list?\nOPEN relay → auto-admit + record TOFU\nINVITE-ONLY → ErrNotAllowed without a redemption"
+relay -> nm: "accepted ✓"
+
+relay -> peer: "member now appears in the relay DIRECTORY\n(allow-listed + has published an attestation)"
+peer -> peer: "add-by-name — 'relay-vouched' tier:\nthe operator admitted this key, so the NAME is\nas good as that curation. The pubkey is the identity."

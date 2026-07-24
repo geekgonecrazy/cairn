@@ -14,4 +14,4 @@ trusted -> trusted: "show Fingerprint on BOTH screens;\nhuman compares 40b0-... 
 trusted -> trusted: "ApprovePairing: sign device_delegation\n{ device_pub, parent_pub = this device }"
 trusted -> log: "publish device_delegation"
 trusted -> new: "delegation (+ current room keys re-wrapped\nvia room_key_rotate to the new device key)"
-new -> log: "now verifies: new → trusted → … → member root → household root ✓"
+new -> log: "now verifies: new → trusted → … → member root → self-attestation ✓"

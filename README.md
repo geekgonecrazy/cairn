@@ -23,9 +23,9 @@ Everything lives in [`docs/`](./docs) — start at the [documentation index](./d
 
 - [**Architecture**](./docs/architecture.md) — nodes, transports, sync, and how one `core`
   runs on a server, a phone (Wails3), and in a browser. The mobile / BLE / Meshtastic story.
-- [**Events & E2EE**](./docs/events-and-e2ee.md) — the crypto in depth: the household &
-  member roots, the delegation chain, adding users and devices, revocation, rooms, and how
-  room keys rotate. Illustrated with diagrams.
+- [**Events & E2EE**](./docs/events-and-e2ee.md) — the crypto in depth: member roots, the
+  delegation chain, adding users and devices, revocation, rooms, and how room keys rotate.
+  Illustrated with diagrams.
 - [**Protocol**](./docs/protocol.md) — the terse wire contract (envelope, payloads, DAG, sync,
   SQLite schema).
 - [**Approvals & inlays**](./docs/approvals-and-inlays.md) — portable signed capability grants
@@ -295,17 +295,26 @@ d2 --theme 0 --pad 24 docs/diagrams/<name>.d2 docs/diagrams/<name>.svg
 - **⚠️ `blobs` is not iroh-store.** [`docs/plan.md`](./docs/plan.md) specifies an iroh-store
   gRPC client; the shipped backend is a local filesystem store behind a `Backend` interface.
   Content addressing, encryption, range reads, and retrieval states are all real; peer-to-peer
-  fetch and real pinning are not. Full rationale in [`docs/adrs/0011`](./docs/adrs/0011-blobs-backend-interface.md)
-  §Deviations.
+  fetch and real pinning are not. Full rationale in [`docs/adrs/0011`](./docs/adrs/0011-blobs-backend-interface.md).
 - **The capability broker is external** and not built here. Cairn delivers a capability
   request, lets you sign a grant **in the UI** with your key, and produces a portable artifact
   the agent carries to the broker. Cairn never mints credentials or evaluates policy.
 - **Device pairing is paste-a-code, not scan-a-code.** The QR is rendered and the payload is
   final, but there is no camera capture yet — you copy the `cairn:pair:1:…` string between
   devices. Camera scanning needs `getUserMedia` and a secure context.
-- **Alternate transports are not built yet.** Everything moves over HTTP (Connect + SSE) today.
-  The `transport/` interface, the pubkey-addressed router, LAN/BLE/Meshtastic, and the Wails3
-  on-device node are planned, not present — see [`docs/architecture.md`](./docs/architecture.md)
-  §Current state vs. target and the phases in [`docs/plan.md`](./docs/plan.md).
-- **Spaces admit-policy, peer-household join, and notification settings are not built.** They
+- **Alternate transports are not built yet.** The `transport.Transport` seam **is** cut, with
+  HTTP/SSE registered as transport #1 — but it is still the only one. The pubkey-addressed
+  router, LAN/BLE/Meshtastic, relay-to-relay bridging, and the Wails3 on-device node are
+  planned, not present — see [`docs/architecture.md`](./docs/architecture.md) §Current state
+  vs. target and the phases in [`docs/plan.md`](./docs/plan.md).
+- **One relay at a time.** The client is single-origin: it talks to the relay it was served
+  from. Multi-relay clients and relay-to-relay bridging are designed
+  ([`docs/adrs/0016`](./docs/adrs/0016-transport-seam.md)) but not built.
+- **Spaces admit-policy, cross-relay join, and notification settings are not built.** They
   are the deferred half of Phase 4 (see [`docs/plan.md`](./docs/plan.md)).
+
+---
+
+## License
+
+[Apache License 2.0](./LICENSE) — see [`NOTICE`](./NOTICE).

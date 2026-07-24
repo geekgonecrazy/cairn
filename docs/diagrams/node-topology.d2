@@ -1,16 +1,17 @@
 # Node & transport topology — the target model. A "node" is a keyholder that folds
-# the converging DAG; the home server is just a node that happens to be permanent.
-# Trust is a chain-walk to a known root, identical on every node.
+# the converging DAG; a relay is just a node that happens to be permanent.
+# Identity resolves by chain-walk to a member root, identically on every node;
+# trust is an edge decision and relay admission is a separate, operational gate.
 direction: right
 
-core: "core (Go)\nstore · chain gate · fold · sync driver" {
+core: "core (Go)\nstore · allow-list gate · fold · sync driver\n+ transport seam" {
   style.fill: "#eef2ff"; style.stroke: "#4338ca"; style.bold: true
 }
 
-server: "Home server\ncairnd — ALWAYS ON" {
+server: "Relay\ncairnd — ALWAYS ON" {
   style.fill: "#ecfdf5"
-  t: "transports: HTTP, LAN" { style.font-size: 12 }
-  r: "role: store-and-forward rendezvous" { style.font-size: 12 }
+  t: "transports: HTTP/SSE (today), LAN" { style.font-size: 12 }
+  r: "role: store-and-forward rendezvous\n+ allow-list, invites, directory" { style.font-size: 12 }
 }
 mobile: "Mobile (Wails3)\nembeds core" {
   style.fill: "#fefce8"
@@ -31,11 +32,15 @@ server <-> mobile: "sync: LAN / HTTP" { style.stroke: "#047857" }
 mobile <-> mobile2: "sync: BLE / mesh (no infra)" { style.stroke: "#047857" }
 mobile2: "Mobile (field)\nembeds core + radio" { style.fill: "#fefce8" }
 browser <-> server: "sync via a permanent node" { style.stroke: "#a16207"; style.stroke-dash: 3 }
+server <-> server2: "relay-to-relay bridge\n(designed, not built)" { style.stroke: "#a16207"; style.stroke-dash: 3 }
+server2: "Relay B\n(e.g. bridged over a radio link)" { style.fill: "#ecfdf5"; style.stroke-dash: 3 }
 
 roadmap: |md
-  **Built today:** one node (cairnd) reached over HTTP+SSE; browser runs a parallel
-  TS port. **Target:** `transport/` interface + `Node` abstraction so BLE/mesh plug
-  in; symmetric node-to-node sync; browser becomes a Go-WASM node (retires the TS
-  port). Browsers never do BLE/mesh — they reach the mesh *through* a permanent or
-  mobile node.
+  **Built today:** the `transport.Transport` seam is **cut**, with HTTP/SSE registered
+  as transport #1; one relay (cairnd) with a pinned keypair, allow-list, invites, and
+  a directory; browser runs a parallel TS port. **Next:** LAN/BLE/Meshtastic behind
+  the same interface, pubkey-addressed routing, symmetric node-to-node sync, and
+  relay-to-relay bridging with interest-based routing. **Later:** the browser becomes
+  a Go-WASM node (retiring the TS port). Browsers never do BLE/mesh — they reach the
+  mesh *through* a permanent or mobile node.
 | { style.font-size: 13; near: bottom-center }

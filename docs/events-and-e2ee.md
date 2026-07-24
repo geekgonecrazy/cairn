@@ -1,7 +1,7 @@
 # Events and end-to-end encryption
 
-How Cairn represents everything as signed events, how identity works from the
-household root down to a browser tab, and how rooms stay end-to-end encrypted
+How Cairn represents everything as signed events, how identity works from a
+member root down to a browser tab, and how rooms stay end-to-end encrypted
 across joins, leaves, and new devices.
 
 This is the architecture companion to `protocol.md` (the terse wire spec) and the
@@ -32,15 +32,18 @@ the events themselves.
 
 Two planes run in parallel:
 
-- The **message plane** — per-room DAGs of encrypted events. The server stores
+- The **message plane** — per-room DAGs of encrypted events. The relay stores
   ciphertext and never holds a room key.
-- The **identity plane** — a household's log of attestations and delegations,
-  fetched by hash. This is what lets any client verify that the key which signed
-  an event chains back to a household it trusts.
+- The **identity plane** — a log of self-attestations and delegations, fetched by
+  hash. This is what lets any client verify that the key which signed an event
+  chains back to the member root it claims.
 
 Encryption is symmetric per room (a room key), and room keys are handed to people
 by wrapping them to their **devices** with HPKE. Identity is a tree of Ed25519
-keys rooted in a household key that is never stored anywhere.
+keys rooted in a **member root** — a self-sovereign key that signs its own
+attestation. Resolving that chain proves *who a key belongs to*; whether to
+**trust** that member is a separate decision made at the edge, and whether a
+relay will **carry** them is a separate operational one.
 
 ---
 
@@ -52,7 +55,7 @@ message:
 | # | Field | Type | Meaning |
 |---|-------|------|---------|
 | 1 | `event_id` | bytes | BLAKE3-256 of the canonical signed content. The content address, and the identity used by `parents`, replies, and reactions. |
-| 2 | `sender_pub` | bytes | Ed25519 public key of the **device or session key** that signed. Verified back to a member root → household root via the identity log. |
+| 2 | `sender_pub` | bytes | Ed25519 public key of the **device or session key** that signed. Verified back to a member root via the identity log (§4). |
 | 3 | `room_id` | bytes | Which room (or space) this belongs to. |
 | 4 | `ts` | int64 | Sender wall-clock, unix **milliseconds**. Advisory only — ordering is the causal DAG, never `ts`. |
 | 5 | `parents` | repeated bytes | The `event_id`s the sender had already seen: the causal heads. This is the sync structure, distinct from a semantic `reply_to`. |
@@ -143,7 +146,7 @@ From `proto/cairn.proto:60-129`. `EVENT_TYPE_UNSPECIFIED = 0`.
 - `ROOM_JOIN_REQUEST = 57` — a discoverer asking to be admitted.
 - `SPACE_MEMBER_REMOVE = 58` — revokes a space discovery grant.
 
-**Identity** (live in the household identity log, fetched by hash)
+**Identity** (live in the identity log, fetched by hash)
 - `IDENTITY_ATTESTATION = 60`, `DEVICE_DELEGATION = 61`, `DEVICE_REVOKE = 62`.
 
 ---
@@ -160,7 +163,7 @@ household root  (the household id; signs member attestations)
                     └── session key  (one per browser tab; short-lived)
 ```
 
-![The three-tier delegation chain: household root → member root → device tree → session key](diagrams/trust-hierarchy.svg)
+![A self-sovereign member root and its device tree: member root → device tree → session key](diagrams/trust-hierarchy.svg)
 
 ### The household root
 
@@ -243,7 +246,7 @@ for. It must be empty for humans and services. `kind` and `origin` are immutable
 
 ### Verifying a sender (the chain walk)
 
-![The VerifySender walk from a signing key up to a trusted household root](diagrams/chain-verify.svg)
+![The VerifySender walk from a signing key down to the member root it belongs to](diagrams/chain-verify.svg)
 
 `VerifySender` (`identity/chain.go:74-125`) is how any client turns a
 `sender_pub` into a trusted identity, or rejects it. It walks:
@@ -275,7 +278,7 @@ anything the sender asserted.
 
 ## 5. Onboarding a human
 
-![Adding a member: the member derives their own root, the founder attests it with the household words](diagrams/add-member.svg)
+![A member joins a relay: they self-attest, pin the relay key, and are admitted by invite or TOFU](diagrams/add-member.svg)
 
 A household is founded once (on `cairnctl`). Everyone else **joins**. The browser
 flow is three steps (`webapp/src/lib/vault.ts`):

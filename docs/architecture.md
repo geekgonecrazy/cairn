@@ -212,6 +212,12 @@ DAG. It is **not** an authority — everything it carries is signed and E2EE, so
 can neither forge nor read. Relays add three things on top of a plain node: an
 access model, relay-to-relay bridging, and demand-driven routing.
 
+![Relays: admission via allow-list and invites, versus identity, versus edge trust](diagrams/relay-and-trust.svg)
+
+The distinction the diagram makes is the one to hold on to: **admission ≠ identity
+≠ trust**. Identity is the cryptographic chain-walk, admission is the relay's
+operational allow-list, and trust is always the edge's own call.
+
 ### Access: an invite key + an allow-list
 
 A relay has its own keypair. Clients **pin it** (so they know they're talking to

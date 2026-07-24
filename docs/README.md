@@ -55,15 +55,16 @@ d2 --theme 0 --pad 24 docs/diagrams/<name>.d2 docs/diagrams/<name>.svg
 
 | Diagram | Shows |
 |---------|-------|
-| `trust-hierarchy` | The three-tier delegation chain (household → member → device tree → session). |
-| `chain-verify` | The `VerifySender` walk up to a trusted root. |
-| `add-member` | Adding a user: member derives their own root, founder attests with household words. |
+| `trust-hierarchy` | A self-sovereign member root and its device tree (member → device tree → session). |
+| `chain-verify` | The `VerifySender` walk down to a member root — and why resolving ≠ admitting ≠ trusting. |
+| `relay-and-trust` | Relays: admission (allow-list, invites, directory) vs. identity vs. edge trust. |
+| `add-member` | A member joins a relay: self-attest, pin the relay, redeem an invite (or TOFU). |
 | `device-pairing` | QR pairing: public key out, signed delegation back. |
 | `device-revoke` | Revocation and its two-part (auth + key) cascade. |
 | `rooms-spaces` | Rooms, spaces, and the two membership tiers. |
 | `room-keys` | Room-key epochs and rotation on join/leave. |
 | `event-and-sync` | The event envelope and frontier sync between two nodes. |
-| `node-topology` | Node & transport topology — server, mobile, browser. |
+| `node-topology` | Node & transport topology — relay, mobile, browser. |
 
 ## A note on sources of truth
 

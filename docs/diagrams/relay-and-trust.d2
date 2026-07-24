@@ -1,0 +1,47 @@
+# Relays and trust (v2) — the central distinction.
+# A relay is CONVENIENCE, not authority. It decides who it will CARRY (operational
+# admission); it never decides who you ARE. Identity comes from the chain-walk;
+# trust is decided at the edge. E2EE is unconditional — a relay carries ciphertext
+# it can never read, admitted or not.
+direction: down
+
+relay: "Relay (cairnd)\npersisted keypair — clients PIN relay_pub" {
+  style.fill: "#eef2ff"; style.stroke: "#4338ca"; style.bold: true
+
+  open: "OPEN (default)\nadmits any valid sender,\nrecords them TOFU" { style.fill: "#ecfdf5"; style.font-size: 12 }
+  inv: "INVITE-ONLY (requireInvite)\nsingle-use tokens signed\nunder relay_priv" { style.fill: "#fefce8"; style.font-size: 12 }
+  allow: "ALLOW-LIST\nmember roots this relay carries" { style.fill: "#f1f5f9"; style.font-size: 12 }
+  dir: "DIRECTORY\nallow-listed members that\npublished a self-attestation" { style.fill: "#fff7ed"; style.font-size: 12 }
+
+  open -> allow: "auto-admit"
+  inv -> allow: "on redemption"
+  allow -> dir: "+ attestation → browsable by name"
+}
+
+e2ee: "E2EE payloads\nAES-256-GCM under a per-epoch room key" {
+  style.fill: "#fef2f2"; style.stroke: "#b91c1c"
+}
+relay -> e2ee: "carries ciphertext it can NEVER read\n— admission changes nothing here" { style.stroke: "#b91c1c"; style.stroke-dash: 3 }
+
+tiers: "How an edge decides to TRUST a key" {
+  style.fill: "#f8fafc"
+
+  pair: "1 — Pairing / TOFU\nyou scanned it, you compared the\nfingerprint. Strongest." { style.fill: "#dcfce7"; style.font-size: 12 }
+  room: "2 — Room-transitive\nsomeone already in your room\nsigned a MEMBER_ADD naming them." { style.fill: "#eff6ff"; style.font-size: 12 }
+  vouch: "3 — Relay-vouched (directory)\nthe operator admitted this key, so\nthe NAME is as good as that curation." { style.fill: "#fff7ed"; style.font-size: 12 }
+}
+
+note: |md
+  **Admission ≠ identity ≠ trust.** Three independent things:
+
+  - **Identity** — `VerifySender` chain-walk: *"this key belongs to member M."*
+    Cryptographic, same answer on every node.
+  - **Admission** — the relay allow-list: *"M may use this relay."* Operational,
+    per-relay, revocable by the operator. A relay that carries you does **not**
+    vouch for who you are.
+  - **Trust** — the edge's own call, by one of the tiers above. Never delegated
+    to a server.
+
+  A **name is only ever a label**; the pubkey is the identity. Two members may
+  display the same name — the key is what differs.
+| { style.font-size: 13; near: bottom-center }
