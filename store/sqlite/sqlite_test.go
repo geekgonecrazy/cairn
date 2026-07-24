@@ -165,12 +165,11 @@ func TestHistory_WalksAncestors(t *testing.T) {
 
 func TestIdentityLog_ResolverRoundTrip(t *testing.T) {
 	s := newTestStore(t)
-	root, _ := identity.GenerateKey()
 	member, _ := identity.GenerateKey()
 	device, _ := identity.GenerateKey()
 
-	att := &identity.IdentityAttestation{Pubkey: member.Pub, Kind: identity.KindHuman, Origin: root.Pub, DisplayName: "Ada", IssuedAt: 1}
-	identity.Sign(att, root.Priv)
+	att := &identity.IdentityAttestation{Pubkey: member.Pub, Kind: identity.KindHuman, DisplayName: "Ada", IssuedAt: 1}
+	identity.Sign(att, member.Priv)
 	dd := &identity.DeviceDelegation{DevicePub: device.Pub, ParentPub: member.Pub, IssuedAt: 1}
 	identity.Sign(dd, member.Priv)
 
@@ -181,8 +180,8 @@ func TestIdentityLog_ResolverRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Store resolves the device key back to a trusted household root.
-	got, err := identity.VerifySender(device.Pub, s, [][]byte{root.Pub}, 100)
+	// Store resolves the device key back to its member root.
+	got, err := identity.VerifySender(device.Pub, s, 100)
 	if err != nil {
 		t.Fatalf("chain verify via store resolver: %v", err)
 	}

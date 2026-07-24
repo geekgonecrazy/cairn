@@ -33,17 +33,16 @@ func (CairnController) SendEvent(_ context.Context, req *connect.Request[cairnv1
 }
 
 // submitErrorCode classifies a SubmitEvent failure so the client knows whether to
-// retry. FailedPrecondition is RECOVERABLE — the carrier lacks identity objects
-// it can be given (the household isn't founded here yet, or a chain link hasn't
-// been pushed); the client publishes its identity and retries. PermissionDenied
-// is TERMINAL — the sender is revoked, expired, or from an untrusted household;
-// retrying changes nothing. InvalidArgument is a malformed/forged event.
+// retry. FailedPrecondition is RECOVERABLE — the carrier lacks identity objects it
+// can be given (a chain link hasn't been pushed yet); the client publishes its
+// identity and retries. PermissionDenied is TERMINAL — the sender is revoked or
+// expired, or a signature is forged; retrying changes nothing. InvalidArgument is
+// a malformed event.
 func submitErrorCode(err error) connect.Code {
 	switch {
-	case errors.Is(err, core.ErrAwaitingFounding), errors.Is(err, identity.ErrUnknownObject):
+	case errors.Is(err, identity.ErrUnknownObject):
 		return connect.CodeFailedPrecondition
 	case errors.Is(err, identity.ErrRevoked),
-		errors.Is(err, identity.ErrUntrustedRoot),
 		errors.Is(err, identity.ErrExpired),
 		errors.Is(err, identity.ErrBadSignature):
 		return connect.CodePermissionDenied

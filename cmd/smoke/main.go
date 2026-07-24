@@ -40,7 +40,7 @@ func main() {
 	//
 	// Events are signed by the DERIVED DEVICE key, not by kp: kp is the root, and
 	// roots are attested rather than delegated, so kp has no chain of its own.
-	att, dd, device, err := identity.SelfHousehold(kp, identity.KindHuman, nil, "smoke", 1)
+	att, dd, device, err := identity.SelfIdentity(kp, identity.KindHuman, nil, "smoke", 1)
 	if err != nil {
 		log.Fatal(err)
 	}

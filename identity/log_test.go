@@ -5,25 +5,22 @@ import (
 	"testing"
 )
 
-// bootstrapped builds a real bootstrapped household (mnemonic-derived root)
-// with one attested member and a DeviceLog — distinct from identity_test.go's
-// newHousehold, which uses ad-hoc keys against a memResolver.
-func bootstrapped(t *testing.T) (*Household, KeyPair, *DeviceLog) {
+// selfAttested builds a member with a self-attestation registered in a fresh
+// DeviceLog. In the v2 model a member is just a keypair that self-attests; there
+// is no household above it. Distinct from identity_test.go's newChain, which
+// registers objects against a memResolver.
+func selfAttested(t *testing.T) (KeyPair, *DeviceLog) {
 	t.Helper()
-	hh, err := Bootstrap()
-	if err != nil {
-		t.Fatalf("bootstrap: %v", err)
-	}
 	member, _ := GenerateKey()
-	att, err := ProvisionMember(hh.Mnemonic, "", member.Pub, KindHuman, "Sam", nil, testNow)
+	att, err := NewSelfAttestation(member, KindHuman, "Sam", nil, testNow)
 	if err != nil {
-		t.Fatalf("provision: %v", err)
+		t.Fatalf("self-attest: %v", err)
 	}
 	log := NewDeviceLog()
 	if err := log.AddAttestation(att); err != nil {
 		t.Fatalf("add attestation: %v", err)
 	}
-	return hh, member, log
+	return member, log
 }
 
 func pairDevice(t *testing.T, log *DeviceLog, member KeyPair, label string) KeyPair {
@@ -40,10 +37,10 @@ func pairDevice(t *testing.T, log *DeviceLog, member KeyPair, label string) KeyP
 }
 
 func TestRevokeStopsVerification(t *testing.T) {
-	hh, member, log := bootstrapped(t)
+	member, log := selfAttested(t)
 	dev := pairDevice(t, log, member, "laptop")
 
-	if _, err := VerifySender(dev.Pub, log, [][]byte{hh.RootPub}, testNow); err != nil {
+	if _, err := VerifySender(dev.Pub, log, testNow); err != nil {
 		t.Fatalf("paired device does not verify: %v", err)
 	}
 
@@ -54,7 +51,7 @@ func TestRevokeStopsVerification(t *testing.T) {
 	if err := log.AddRevoke(dr); err != nil {
 		t.Fatalf("add revoke: %v", err)
 	}
-	if _, err := VerifySender(dev.Pub, log, [][]byte{hh.RootPub}, testNow+2); err == nil {
+	if _, err := VerifySender(dev.Pub, log, testNow+2); err == nil {
 		t.Fatal("revoked device still verifies")
 	}
 }
@@ -62,7 +59,7 @@ func TestRevokeStopsVerification(t *testing.T) {
 // Revocation must win regardless of the order objects arrive in — a device that
 // syncs the revoke before the delegation must reach the same conclusion.
 func TestRevokeWinsOutOfOrder(t *testing.T) {
-	hh, member, log := bootstrapped(t)
+	member, log := selfAttested(t)
 	dev, _ := GenerateKey()
 
 	dd, _ := ApprovePairing(mustPairing(t, dev.Pub, "stolen"), member.Pub, member.Priv, testNow, 0)
@@ -75,31 +72,31 @@ func TestRevokeWinsOutOfOrder(t *testing.T) {
 	if err := log.AddDelegation(dd); err == nil {
 		t.Fatal("delegation for a revoked device was accepted")
 	}
-	if _, err := VerifySender(dev.Pub, log, [][]byte{hh.RootPub}, testNow+2); err == nil {
+	if _, err := VerifySender(dev.Pub, log, testNow+2); err == nil {
 		t.Fatal("revoked device verifies when the revoke arrived first")
 	}
 }
 
 // A member must not be able to revoke another member's device.
 func TestCrossMemberRevokeRefused(t *testing.T) {
-	hh, member, log := bootstrapped(t)
+	member, log := selfAttested(t)
 	dev := pairDevice(t, log, member, "sam's laptop")
 
 	attacker, _ := GenerateKey()
-	att, _ := ProvisionMember(hh.Mnemonic, "", attacker.Pub, KindHuman, "Mallory", nil, testNow)
+	att, _ := NewSelfAttestation(attacker, KindHuman, "Mallory", nil, testNow)
 	_ = log.AddAttestation(att)
 
 	dr, _ := RevokeDevice(dev.Pub, attacker.Pub, attacker.Priv, testNow+1)
 	if err := log.AddRevoke(dr); err == nil {
 		t.Fatal("a different member revoked someone else's device")
 	}
-	if _, err := VerifySender(dev.Pub, log, [][]byte{hh.RootPub}, testNow+2); err != nil {
+	if _, err := VerifySender(dev.Pub, log, testNow+2); err != nil {
 		t.Fatalf("device wrongly revoked by another member: %v", err)
 	}
 }
 
 func TestForgedObjectsRejected(t *testing.T) {
-	hh, member, log := bootstrapped(t)
+	member, log := selfAttested(t)
 	mallory, _ := GenerateKey()
 	dev, _ := GenerateKey()
 
@@ -110,23 +107,22 @@ func TestForgedObjectsRejected(t *testing.T) {
 		}
 	})
 
-	t.Run("attestation not signed by the household root", func(t *testing.T) {
+	t.Run("attestation not signed by the key it names", func(t *testing.T) {
 		victim, _ := GenerateKey()
 		att := &IdentityAttestation{
-			Pubkey: victim.Pub, Kind: KindHuman,
-			Origin: hh.RootPub, DisplayName: "impostor", IssuedAt: testNow,
+			Pubkey: victim.Pub, Kind: KindHuman, DisplayName: "impostor", IssuedAt: testNow,
 		}
-		// Signed by Mallory while CLAIMING the real household as origin.
+		// Signed by Mallory while CLAIMING to be victim's own self-attestation.
 		if err := Sign(att, mallory.Priv); err != nil {
 			t.Fatal(err)
 		}
 		if err := log.AddAttestation(att); err == nil {
-			t.Fatal("attestation forged against a real origin was accepted")
+			t.Fatal("attestation not signed by its own key was accepted")
 		}
 	})
 
 	t.Run("tampered display name", func(t *testing.T) {
-		att, _ := ProvisionMember(hh.Mnemonic, "", dev.Pub, KindHuman, "Sam", nil, testNow)
+		att, _ := NewSelfAttestation(dev, KindHuman, "Sam", nil, testNow)
 		att.DisplayName = "Admin"
 		if err := log.AddAttestation(att); err == nil {
 			t.Fatal("attestation with a tampered display name was accepted")
@@ -135,11 +131,11 @@ func TestForgedObjectsRejected(t *testing.T) {
 }
 
 func TestConflictingAttestationRefused(t *testing.T) {
-	hh, member, log := bootstrapped(t)
-	// Same member, same household, but a different immutable kind.
-	att, err := ProvisionMember(hh.Mnemonic, "", member.Pub, KindService, "Sam", nil, testNow+1)
+	member, log := selfAttested(t)
+	// Same member, but a different immutable kind.
+	att, err := NewSelfAttestation(member, KindService, "Sam", nil, testNow+1)
 	if err != nil {
-		t.Fatalf("provision: %v", err)
+		t.Fatalf("self-attest: %v", err)
 	}
 	if err := log.AddAttestation(att); err == nil {
 		t.Fatal("conflicting kind was accepted for an existing member")
@@ -147,32 +143,21 @@ func TestConflictingAttestationRefused(t *testing.T) {
 }
 
 func TestDeviceCannotBeRebound(t *testing.T) {
-	hh, member, log := bootstrapped(t)
+	member, log := selfAttested(t)
 	dev := pairDevice(t, log, member, "laptop")
 
 	other, _ := GenerateKey()
-	att, _ := ProvisionMember(hh.Mnemonic, "", other.Pub, KindHuman, "Other", nil, testNow)
+	att, _ := NewSelfAttestation(other, KindHuman, "Other", nil, testNow)
 	_ = log.AddAttestation(att)
 
 	dd, _ := ApprovePairing(mustPairing(t, dev.Pub, "laptop"), other.Pub, other.Priv, testNow+1, 0)
 	if err := log.AddDelegation(dd); err == nil {
 		t.Fatal("device was rebound to a different member root")
 	}
-	_ = hh
-}
-
-func TestUntrustedHouseholdRejected(t *testing.T) {
-	_, member, log := bootstrapped(t)
-	dev := pairDevice(t, log, member, "laptop")
-
-	stranger, _ := Bootstrap()
-	if _, err := VerifySender(dev.Pub, log, [][]byte{stranger.RootPub}, testNow); err == nil {
-		t.Fatal("device verified against a household that never attested it")
-	}
 }
 
 func TestDevicesListsOnlyLiveDelegations(t *testing.T) {
-	_, member, log := bootstrapped(t)
+	member, log := selfAttested(t)
 	a := pairDevice(t, log, member, "laptop")
 	b := pairDevice(t, log, member, "phone")
 

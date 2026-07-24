@@ -2,7 +2,6 @@ package identity
 
 import (
 	"bytes"
-	"crypto/ed25519"
 	"errors"
 	"fmt"
 )
@@ -29,12 +28,13 @@ type Resolver interface {
 	Attestation(memberPub []byte) (*IdentityAttestation, bool)
 }
 
-// Resolved is the attested identity a sender's key ultimately belongs to. The
-// fields come from the household attestation, not from the sender's claims.
+// Resolved is the identity a sender's key ultimately belongs to: the member root
+// its device chain terminates at, plus that member's self-asserted profile. The
+// profile fields come from the member's self-attestation, not from the sender's
+// per-event claims.
 type Resolved struct {
 	MemberPub   []byte // the member root the sending key chains up to
 	Kind        Kind
-	Origin      []byte // household root pubkey (the household id)
 	OperatedBy  []byte // for agents: the operating human member root
 	DisplayName string
 }
@@ -46,7 +46,6 @@ var (
 	ErrBadSignature  = errors.New("identity: signature does not verify")
 	ErrExpired       = errors.New("identity: delegation expired")
 	ErrRevoked       = errors.New("identity: device revoked")
-	ErrUntrustedRoot = errors.New("identity: chain does not terminate at a trusted root")
 	ErrChainTooDeep  = errors.New("identity: delegation chain exceeds the depth limit")
 	ErrChainCycle    = errors.New("identity: delegation chain contains a cycle")
 )
@@ -57,21 +56,26 @@ var (
 // from laptop, tablet from phone) and cheap to check.
 const MaxChainDepth = 8
 
-// VerifySender walks senderPub (a device OR session key) back to a household
-// root in trustedRoots, checking every signature, expiry, and revocation along
-// the way. now is unix-ms wall-clock. On success it returns the attested
-// identity; on a missing link it returns ErrUnknownObject wrapped with the hex
-// of the pubkey that needs fetching.
+// VerifySender walks senderPub (a device OR session key) up to the member root it
+// belongs to, checking every signature, expiry, and revocation along the way. now
+// is unix-ms wall-clock. On success it returns the resolved identity; on a missing
+// link it returns ErrUnknownObject wrapped with the hex of the pubkey that needs
+// fetching.
 //
 // Chain: session key → session_delegation → device key → device_delegation →
-// … → device key → device_delegation → member root → identity_attestation (by a
-// trusted household root). A device key that signs directly (no session tier,
-// e.g. native/agent) skips the session hop.
+// … → device key → device_delegation → member root → self-attestation. A device
+// key that signs directly (no session tier, e.g. native/agent) skips the session
+// hop.
+//
+// This RESOLVES identity; it does not decide trust. In the v2 model there is no
+// household root and no trusted-root set — a valid chain proves "this key belongs
+// to member M with this self-asserted profile", and whether to trust M is an edge
+// decision (pairing, or a room that admitted M). Revocation is still enforced.
 //
 // The device segment is a WALK, not one hop: devices pair devices, so a tablet
 // admitted from a phone chains tablet → phone → laptop → member root. Bounded by
 // MaxChainDepth and guarded against cycles.
-func VerifySender(senderPub []byte, r Resolver, trustedRoots [][]byte, now int64) (*Resolved, error) {
+func VerifySender(senderPub []byte, r Resolver, now int64) (*Resolved, error) {
 	devicePub := senderPub
 
 	// Step 1 (browser only): resolve a session key to its device key.
@@ -100,7 +104,8 @@ func VerifySender(senderPub []byte, r Resolver, trustedRoots [][]byte, now int64
 		return nil, err
 	}
 
-	// Step 4: member root → household root via identity_attestation.
+	// Step 4: the member root's self-attestation carries its profile (kind, name,
+	// operated_by), signed by the member key itself.
 	att, ok := r.Attestation(memberPub)
 	if !ok {
 		return nil, fmt.Errorf("%w: member %x", ErrUnknownObject, memberPub)
@@ -108,17 +113,13 @@ func VerifySender(senderPub []byte, r Resolver, trustedRoots [][]byte, now int64
 	if !bytes.Equal(att.Pubkey, memberPub) {
 		return nil, fmt.Errorf("attestation: pubkey mismatch: %w", ErrBadSignature)
 	}
-	if !verifySig(att, att.Origin, att.Sig) {
+	if !verifySig(att, att.Pubkey, att.Sig) {
 		return nil, fmt.Errorf("identity_attestation: %w", ErrBadSignature)
-	}
-	if !trusts(trustedRoots, att.Origin) {
-		return nil, fmt.Errorf("origin %x: %w", att.Origin, ErrUntrustedRoot)
 	}
 
 	return &Resolved{
 		MemberPub:   append([]byte(nil), att.Pubkey...),
 		Kind:        att.Kind,
-		Origin:      append([]byte(nil), att.Origin...),
 		OperatedBy:  append([]byte(nil), att.OperatedBy...),
 		DisplayName: att.DisplayName,
 	}, nil
@@ -207,18 +208,6 @@ func isAncestor(pub []byte, above []*DeviceDelegation, memberPub []byte) bool {
 	}
 	for _, dd := range above {
 		if bytes.Equal(pub, dd.DevicePub) {
-			return true
-		}
-	}
-	return false
-}
-
-func trusts(roots [][]byte, origin []byte) bool {
-	if len(origin) != ed25519.PublicKeySize {
-		return false
-	}
-	for _, root := range roots {
-		if bytes.Equal(root, origin) {
 			return true
 		}
 	}

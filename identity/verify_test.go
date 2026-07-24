@@ -2,23 +2,22 @@ package identity
 
 import "testing"
 
-// The identity-log CBOR carries no type tag, so the carrier (controllers/
-// identity.go) discriminates object types by trying each shape and keeping the
-// one that VERIFIES. That only works if a signature over one type never checks
-// out as another — these tests pin that property.
+// Identity-log objects carry a signed `type` tag, so the carrier (controllers/
+// identity.go) dispatches on it and then verifies the object as exactly that
+// shape. A signature over one type must never check out as another — these tests
+// pin that property.
 //
-// If this ever breaks, a client could publish a session delegation that the
-// server files as a device delegation, promoting a per-tab key to a device.
+// If it ever breaks, a client could publish a session delegation that the server
+// files as a device delegation, promoting a per-tab key to a device.
 
 func TestVerifiersRejectOtherObjectTypes(t *testing.T) {
 	member, _ := GenerateKey()
 	device, _ := GenerateKey()
 	session, _ := GenerateKey()
-	hh, _ := Bootstrap()
 
-	att, err := ProvisionMember(hh.Mnemonic, "", member.Pub, KindHuman, "Sam", nil, testNow)
+	att, err := NewSelfAttestation(member, KindHuman, "Sam", nil, testNow)
 	if err != nil {
-		t.Fatalf("provision: %v", err)
+		t.Fatalf("self-attest: %v", err)
 	}
 	dd, err := ApprovePairing(
 		mustPairing(t, device.Pub, "laptop"), member.Pub, member.Priv, testNow, 0)
@@ -52,7 +51,7 @@ func TestVerifiersRejectOtherObjectTypes(t *testing.T) {
 	}
 
 	// Cross-decoding: marshal each object, decode it as every OTHER type, and
-	// require the verification to fail. This is exactly what the carrier does.
+	// require the verification to fail.
 	objs := map[string]any{
 		"attestation":        att,
 		"device_delegation":  dd,
@@ -95,11 +94,10 @@ func TestVerifiersRejectOtherObjectTypes(t *testing.T) {
 // The tag must be load-bearing, not decorative: an object whose stored type
 // disagrees with its Go shape is rejected BEFORE the signature is considered.
 func TestTypeTagIsEnforced(t *testing.T) {
-	hh, _ := Bootstrap()
 	member, _ := GenerateKey()
 	device, _ := GenerateKey()
 
-	att, _ := ProvisionMember(hh.Mnemonic, "", member.Pub, KindHuman, "Sam", nil, testNow)
+	att, _ := NewSelfAttestation(member, KindHuman, "Sam", nil, testNow)
 	if att.Type != TypeAttestation {
 		t.Fatalf("Sign did not stamp the tag: %q", att.Type)
 	}
@@ -133,9 +131,8 @@ func TestTypeTagIsEnforced(t *testing.T) {
 // ObjectType is what a carrier dispatches on, so it must reject anything it
 // cannot confidently label rather than guessing.
 func TestObjectTypeDispatch(t *testing.T) {
-	hh, _ := Bootstrap()
 	member, _ := GenerateKey()
-	att, _ := ProvisionMember(hh.Mnemonic, "", member.Pub, KindHuman, "Sam", nil, testNow)
+	att, _ := NewSelfAttestation(member, KindHuman, "Sam", nil, testNow)
 
 	blob, err := Marshal(att)
 	if err != nil {
@@ -165,9 +162,8 @@ func TestVerifiersRejectNilAndTampered(t *testing.T) {
 		t.Fatal("a nil object verified")
 	}
 
-	hh, _ := Bootstrap()
 	member, _ := GenerateKey()
-	att, _ := ProvisionMember(hh.Mnemonic, "", member.Pub, KindHuman, "Sam", nil, testNow)
+	att, _ := NewSelfAttestation(member, KindHuman, "Sam", nil, testNow)
 
 	tampered := *att
 	tampered.DisplayName = "Admin"

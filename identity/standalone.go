@@ -34,28 +34,28 @@ func StandaloneDeviceKey(root KeyPair) (KeyPair, error) {
 	return KeyPair{Pub: priv.Public().(ed25519.PublicKey), Priv: priv}, nil
 }
 
-// SelfHousehold builds the identity-log objects for a STANDALONE participant
-// that is its own household of one — a CLI, a demo agent, anything headless.
+// SelfIdentity builds the identity-log objects for a STANDALONE participant —
+// a CLI, a demo agent, anything headless.
 //
-// The root key acts as household root AND member root; a DERIVED device key
-// (StandaloneDeviceKey) is what actually signs events. That separation is not
-// ceremony: devices form a delegation tree, and a key delegated to itself is a
-// cycle the chain walk must refuse. It also matches the real model, where roots
-// attest and devices sign, so a standalone client is a small instance of the
-// same shape rather than a special case.
+// The root key IS the member root; a DERIVED device key (StandaloneDeviceKey) is
+// what actually signs events. That separation is not ceremony: devices form a
+// delegation tree, and a key delegated to itself is a cycle the chain walk must
+// refuse. It matches the real model, where the member root self-attests and
+// signs its first device delegation, so a standalone client is a small instance
+// of the same shape rather than a special case.
 //
 // Verifying a sender that signs with the returned device key walks
-// device → member(root) → attestation(origin root) and terminates at the root —
-// so a carrier with no root adopts it when it stores the attestation.
+// device → member root → self-attestation and terminates there; trust in that
+// member key is an edge decision (docs §Trust model v2).
 //
-// A human/browser uses the full tiered chain (household root → member → device →
-// session) instead; do not use this there. operatedBy is the operating human's
-// member root for kind "agent"; pass nil otherwise.
+// A human/browser uses the tiered chain (member root → device → session)
+// instead; do not use this there. operatedBy is the operating human's member root
+// for kind "agent"; pass nil otherwise.
 //
-// Returns the attestation and delegation to publish, plus the device keypair the
-// caller MUST sign its events with — signing with the root key would not verify,
-// because the root has no delegation of its own.
-func SelfHousehold(
+// Returns the self-attestation and delegation to publish, plus the device keypair
+// the caller MUST sign its events with — signing with the root key would not
+// verify, because the root has no delegation of its own.
+func SelfIdentity(
 	root KeyPair,
 	kind Kind,
 	operatedBy PubKey,
@@ -66,16 +66,9 @@ func SelfHousehold(
 		return nil, nil, KeyPair{}, fmt.Errorf(
 			"identity: standalone key must be a %d-byte pubkey", ed25519.PublicKeySize)
 	}
-	att := &IdentityAttestation{
-		Pubkey:      append([]byte(nil), root.Pub...),
-		Kind:        kind,
-		Origin:      append([]byte(nil), root.Pub...), // its own household root
-		OperatedBy:  append([]byte(nil), operatedBy...),
-		DisplayName: displayName,
-		IssuedAt:    issuedAt,
-	}
-	if err := Sign(att, root.Priv); err != nil {
-		return nil, nil, KeyPair{}, fmt.Errorf("identity: self-attestation: %w", err)
+	att, err := NewSelfAttestation(root, kind, displayName, operatedBy, issuedAt)
+	if err != nil {
+		return nil, nil, KeyPair{}, err
 	}
 
 	device, err := StandaloneDeviceKey(root)

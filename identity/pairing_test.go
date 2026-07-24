@@ -97,11 +97,10 @@ func TestApprovePairingRejectsBadExpiry(t *testing.T) {
 }
 
 func TestExpiredDelegationIsRejected(t *testing.T) {
-	hh, _ := Bootstrap()
 	member, _ := GenerateKey()
 	dev, _ := GenerateKey()
 
-	att, _ := ProvisionMember(hh.Mnemonic, "", member.Pub, KindHuman, "Sam", nil, testNow)
+	att, _ := NewSelfAttestation(member, KindHuman, "Sam", nil, testNow)
 	dd, _ := ApprovePairing(
 		mustPairing(t, dev.Pub, "temp"), member.Pub, member.Priv, testNow, testNow+1000)
 
@@ -109,10 +108,10 @@ func TestExpiredDelegationIsRejected(t *testing.T) {
 	_ = log.AddAttestation(att)
 	_ = log.AddDelegation(dd)
 
-	if _, err := VerifySender(dev.Pub, log, [][]byte{hh.RootPub}, testNow+5000); err == nil {
+	if _, err := VerifySender(dev.Pub, log, testNow+5000); err == nil {
 		t.Fatal("expired delegation verified")
 	}
-	if _, err := VerifySender(dev.Pub, log, [][]byte{hh.RootPub}, testNow+500); err != nil {
+	if _, err := VerifySender(dev.Pub, log, testNow+500); err != nil {
 		t.Fatalf("delegation rejected before expiry: %v", err)
 	}
 }

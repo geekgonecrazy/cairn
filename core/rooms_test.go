@@ -26,9 +26,63 @@ func setTestStore(t *testing.T) {
 	t.Cleanup(func() { s.Close() })
 	st = s
 	hub = newHub() // SubmitEvent broadcasts on store; a nil hub would panic.
-	configuredRoots = nil
-	adoptedRoot = nil
-	allowAdoption = true
+}
+
+// --- test identity helpers (v2: members self-attest; no household) ---
+
+// testEnv is a lightweight factory for self-attested members. There is no
+// household in the v2 trust model; this just groups member creation so the tests
+// read the same as before.
+type testEnv struct{}
+
+func newHousehold(t *testing.T) *testEnv { t.Helper(); return &testEnv{} }
+
+// testMember is a full sender chain: a self-attested member root and a delegated
+// device key, plus the identity-log objects a carrier needs to verify events the
+// device signs.
+type testMember struct {
+	member identity.KeyPair
+	device identity.KeyPair
+	att    *identity.IdentityAttestation
+	dd     *identity.DeviceDelegation
+}
+
+// member creates a fresh self-attested member with one device.
+func (e *testEnv) member(t *testing.T, name string) *testMember {
+	t.Helper()
+	member, err := identity.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	device, err := identity.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	att, err := identity.NewSelfAttestation(member, identity.KindHuman, name, nil, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err := identity.NewPairingRequest(device.Pub, "device")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dd, err := identity.ApprovePairing(req, member.Pub, member.Priv, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &testMember{member: member, device: device, att: att, dd: dd}
+}
+
+// install stores this member's identity-log objects, the way PutIdentityObject
+// would after verifying them.
+func (m *testMember) install(t *testing.T) {
+	t.Helper()
+	if err := st.PutAttestation(m.att); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.PutDeviceDelegation(m.dd); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // submitAs drives the REAL write path (chain gate → verify → store → fold) the
@@ -63,10 +117,6 @@ func TestDiscoveryThroughSubmitEvent(t *testing.T) {
 	newcomer := hh.member(t, "Newcomer")
 	founder.install(t)
 	newcomer.install(t)
-	// Founding: the founder's attestation adopts the household root, opening the gate.
-	if err := MaybeAdoptRoot(founder.att.Origin); err != nil {
-		t.Fatal(err)
-	}
 
 	const space = "hh"
 	ts := int64(1)

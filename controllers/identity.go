@@ -62,13 +62,6 @@ func storeIdentityObject(blob []byte) ([]byte, error) {
 		if err := st.PutAttestation(&att); err != nil {
 			return nil, err
 		}
-		// Founding: the first attestation this carrier stores adopts its household
-		// root, closing the default-deny window. att.Origin is proven (its
-		// self-signature was just verified), so this trusts a household, not a
-		// bare claim. No-op once a root is known or when roots were pinned.
-		if err := core.MaybeAdoptRoot(att.Origin); err != nil {
-			return nil, err
-		}
 		return identityHash(&att)
 
 	case identity.TypeDeviceDelegation:

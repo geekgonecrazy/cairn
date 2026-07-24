@@ -258,7 +258,6 @@ func main() {
 		roomName  = flag.String("room", "agent-demo", "room name to create")
 		keyPath   = flag.String("keys", "", "where to persist the agent's own keys")
 		watch     = flag.String("watch", "", "room id to watch for approval grants instead of posting")
-		invite    = flag.String("invite", "", "the cairn:att:… invite from `cairnctl attest -kind agent`")
 		name      = flag.String("name", "cmd/agent", "display name to request when joining")
 		live      = flag.Bool("live", false,
 			"after posting, wait for the approval to be granted, then post a job card and update it")
@@ -293,18 +292,6 @@ func main() {
 		return
 	}
 
-	// Asking to join needs nothing but this agent's own key, so the join code is
-	// printed before -member is required. Demanding the operator's member root to
-	// show a join code would be a chicken-and-egg the operator cannot solve.
-	storedAtt, err := loadAttestation(*keyPath)
-	if err != nil {
-		log.Fatalf("agent: attestation: %v", err)
-	}
-	if storedAtt == nil && *invite == "" {
-		printJoinInstructions(me.Pub, *name)
-		return
-	}
-
 	human, err := hex.DecodeString(*memberHex)
 	if err != nil || len(human) != ed25519.PublicKeySize {
 		log.Fatalf("agent: -member must be 64 hex chars (a member root pubkey); got %q", *memberHex)
@@ -321,59 +308,25 @@ func main() {
 		log.Printf("sent %-18s %x", what, ev.EventId[:6])
 	}
 
-	// 0. Establish identity — as a member of the OPERATOR'S household, not a
-	//    household of its own.
+	// 0. Establish identity. In the v2 trust model there is no household to attest
+	//    into — the agent SELF-ATTESTS: a self-signed profile (kind=agent,
+	//    operated_by = the human it serves) plus a derived device key that signs
+	//    its events. SelfIdentity builds the attestation, the device delegation,
+	//    and the device keypair together.
 	//
-	//    The agent generates and keeps its own private key; it never sees the
-	//    recovery phrase. It shows a join code, the operator attests it with
-	//    `cairnctl attest -kind agent -operated-by <their member root>`, and the
-	//    resulting invite is stored beside the key. From then on the agent chains
-	//    to the same root as everyone else, so the carrier accepts it with no
-	//    second root pinned and the humans see an attested name rather than a
-	//    key stub.
-	//
-	//    Events are signed by the DERIVED DEVICE key, not the member root: roots
-	//    are attested rather than delegated, so a root has no chain of its own.
-	//    The device key is derived from the stored key, so it is stable across
-	//    runs — a random one would lose every room key wrapped to the previous
-	//    device.
-	att := storedAtt
-	if att == nil {
-		att, err = identity.ParseInvite(*invite)
-		if err != nil {
-			log.Fatalf("agent: -invite: %v", err)
-		}
-		if !bytes.Equal(att.Pubkey, me.Pub) {
-			log.Fatalf("agent: that invite attests %x, but this agent's member key is %x.\n"+
-				"An invite is bound to the key that asked for it; attest THIS agent's join code.",
-				att.Pubkey[:6], me.Pub[:6])
-		}
-		if !identity.VerifyAttestation(att) {
-			log.Fatal("agent: that invite does not verify against its own origin")
-		}
-		if err := saveAttestation(*keyPath, att); err != nil {
-			log.Fatalf("agent: save attestation: %v", err)
-		}
-		log.Printf("attested into household %x as %q", att.Origin[:6], att.DisplayName)
-	}
-
+	//    The device key is DERIVED from the stored member key, so it is stable
+	//    across runs — a random one would lose every room key wrapped to the
+	//    previous device. Trust in this agent is an edge decision: a human sees its
+	//    self-asserted name until they verify its key (docs §Trust model v2).
 	memberRoot := append([]byte(nil), me.Pub...)
-	// Same derivation the standalone path used: stable across runs, so room keys
-	// wrapped to this device keep opening.
-	device, err := identity.StandaloneDeviceKey(identity.KeyPair{Pub: me.Pub, Priv: me.Priv})
-	if err != nil {
-		log.Fatalf("agent: derive device key: %v", err)
-	}
-	req, err := identity.NewPairingRequest(device.Pub, "cmd/agent")
-	if err != nil {
-		log.Fatal(err)
-	}
 	now := time.Now()
-	dd, err := identity.ApprovePairing(req, memberRoot, me.Priv,
-		now.UnixMilli(), now.Add(365*24*time.Hour).UnixMilli())
+	att, dd, device, err := identity.SelfIdentity(
+		identity.KeyPair{Pub: me.Pub, Priv: me.Priv},
+		identity.KindAgent, human, *name, now.UnixMilli())
 	if err != nil {
-		log.Fatalf("agent: device delegation: %v", err)
+		log.Fatalf("agent: self-identity: %v", err)
 	}
+	log.Printf("self-attested as %q (agent, operated by %x)", att.DisplayName, human[:6])
 	me.Pub, me.Priv = device.Pub, device.Priv
 
 	for _, obj := range []any{att, dd} {
@@ -715,66 +668,6 @@ func loadOrCreateKey(path string) (*keypair, error) {
 	return &keypair{Pub: kp.Pub, Priv: kp.Priv}, nil
 }
 
-
-// attestationPath keeps the invite beside the key: the two together are the
-// agent's whole identity, and splitting them across directories is how a working
-// agent turns into an unattested stranger after a move.
-func attestationPath(keyPath string) string { return keyPath + ".att" }
-
-func loadAttestation(keyPath string) (*identity.IdentityAttestation, error) {
-	b, err := os.ReadFile(attestationPath(keyPath))
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	var att identity.IdentityAttestation
-	if err := identity.Unmarshal(b, &att); err != nil {
-		return nil, fmt.Errorf("stored attestation is unreadable: %w", err)
-	}
-	if !identity.VerifyAttestation(&att) {
-		return nil, fmt.Errorf("stored attestation does not verify")
-	}
-	return &att, nil
-}
-
-func saveAttestation(keyPath string, att *identity.IdentityAttestation) error {
-	blob, err := identity.Marshal(att)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(attestationPath(keyPath), blob, 0o600)
-}
-
-// printJoinInstructions shows the join code and the exact command to attest it.
-//
-// The agent asks to join the same way a person does. That symmetry is the point:
-// there is no separate "agent enrolment" mechanism to reason about, and the
-// operator sees a name and fingerprint before vouching for anything.
-func printJoinInstructions(memberPub ed25519.PublicKey, name string) {
-	req, err := identity.NewJoinRequest(memberPub, name)
-	if err != nil {
-		log.Fatalf("agent: join request: %v", err)
-	}
-	fmt.Printf(`
-This agent has no attestation yet, so the carrier would refuse everything it
-sends. It holds its own private key and never needs the household phrase.
-
-  1. Attest it (as the operator, with your own member root):
-
-     go run ./cmd/cairnctl attest -kind agent -operated-by <your-member-root-hex> \
-       %q
-
-  2. Re-run the agent with the invite it prints:
-
-     go run ./cmd/agent -invite "cairn:att:…" -member <your-member-root-hex>
-
-  member key:  %s
-  fingerprint: %s
-
-`, req.Encode(), hex.EncodeToString(memberPub), identity.Fingerprint(memberPub))
-}
 
 // runLiveJob waits for a human decision, then does visible work.
 //

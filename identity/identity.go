@@ -123,13 +123,15 @@ func ObjectType(blob []byte) (string, error) {
 	return h.Type, nil
 }
 
-// IdentityAttestation binds a member-root pubkey to a household root (origin).
-// Signed by the household root. kind and origin are IMMUTABLE.
+// IdentityAttestation is a member's self-signed profile: it binds a member key to
+// its kind, display name, and (for agents) operating human. Signed by the member
+// key ITSELF — there is no household root in the v2 trust model. kind is immutable
+// once published; the display name is a self-asserted label whose weight a peer
+// decides (docs §Trust model v2: verification tiers).
 type IdentityAttestation struct {
 	Type        string `cbor:"type"` // always TypeAttestation; signed
 	Pubkey      []byte `cbor:"pubkey"`
 	Kind        Kind   `cbor:"kind"`
-	Origin      []byte `cbor:"origin"`      // household root pubkey; also the household id
 	OperatedBy  []byte `cbor:"operated_by"` // for agents: the human member root, else nil
 	DisplayName string `cbor:"display_name"`
 	IssuedAt    int64  `cbor:"issued_at"` // unix ms
@@ -298,11 +300,12 @@ func Sign[T signable](obj T, priv ed25519.PrivateKey) error {
 // Verifying an object does NOT make its subject trusted — placing it in a
 // household is VerifySender's job.
 
-// VerifyAttestation checks an attestation against the household root it claims
-// as its origin. NOTE: origin is self-declared; a valid signature here means
-// "some household signed this", not "your household signed this".
+// VerifyAttestation checks a self-attestation against the member key that signed
+// it (the same key it names). A valid signature proves the profile was authored
+// by the holder of that key — NOT that you should trust the key, which is an edge
+// decision (see VerifySender and docs §Trust model v2).
 func VerifyAttestation(a *IdentityAttestation) bool {
-	return a != nil && verifySig(a, a.Origin, a.Sig)
+	return a != nil && verifySig(a, a.Pubkey, a.Sig)
 }
 
 // VerifyDeviceDelegation checks a delegation against the parent that issued it

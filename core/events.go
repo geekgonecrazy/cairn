@@ -1,11 +1,8 @@
 package core
 
 import (
-	"encoding/hex"
-	"errors"
 	"fmt"
 	"log"
-	"strings"
 	"time"
 
 	"github.com/geekgonecrazy/cairn/event"
@@ -13,19 +10,16 @@ import (
 	cairnv1 "github.com/geekgonecrazy/cairn/proto/cairnv1"
 )
 
-// ErrAwaitingFounding is returned while a carrier has no household root yet: it
-// cannot verify any sender, so it refuses events (default-deny) until the first
-// attestation adopts a root. A client should publish its identity objects (which
-// found the household) and retry — the same recoverable class as
-// identity.ErrUnknownObject, distinct from the terminal rejections.
-var ErrAwaitingFounding = errors.New("core: carrier has no household root yet")
-
-// SubmitEvent is the write path: verify, persist, fan out. The server is
-// convenience, not authority — it accepts an event only if it is internally
-// valid (event.Verify) AND its sender chains to a trusted household root
-// (identity.VerifySender). This is default-deny: a carrier that trusts no root
-// refuses every event until founding (the first attestation) adopts one. On a
-// genuinely new insert it broadcasts to realtime subscribers.
+// SubmitEvent is the write path: verify, resolve the sender, persist, fan out.
+//
+// v2 (open relay): an event is accepted if it is internally valid (event.Verify)
+// AND its sender resolves to a member root through a valid, non-revoked delegation
+// chain (identity.VerifySender). There is NO household/trusted-root gate — trust
+// is an edge decision, and admission control (a relay allow-list + invite key) is
+// a later slice (docs/decisions.md §Trust model v2). A sender whose identity
+// objects have not been published yet comes back as identity.ErrUnknownObject
+// (recoverable: the client publishes its identity and retries); a revoked,
+// expired, or forged chain is refused.
 func SubmitEvent(ev *cairnv1.Event) error {
 	if ev == nil {
 		return fmt.Errorf("core: nil event")
@@ -34,28 +28,17 @@ func SubmitEvent(ev *cairnv1.Event) error {
 		return err // ErrIDMismatch / ErrBadSig
 	}
 
-	// Chain gate. The sender must verify back to a trusted root. There is no
-	// "open" mode: before a household is known the carrier cannot verify anyone,
-	// so it refuses events rather than accepting on faith. Founding happens on
-	// the identity plane (PutIdentityObject → MaybeAdoptRoot), not here.
-	roots := trustAnchors()
-	if len(roots) == 0 {
-		return ErrAwaitingFounding
-	}
-	if _, err := identity.VerifySender(ev.SenderPub, st, roots, time.Now().UnixMilli()); err != nil {
-		// Log it. A refusal the operator cannot see is indistinguishable from a
-		// client bug, and the client only ever shows its own guess at the cause.
-		anchors := make([]string, len(roots))
-		for i, r := range roots {
-			anchors[i] = hex.EncodeToString(r)
-		}
-		log.Printf("REJECT event type=%s sender=%x: %v (trusting %d root(s): %s)",
-			ev.Type, ev.SenderPub, err, len(roots), strings.Join(anchors, ", "))
+	// Resolve the sender's chain (device → member root, revocation enforced). This
+	// is identity resolution, not trust: any valid member chain is accepted. A
+	// refusal the operator cannot see is indistinguishable from a client bug, so
+	// log it.
+	if _, err := identity.VerifySender(ev.SenderPub, st, time.Now().UnixMilli()); err != nil {
+		log.Printf("REJECT event type=%s sender=%x: %v", ev.Type, ev.SenderPub, err)
 		return fmt.Errorf("core: sender not verified: %w", err)
 	}
 
-	// Presence is ephemeral (docs/protocol.md §3): fan it out live, but never persist
-	// it — it must not join the DAG or show up in history/sync.
+	// Presence is ephemeral (docs/protocol.md §3): fan it out live, but never
+	// persist it — it must not join the DAG or show up in history/sync.
 	if ev.Type == cairnv1.EventType_PRESENCE {
 		hub.broadcast(ev)
 		return nil

@@ -47,9 +47,9 @@ func NewDeviceLog() *DeviceLog {
 	}
 }
 
-// AddAttestation verifies an attestation against its claimed household origin
-// and stores it. The origin is self-declared here; trust in that origin is a
-// separate decision made by VerifySender against trustedRoots.
+// AddAttestation verifies a member's self-attestation against the key it names
+// (the signer) and stores it. A valid signature proves the profile is authored by
+// that key's holder; whether to trust the key is a separate edge decision.
 func (l *DeviceLog) AddAttestation(att *IdentityAttestation) error {
 	if att == nil {
 		return fmt.Errorf("identity: nil attestation")
@@ -57,19 +57,20 @@ func (l *DeviceLog) AddAttestation(att *IdentityAttestation) error {
 	if len(att.Pubkey) != ed25519.PublicKeySize {
 		return fmt.Errorf("identity: attestation pubkey must be %d bytes", ed25519.PublicKeySize)
 	}
-	if !verifySig(att, att.Origin, att.Sig) {
+	if !verifySig(att, att.Pubkey, att.Sig) {
 		return fmt.Errorf("attestation for %x: %w", att.Pubkey, ErrBadSignature)
 	}
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	key := hex.EncodeToString(att.Pubkey)
-	// kind and origin are immutable (docs/protocol.md §1): a second, conflicting
-	// attestation for the same member is an attack or a bug, never an update.
+	// kind is immutable: a second attestation that changes a member's kind is an
+	// attack or a bug, never an update (re-publishing to change the display name
+	// is fine).
 	if prev, ok := l.attestations[key]; ok {
-		if prev.Kind != att.Kind || !bytes.Equal(prev.Origin, att.Origin) {
+		if prev.Kind != att.Kind {
 			return fmt.Errorf("identity: conflicting attestation for member %x "+
-				"(kind/origin are immutable)", att.Pubkey)
+				"(kind is immutable)", att.Pubkey)
 		}
 	}
 	l.attestations[key] = att
