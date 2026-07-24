@@ -25,9 +25,10 @@ Everything lives in [`docs/`](./docs) — start at the [documentation index](./d
   SQLite schema).
 - [**Approvals & inlays**](./docs/approvals-and-inlays.md) — portable signed capability grants
   and the agent-definable inlay UI.
-- [**Plan**](./docs/plan.md) · [**Milestones**](./docs/milestones.md) ·
-  [**Decisions**](./docs/decisions.md) — the phased build plan, exit criteria, and the settled
-  decisions + ⚠️ known deviations.
+- [**Plan**](./docs/plan.md) · [**Milestones**](./docs/milestones.md) — the phased build plan and
+  per-phase exit criteria.
+- [**ADRs**](./docs/adrs/README.md) — the settled architecture decisions + ⚠️ known deviations, one
+  record per file, covering only what's currently built.
 - [`PROJECT.md`](./PROJECT.md) — a one-page orientation for contributors.
 
 ### Architecture in one picture
@@ -83,7 +84,7 @@ go run ./cmd/cairnd
 No founding step: in the v2 trust model there is no household to create — your identity is a
 key you mint in the app. The relay is currently **open** (it accepts any well-signed event
 whose sender resolves to a valid, non-revoked chain); an invite key + allow-list is the next
-slice (see [`docs/decisions.md`](./docs/decisions.md) §Trust model v2).
+slice (see [`docs/adrs/0014`](./docs/adrs/0014-relay-operational-admission.md)).
 
 **2 — Frontend** (Vite dev server, proxies the API to cairnd):
 
@@ -198,7 +199,7 @@ go run ./cmd/cairnd -configFile config.yaml
 
 > **No `trustedRoots` in v2.** The old household chain gate is gone — the relay currently
 > accepts any well-signed event (an invite key + allow-list is the next slice). See
-> [`docs/decisions.md`](./docs/decisions.md) §Trust model v2.
+> [`docs/adrs/0013`](./docs/adrs/0013-pubkey-identity-no-household.md).
 
 **Dev-phase policy:** there are no migrations. Resetting takes **both sides**, in this order:
 
@@ -289,7 +290,7 @@ d2 --theme 0 --pad 24 docs/diagrams/<name>.d2 docs/diagrams/<name>.svg
 - **⚠️ `blobs` is not iroh-store.** [`docs/plan.md`](./docs/plan.md) specifies an iroh-store
   gRPC client; the shipped backend is a local filesystem store behind a `Backend` interface.
   Content addressing, encryption, range reads, and retrieval states are all real; peer-to-peer
-  fetch and real pinning are not. Full rationale in [`docs/decisions.md`](./docs/decisions.md)
+  fetch and real pinning are not. Full rationale in [`docs/adrs/0011`](./docs/adrs/0011-blobs-backend-interface.md)
   §Deviations.
 - **The capability broker is external** and not built here. Cairn delivers a capability
   request, lets you sign a grant **in the UI** with your key, and produces a portable artifact

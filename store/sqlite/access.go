@@ -9,7 +9,7 @@ import (
 
 // Relay access: the allow-list (member roots this relay carries) and the
 // single-use invite consumption ledger. See models.AllowedMember and
-// docs/decisions.md §Trust model v2 — operational admission, not identity trust.
+// docs/adrs/0014-relay-operational-admission.md — operational admission, not identity trust.
 
 func (s *Store) AllowMember(memberPub []byte, via string, at int64) error {
 	_, err := s.db.Exec(

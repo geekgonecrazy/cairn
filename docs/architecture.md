@@ -10,7 +10,7 @@ crypto and event model) and [`protocol.md`](protocol.md) (the wire spec).
 > [Current state vs. target](#8-current-state-vs-target).
 >
 > **Trust model note.** The identity/trust/relay design in §2 and §6 is the
-> decided **v2 direction** ([`decisions.md`](decisions.md) §Trust model v2). The
+> decided **v2 direction** ([`adrs/0013`](adrs/0013-pubkey-identity-no-household.md)). The
 > code *today* still implements the household-root model documented in
 > [`events-and-e2ee.md`](events-and-e2ee.md). Both are marked inline.
 
@@ -63,8 +63,8 @@ permanent node held the events in between. Availability, not authority.
 > The code today implements a household-root model (offline BIP-39 apex,
 > per-member attestation via `cairnctl`, a carrier chain gate) documented in
 > [`events-and-e2ee.md` §4–8](events-and-e2ee.md#4-identity-the-key-hierarchy).
-> This section is the decided replacement ([`decisions.md`](decisions.md) §Trust
-> model v2). Most of the crypto is unchanged; only the trust-anchoring layer is.
+> This section is the decided replacement ([`adrs/0013`](adrs/0013-pubkey-identity-no-household.md)).
+> Most of the crypto is unchanged; only the trust-anchoring layer is.
 
 - **Identity is a public key.** A member is a keypair. Multiple devices are
   handled by the **device-delegation tree** (kept): a device pairs from an
@@ -126,7 +126,7 @@ cannot be downgraded). Preference resolves most-specific-first: per-message hint
 
 File bytes **never** ride the mesh — only the `file_ref` envelope does. Bytes
 travel the data plane (`blobs/`, today a local filesystem backend standing in for
-iroh; see [`decisions.md`](decisions.md)). That rule is independent of transport.
+iroh; see [`adrs/0011`](adrs/0011-blobs-backend-interface.md)). That rule is independent of transport.
 
 ---
 
@@ -196,7 +196,7 @@ TS port and the conformance-vector tax entirely. What necessarily stays in
 JavaScript is small and non-cryptographic-in-logic: the **WebAuthn/passkey
 ceremony** (a browser-only API that authorizes the session key), the `fetch`/SSE
 glue, an IndexedDB bridge, and the DOM. This is one load-bearing open decision —
-see [`plan.md` §5](plan.md) and [`decisions.md`](decisions.md).
+see [`plan.md` §5](plan.md).
 
 A browser's transport set is **permanently HTTP-only** — no browser does BLE or
 LoRa. Browser nodes therefore reach the mesh *through* a permanent or mobile
@@ -356,7 +356,7 @@ implementations yet — the `transport/` seam exists (§3) but HTTP/SSE is still
 only transport registered, so everything moves over one path. Fan-out goes through
 the seam but is not yet pubkey-addressed. The routing table, the symmetric sync
 driver, relay-to-relay bridging, and interest-based routing are designed (here +
-[`decisions.md`](decisions.md)) but unimplemented.
+[`adrs/0016`](adrs/0016-transport-seam.md)) but unimplemented.
 
 **The seam is cut.** The `Transport` interface (`Name` / `Available` / `Broadcast`
 / `Inbound`) exists in `transport/`, with HTTP/SSE as its first implementation and

@@ -34,7 +34,7 @@ var (
 // v2 trust model: the relay is OPEN — it accepts any well-formed signed event
 // whose sender resolves to a valid (non-revoked) member chain. There is no
 // household root and no admission gate here yet; a relay allow-list + invite key
-// is the next slice (docs/decisions.md §Trust model v2).
+// is the next slice (docs/adrs/0014-relay-operational-admission.md).
 func Setup() error {
 	switch config.Config.Store {
 	case "", "sqlite":
@@ -51,7 +51,7 @@ func Setup() error {
 	}
 
 	// Data plane. NOTE: this is the local filesystem backend standing in for
-	// iroh-store — see docs/decisions.md §Deviations. Swapping in blobs/iroh here
+	// iroh-store — see docs/adrs/0011-blobs-backend-interface.md. Swapping in blobs/iroh here
 	// is the only change needed above the Backend interface.
 	bs, err := local.New(config.Config.BlobDir)
 	if err != nil {

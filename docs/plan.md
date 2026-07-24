@@ -72,7 +72,7 @@ cairn/
   native/              # Wails3 wrapper — embeds the same packages as an on-device node (Phase 5)
   webapp/              # Svelte + Vite PWA — the claude-design mockup, ported
   claude-design/       # existing React mockup — UI reference, not shipped
-  PROJECT.md           # project overview (their convention) · plan.md · decisions.md
+  PROJECT.md           # project overview (their convention) · plan.md · adrs/
   config.example.yaml · Dockerfile · docker-compose.yml · Makefile · .github/workflows/build.yml
 ```
 
@@ -83,7 +83,7 @@ cairn/
 - `core`: `core.Setup()` initializes and holds unexported package-level state; `switch` on `config.Config.Store`.
 - `cmd/cairnd/main.go`: `config.Load → core.Setup → router.Run`, nothing else.
 - **Realtime:** their precedent is **SSE** (`flockledger/controllers/sse.go`); ConnectRPC server-streaming gives the
-  same shape over HTTP — **reconcile with the vision's "WebSocket only"** (open item in §5 / `decisions.md`).
+  same shape over HTTP — **reconcile with the vision's "WebSocket only"** (open item in §5).
 
 **Define the Phase-3 demonstration criteria before Phase 1** (vision requirement): e.g.
 *"two devices converge a 24h, N-event history across LAN↔mesh; broker approval end-to-end;
@@ -142,7 +142,7 @@ no history; message states reflect real delivery.
   surface: *"the room is the delivery medium, not the capability boundary."*
 - [ ] `blobs`: `file_ref` = encrypt (per-file AES key) → add → BLAKE3 hash → pin → envelope
   `{hash, wrapped_key, mime, size, thumb_hash?}`.
-  > ⚠️ **DEVIATION (see `decisions.md` §Deviations):** built as a `Backend` interface with a
+  > ⚠️ **DEVIATION (see [`adrs/0011`](adrs/0011-blobs-backend-interface.md)):** built as a `Backend` interface with a
   > **local filesystem** implementation, *not* an `iroh-store` gRPC client — no iroh-store
   > daemon exists in this environment. `blobs/iroh` drops in behind the same interface later.
 - [x] `webapp` inlay engine: **declared-inlay role renderer** — the primitive vocabulary (`text`,
@@ -265,8 +265,11 @@ between two devices; approving a capability triggers a biometric ceremony.
 
 From `protocol.md` (carry these forward):
 - ~~**Household-root bootstrap & recovery** shape (apex key above member roots) — needed **Phase 4**.~~
-  **DECIDED 2026-07-18:** offline-only apex, BIP-39 24-word derived, never persisted; recovery =
-  re-derive + re-attest. See `decisions.md` §Household-root bootstrap & recovery shape.
+  **SUPERSEDED (v2, 2026-07-24):** the household root is gone. Identity is a self-sovereign member
+  key + device tree; recovery = re-derive the member key from its BIP-39 phrase and re-pair devices.
+  See [`adrs/0013-pubkey-identity-no-household.md`](adrs/0013-pubkey-identity-no-household.md).
+- **Video phasing:** listed as Phase 6 here, but it's a separate component in the vision — revisit
+  whether it should stay a trailing phase or move alongside the core substrate. Open.
 - **Tiebreak rule** (lower `event_id` hash) composes with parent-count + timestamp — **Phase 1**.
 - **History recovery after long partition** (incremental sync since common ancestor, bounded) — **Phase 3**.
 - **Room-key rotation on membership change** — state the pre-join-opacity rule — **Phase 1**.

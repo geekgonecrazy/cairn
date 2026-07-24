@@ -22,7 +22,7 @@ type Configuration struct {
 	// WebappDir, if set, is served as the SPA at / (built webapp/dist).
 	WebappDir string `yaml:"webappDir" json:"webappDir"`
 	// BlobDir is the local blob backend's directory (the dev stand-in for
-	// iroh-store — see docs/decisions.md §Deviations).
+	// iroh-store — see docs/adrs/0011-blobs-backend-interface.md).
 	BlobDir string `yaml:"blobDir" json:"blobDir"`
 	// RequireInvite gates the write path on the relay allow-list (slice 2). When
 	// false (default, dev), the relay is OPEN: it admits any valid sender and

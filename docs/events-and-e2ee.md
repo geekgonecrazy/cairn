@@ -4,8 +4,8 @@ How Cairn represents everything as signed events, how identity works from the
 household root down to a browser tab, and how rooms stay end-to-end encrypted
 across joins, leaves, and new devices.
 
-This is the architecture companion to `protocol.md` (the terse wire spec) and
-`decisions.md` (why things are the way they are). Where they disagree with the
+This is the architecture companion to `protocol.md` (the terse wire spec) and the
+[ADRs](adrs/README.md) (why each decision was made). Where they disagree with the
 code, the code wins — file references are given so you can check.
 
 ---
@@ -14,8 +14,9 @@ code, the code wins — file references are given so you can check.
 > narrate the old **household-root** model — offline BIP-39 apex, per-member `cairnctl`
 > attestation, and the carrier chain gate. That model **no longer exists in the code**: identity
 > is now a self-sovereign member key that self-attests, and relay admission is an allow-list +
-> invite key (see [`architecture.md`](architecture.md) §2, §6 and [`decisions.md`](decisions.md)
-> §Trust model v2). These sections are kept because the **crypto primitives are unchanged** — the
+> invite key (see [`architecture.md`](architecture.md) §2, §6 and the trust-model ADRs
+> [0013](adrs/0013-pubkey-identity-no-household.md)/[0014](adrs/0014-relay-operational-admission.md)).
+> These sections are kept because the **crypto primitives are unchanged** — the
 > event envelope, the DAG and frontier sync, room-key E2EE, and the device-delegation tree all
 > still work exactly as described. Read §4–8 for those; ignore the household/attestation/chain-gate
 > framing around them.
@@ -403,9 +404,10 @@ The carrier is default-deny (`core/events.go:29-80`). On every `SubmitEvent`:
 4. Everything else is stored, and if it is a room-state event, folded into the
    room/space model, then broadcast.
 
-Trusted roots come from `trusted-roots.txt` beside the config (written by
-`cairnctl init`) and any `trustedRoots` in the config file. See
-`decisions.md` for why the file is loaded even when there is no `config.yaml`.
+In the old model, trusted roots came from `trusted-roots.txt` beside the config
+(written by `cairnctl init`) and any `trustedRoots` in the config file. **v2 removed
+both**: there is no chain gate to feed — the relay accepts any well-signed event and
+gates admission at the allow-list instead ([`adrs/0014`](adrs/0014-relay-operational-admission.md)).
 
 ---
 

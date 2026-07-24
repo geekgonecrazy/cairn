@@ -69,7 +69,7 @@ loses no history; message states reflect real delivery
 
 **Exit:** a capability request is delivered, rendered with its capability visible, and
 signed **in the UI** into a portable grant (minting belongs to the *external* broker —
-a Capsule workload in the agents system, see `decisions.md`); a novel declared inlay
+a Capsule workload in the agents system, see [`adrs/0010`](adrs/0010-external-capability-broker.md)); a novel declared inlay
 renders from primitives and degrades to its text line; files send/receive with honest
 retrieval states.
 
@@ -96,7 +96,7 @@ retrieval states.
       unwraps the per-file key, decrypts.
       > ⚠️ **DEVIATION:** backed by `blobs/local` (filesystem), **not** an iroh-store gRPC
       > client — no iroh-store exists in this environment. `blobs/iroh` drops in behind the
-      > same interface. Full rationale in `decisions.md` §Deviations.
+      > same interface. Full rationale in [`adrs/0011`](adrs/0011-blobs-backend-interface.md).
 
 **Phase 2 complete** (modulo the deviation above).
 
@@ -120,7 +120,7 @@ join; the recovery flow is gated and unskippable.
 
 - [x] **Household-root shape decided** (offline-only apex, BIP-39 24-word derived, never
       persisted; recovery = re-derive + re-attest). Closes the `plan.md` §5 open question.
-      Rationale in `decisions.md`.
+      The household root was later removed in v2 — see [`adrs/0013`](adrs/0013-pubkey-identity-no-household.md).
 - [x] `identity/household.go` — BIP-39 mnemonic, HKDF-SHA-512 domain separation
       (`cairn/household-root/v1`), `Bootstrap`, `ProvisionMember`.
 - [x] `identity/pairing.go` — versioned QR payload, fingerprints, `ApprovePairing`,
@@ -226,7 +226,7 @@ join; the recovery flow is gated and unskippable.
       root. This closes the recorded gap "a newcomer sees no rooms and cannot discover that any
       exist": founding a space makes the founder its first space member, and inviting a household
       member (`DevicesModal`) grants them space membership, so they arrive with the household's
-      rooms visible (locked) instead of a blank sidebar. Rationale in `decisions.md`.
+      rooms visible (locked) instead of a blank sidebar. Rationale in [`adrs/0009`](adrs/0009-spaces-discovery-rooms-access.md).
 - [x] **`ListRooms` returns two tiers.** `core.VisibleRooms` returns rooms a `MEMBER_ADD` admitted
       you to (`joined=true`, readable) plus the discoverable rooms of every space you belong to
       (`joined=false`, locked). The sidebar renders unjoined rooms with a lock; opening one offers
@@ -255,7 +255,7 @@ join; the recovery flow is gated and unskippable.
       accepts identity-log objects, and the **first attestation it stores adopts that household root**
       (`core.MaybeAdoptRoot`, persisted in `meta`, survives restart). `trustedRoots` in config pins
       roots and skips adoption (strict from t=0). Rationale + the TOFU-capture tradeoff in
-      `decisions.md`.
+      [`adrs/0009`](adrs/0009-spaces-discovery-rooms-access.md).
       > **Error taxonomy that keeps the app working.** `ErrAwaitingFounding` / `ErrUnknownObject` →
       > `FailedPrecondition` (RECOVERABLE: publish identity and retry — how a founder's first events
       > land); revoked / untrusted / expired / bad-sig → `PermissionDenied` (TERMINAL). The webapp's
@@ -318,7 +318,7 @@ join; the recovery flow is gated and unskippable.
       sync, reconciles every channel it holds a key to toward the space roster** (rotate to the
       members who stay + `MEMBER_REMOVE` for anyone no longer a space member). State-based, so it
       fires the next time any capable member syncs, even one offline during the revocation
-      (`reconcileAllSpaces` on init). Rationale + honest properties in `decisions.md`;
+      (`reconcileAllSpaces` on init). Rationale + honest properties in [`adrs/0009`](adrs/0009-spaces-discovery-rooms-access.md);
       `core/rooms_test.go` (`TestSpaceAuthorityAndLWW`) pins owner-only + LWW.
       > **Honest limits:** eventual/online-triggered (a channel with no online members stays open
       > until one returns); creator-only (no promoting other admins yet); the client trusts the
@@ -362,7 +362,7 @@ browser paths; the actual UI flow remains unexercised at runtime.
 ### Delegation tree: offline member root + real device pairing — 2026-07-18
 
 An audit of the Phase-4 exit criteria found that **device pairing could not be completed as
-designed**, and that two of the claims below were overstated. Rationale in `decisions.md`
+designed**, and that two of the claims below were overstated. Rationale in [`adrs/0007`](adrs/0007-device-delegation-tree-revocation.md)
 (§Member root goes offline).
 
 - [x] **Revocation authority is checked.** `VerifySender` took a bare `DeviceRevoked(pub) bool`
@@ -390,7 +390,7 @@ member secret — the one thing that makes revoking it meaningless.
 - [x] **A founder holds two separate phrases**, shown and confirmed one at a time and labelled for
       what each does: the HOUSEHOLD phrase (attests new members; can live in a safe) and their own
       MEMBER phrase (restores their account, revokes an unreachable device; must stay reachable).
-      Deriving one from the other was tried and reverted — see `decisions.md` for why the
+      Deriving one from the other was tried and reverted — see [`adrs/0013`](adrs/0013-pubkey-identity-no-household.md) for why the
       compromise-equivalence argument does not justify it. Joiners get only a member phrase.
       Recovery splits accordingly: founders re-attest offline, everyone else fetches the
       attestation published when they joined and verifies it locally.
@@ -461,7 +461,7 @@ member secret — the one thing that makes revoking it meaningless.
 - [ ] **Identity is not a self-DAG.** `plan.md` §175 specifies `device_delegation` / `device_revoke`
       as DAG events (`IDENTITY_ATTESTATION=60`, `DEVICE_DELEGATION=61`, `DEVICE_REVOKE=62`); what
       shipped is a content-addressed side channel (`identity_log` + `PutIdentityObject`).
-      Those three enums have zero uses. Belongs in `decisions.md` §Deviations.
+      Those three enums have zero uses. Belongs with [`adrs/0006`](adrs/0006-typed-identity-log-objects.md).
 - [ ] Phase-1's "route, accept, no UI" commitment is not honored: `SIGNALING_*`, `CALL_RING`,
       `CALL_BYE` are not routed or enumerated anywhere.
 - [ ] **Admit-policy enforcement** — a space's `admit_kind`/`admit_origin` is now editable and stored

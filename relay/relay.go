@@ -6,7 +6,7 @@
 // This is OPERATIONAL admission — who may USE this relay — and is deliberately
 // separate from identity trust, which stays per-key at the edge (pairing / a
 // shared room). A relay that carries you is not a relay that vouches for who you
-// are. See docs/decisions.md §Trust model v2.
+// are. See docs/adrs/0014-relay-operational-admission.md.
 package relay
 
 import (

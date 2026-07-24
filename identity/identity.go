@@ -94,7 +94,7 @@ func Hash(v any) ([32]byte, error) {
 //     merely finding two shapes whose canonical encodings collide.
 //
 // Before this, discrimination relied on re-encoded field sets differing between
-// types — true of the current layout, but an accident of it. See docs/decisions.md
+// types — true of the current layout, but an accident of it. See docs/adrs/0013-pubkey-identity-no-household.md
 // §Typed identity-log objects.
 const (
 	TypeAttestation       = "identity_attestation"

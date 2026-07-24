@@ -1,6 +1,6 @@
 // Package local is a filesystem blobs.Backend for development.
 //
-// ⚠️ This is the DEVIATION stand-in for iroh-store (see docs/decisions.md §Deviations
+// ⚠️ This is the DEVIATION stand-in for iroh-store (see docs/adrs/0011-blobs-backend-interface.md
 // and the blobs package doc). It is deliberately dumb: content-addressed files in
 // a directory, no peer-to-peer, no verified resumable streaming, pinning is a
 // no-op because nothing is ever garbage-collected. `blobs/iroh` replaces it

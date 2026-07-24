@@ -237,7 +237,7 @@ or lost message.
 The original design shipped a fixed standard library of cards in the client and
 treated novel declarations as an exception. That capped agent UI at whatever the
 client happened to compile in. The model was reversed
-(`decisions.md`, and `events-and-e2ee.md` §3):
+(see [`adrs/0012`](adrs/0012-agent-definable-inlays.md), and `events-and-e2ee.md` §3):
 
 An `INLAY_DECL` event (type 34) **publishes a declaration into the room**. A
 receiver learns it by recomputing BLAKE3 over its deterministic CBOR and

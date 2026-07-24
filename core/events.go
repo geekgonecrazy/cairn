@@ -20,7 +20,7 @@ import (
 // AND its sender resolves to a member root through a valid, non-revoked delegation
 // chain (identity.VerifySender). There is NO household/trusted-root gate — trust
 // is an edge decision, and admission control (a relay allow-list + invite key) is
-// a later slice (docs/decisions.md §Trust model v2). A sender whose identity
+// a later slice (docs/adrs/0014-relay-operational-admission.md). A sender whose identity
 // objects have not been published yet comes back as identity.ErrUnknownObject
 // (recoverable: the client publishes its identity and retries); a revoked,
 // expired, or forged chain is refused.

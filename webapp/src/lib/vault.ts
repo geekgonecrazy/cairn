@@ -1,6 +1,6 @@
 // Persistent browser identity.
 //
-// v2 trust model (docs/decisions.md §Trust model v2): identity is a self-sovereign
+// v2 trust model (docs/adrs/0013-pubkey-identity-no-household.md): identity is a self-sovereign
 // member key + a device tree. There is no household root and no attestation by a
 // household — a member self-attests, and trust in that key is decided at the edge
 // by whoever you talk to.

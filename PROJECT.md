@@ -82,4 +82,4 @@ are in [`docs/milestones.md`](./docs/milestones.md).
 Until we declare *real users*, the proto, CBOR payloads, and SQLite schema are freely
 breakable: edit in place, no versioning, wipe the DB at will, **no migrations**. Backward-compat
 begins only at the real-users switch. History will be squashed before going public. See
-[`docs/decisions.md`](./docs/decisions.md).
+[the ADRs](./docs/adrs/README.md).

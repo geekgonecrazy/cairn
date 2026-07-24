@@ -9,7 +9,7 @@
 // change a derivation here without re-running it.
 //
 // v2 trust model: identity is a self-sovereign member key + device tree. There is
-// no household root and no attestation-by-household (docs/decisions.md §Trust
+// no household root and no attestation-by-household (docs/adrs/0013-pubkey-identity-no-household.md §Trust
 // model v2). A member self-attests; trust in that key is decided at the edge.
 
 import { ed25519 } from '@noble/curves/ed25519.js'
@@ -90,7 +90,7 @@ export function validateMnemonicPhrase(s: string): string | null {
  *
  * A different passphrase yields a DIFFERENT key rather than an error — BIP-39's
  * plausible-deniability property. Callers must surface the resulting "nobody
- * recognizes you" state legibly (see docs/decisions.md).
+ * recognizes you" state legibly (see docs/adrs/0013-pubkey-identity-no-household.md).
  */
 export function memberRootFromMnemonic(mnemonic: string, passphrase = ''): KeyPair {
   const err = validateMnemonicPhrase(mnemonic)

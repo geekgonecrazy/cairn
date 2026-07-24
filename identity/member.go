@@ -7,7 +7,7 @@ package identity
 // verifier resolves a sender to (see VerifySender). Whether you *trust* that
 // member key is an edge decision — you verified it (pairing / fingerprint) or a
 // room you're in admitted it — not a chain to some apex. See
-// docs/decisions.md §Trust model v2.
+// docs/adrs/0013-pubkey-identity-no-household.md.
 //
 // The key may be derived deterministically from a 24-word BIP-39 recovery phrase
 // so it can be restored on a fresh device. The phrase is the ONLY thing that must

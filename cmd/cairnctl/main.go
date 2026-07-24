@@ -1,7 +1,7 @@
 // cairnctl — Cairn relay administration.
 //
 // v2 trust model: there is no household to found. This tool manages the relay's
-// OPERATIONAL admission (docs/decisions.md §Trust model v2) — issuing invite
+// OPERATIONAL admission (docs/adrs/0014-relay-operational-admission.md) — issuing invite
 // tokens and editing the allow-list of member roots the relay will carry. It is
 // NOT identity trust, which stays per-key at the edge. cairnctl opens the same
 // store cairnd uses.

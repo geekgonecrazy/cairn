@@ -2,7 +2,7 @@
   // First-run onboarding (v2 trust model): create a self-sovereign identity and
   // record its 24 words, add this device to an existing account, or restore from
   // a recovery phrase. There is no household to join — identity is a key you
-  // create here (docs/decisions.md §Trust model v2). Gated and unskippable: the
+  // create here (docs/adrs/0013-pubkey-identity-no-household.md). Gated and unskippable: the
   // recovery phrase is shown once and cannot be re-derived from Cairn, so the
   // confirm step verifies the human actually wrote it down.
   import QRCode from 'qrcode'

@@ -17,7 +17,7 @@ import (
 // blobs and never sees plaintext or any key.
 //
 // NOTE: backed by the local filesystem backend standing in for iroh-store (see
-// docs/decisions.md §Deviations). With the iroh backend this gateway becomes a
+// docs/adrs/0011-blobs-backend-interface.md). With the iroh backend this gateway becomes a
 // fallback path rather than the primary one, since peers fetch directly.
 
 const maxBlobBytes = 64 << 20 // 64 MiB

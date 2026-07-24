@@ -18,7 +18,7 @@ webappDir: "webapp/dist"
 
 # Local blob store directory (the data plane). Holds ENCRYPTED, content-addressed
 # objects only — never plaintext, never keys.
-# NOTE: this is the local stand-in for iroh-store; see decisions.md §Deviations.
+# NOTE: this is the local stand-in for iroh-store; see docs/adrs/0011-blobs-backend-interface.md.
 blobDir: "cairn-blobs"
 
 # Hex-encoded household root public keys this node recognizes.

@@ -2,7 +2,7 @@
 // Chat carries only a tiny `file_ref` envelope; the bytes ride separately and may
 // arrive over any transport (or not yet at all — see RetrievalState).
 //
-// ⚠️ DEVIATION FROM docs/plan.md — READ THIS (also recorded in docs/decisions.md §Deviations):
+// ⚠️ DEVIATION FROM docs/plan.md — READ THIS (also recorded in docs/adrs/0011-blobs-backend-interface.md):
 // docs/plan.md specifies `blobs` as an **iroh-store gRPC client**. No iroh-store daemon
 // exists in this environment, so instead this package defines a pluggable Backend
 // interface with a local filesystem implementation (blobs/local) for development.

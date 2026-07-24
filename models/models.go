@@ -73,7 +73,7 @@ type JoinRequest struct {
 
 // AllowedMember is a member root the relay will carry — OPERATIONAL admission
 // (who may use this relay), distinct from identity trust, which stays per-key at
-// the edge (docs/decisions.md §Trust model v2). Added by invite, by the operator,
+// the edge (docs/adrs/0014-relay-operational-admission.md). Added by invite, by the operator,
 // or trust-on-first-use while the relay is open.
 type AllowedMember struct {
 	MemberPub []byte `json:"member_pub"`

@@ -14,7 +14,7 @@ convenient always-on node. For running it, see the [top-level README](../README.
 | [**approvals-and-inlays.md**](approvals-and-inlays.md) | Portable signed capability grants (the human's signature, verifiable outside Cairn) and the agent-definable inlay UI. |
 | [**plan.md**](plan.md) | The phased build plan (Phases 0–6). |
 | [**milestones.md**](milestones.md) | Per-phase "done" definitions and exit criteria. |
-| [**decisions.md**](decisions.md) | The settled decisions, the reasoning behind them, and ⚠️ known deviations from the plan. |
+| [**adrs/**](adrs/README.md) | Architecture Decision Records — the settled decisions and ⚠️ known deviations, one decision per file, in chronological order, covering only what's currently built. |
 
 ## Understand a specific flow
 
@@ -42,7 +42,7 @@ Jump straight to the answer:
   [architecture.md](architecture.md)
 - **The trust/relay direction** — pubkey identity, relays as bridges, invites, interest-based
   routing (the decided v2 model, not yet built) →
-  [decisions.md §Trust model v2](decisions.md) + [architecture.md §2/§6](architecture.md)
+  [adrs/0013–0016](adrs/README.md) + [architecture.md §2/§6](architecture.md)
 
 ## Diagrams
 

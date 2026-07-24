@@ -8,7 +8,7 @@ open, it's flagged **[OPEN]** here.
 
 > **Dev-phase policy:** until we declare *real users*, this schema is **freely breakable** — change
 > the proto/CBOR/SQLite in place, no versioning, **wipe the DB at will, no migrations** (see
-> `decisions.md`). Backward-compat starts only at the real-users switch.
+> [`adrs/0001`](adrs/0001-dev-phase-freely-breakable.md)). Backward-compat starts only at the real-users switch.
 
 Primitives (no inventing): **Ed25519** (signing), **BLAKE3-256** (content hash / `event_id`),
 **AES-256-GCM** (room payload encryption), **X25519-HPKE** (wrapping room keys to members),
@@ -94,7 +94,7 @@ Capability-bound authority events (`approval_grant`, `member_add`, `room_key_rot
 signed on a browser carry a WebAuthn signature object (`authenticatorData || clientDataJSON` +
 signature) where the challenge is the `event_id`. Verifiers must accept this envelope for these types.
 **[OPEN]** exact on-chain shape — raw WebAuthn envelope vs. a gesture-gated session-key sig (see
-`decisions.md`). Lock before Phase 5; Phase 1 uses plain Ed25519 device-key sigs.
+[`plan.md` §5](plan.md)). Lock before Phase 5; Phase 1 uses plain Ed25519 device-key sigs.
 
 ---
 
@@ -106,7 +106,7 @@ fit a ~200 B LoRa frame). Fields are CBOR map keys.
 **Chat group**
 - `chat` `{ text, reply_to?: event_id, quote?: { text, author, source_event, source_room?, ts } }`
 - `file_ref` `{ file: { hash, wrapped_key, mime, size, thumb_hash? }, caption?, reply_to? }`
-  — bytes ride the data plane; envelope only (§ data-plane, `decisions.md` D2).
+  — bytes ride the data plane; envelope only (§ data-plane, [`adrs/0011`](adrs/0011-blobs-backend-interface.md)).
 - `presence` `{ state: "online"|"away", via? }` (ephemeral; not folded into history views)
 - `reaction` `{ target: event_id, emoji: [..] }` — sender's **complete current set**; latest per
   `(sender_root, target)` wins (CRDT).
@@ -189,7 +189,7 @@ This is *not* Matrix state resolution — borrow from Scuttlebutt / Hypercore / 
 
 ## 6. Sync (the frontier / outbox)
 
-Frontier exchange, per room, per peer — the durable "what's undelivered" cursor from `decisions.md`
+Frontier exchange, per room, per peer — the durable "what's undelivered" cursor from [`adrs/0003`](adrs/0003-signed-event-dag.md)
 (a diff, not a queue):
 
 1. Client sends `SyncRequest{ room_id, have_heads }`.
@@ -219,7 +219,7 @@ cannot fabricate "the user said yes" (it must present the user's real signature)
 ## 8. API surface
 
 `Event` is proto on the wire regardless of binding. Unary binding is **[OPEN]** (ConnectRPC vs Gin
-REST over the proto types — `decisions.md`). Realtime is **SSE** (decided).
+REST over the proto types — [`adrs/0002`](adrs/0002-stack.md)). Realtime is **SSE** (decided).
 
 - **`SendEvent`** — submit a signed `Event`; server verifies, stores, fans out per routing (§9).
 - **`Sync`** — frontier exchange (§6).
@@ -308,7 +308,7 @@ Wails3 on-device node use this schema via `store/sqlite`.
 
 ---
 
-## 11. Open items to lock (tracked in `decisions.md` / vision)
+## 11. Open items to lock (tracked in [`plan.md` §5](plan.md) / vision)
 
 - Household-root bootstrap & recovery (apex key, its own recovery code) — **Phase 4**.
 - Tiebreak edge cases vs. parent-count + `ts` — **Phase 1**.

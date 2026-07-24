@@ -14,7 +14,7 @@ option go_package = "github.com/geekgonecrazy/cairn/proto/cairnv1;cairnv1";
 //
 // DEV PHASE: break this freely. Until we declare real users, edit fields/enums
 // without versioning and wipe the DB — no backward-compat, no migrations. Enum
-// numbers only need to stay stable AFTER the real-users switch. See docs/decisions.md.
+// numbers only need to stay stable AFTER the real-users switch. See docs/adrs/0001-dev-phase-freely-breakable.md.
 
 // ---------------------------------------------------------------------------
 // Event envelope
@@ -141,7 +141,7 @@ enum TransportHint {
 // ---------------------------------------------------------------------------
 // Unary API messages
 //
-// Binding is open (ConnectRPC vs. Gin REST over these types) — see docs/decisions.md.
+// Binding is open (ConnectRPC vs. Gin REST over these types) — see docs/adrs/0002-stack.md.
 // The realtime `Subscribe` is NOT here: it is a plain HTTP SSE stream of Events
 // (user preference), documented in docs/protocol.md §API.
 // ---------------------------------------------------------------------------
@@ -187,7 +187,7 @@ message GetIdentityObjectResponse { bytes cbor = 1; } // CBOR object; schema in 
 message PutIdentityObjectRequest { bytes cbor = 1; }
 message PutIdentityObjectResponse { bytes hash = 1; } // BLAKE3-256 content address
 
-// Relay access (slice 2; docs/decisions.md §Trust model v2). RelayInfo returns
+// Relay access (slice 2; docs/adrs/0014-relay-operational-admission.md). RelayInfo returns
 // the relay's own pubkey — a client pins it to know it is talking to the right
 // relay and to verify invite tokens against it. RedeemInvite exchanges a
 // relay-signed, single-use invite for a place on the allow-list. This is

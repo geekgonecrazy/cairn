@@ -9,7 +9,7 @@
 // yet, which is a real state, not a spinner.
 //
 // NOTE: the gateway is backed by a local filesystem store standing in for
-// iroh-store (docs/decisions.md §Deviations). Nothing in this file changes when the
+// iroh-store (docs/adrs/0011-blobs-backend-interface.md). Nothing in this file changes when the
 // real data plane lands — only where the bytes come from.
 
 import { blake3 } from '@noble/hashes/blake3.js'

@@ -869,7 +869,7 @@ func (x *PutIdentityObjectResponse) GetHash() []byte {
 	return nil
 }
 
-// Relay access (slice 2; docs/decisions.md §Trust model v2). RelayInfo returns
+// Relay access (slice 2; docs/adrs/0014-relay-operational-admission.md). RelayInfo returns
 // the relay's own pubkey — a client pins it to know it is talking to the right
 // relay and to verify invite tokens against it. RedeemInvite exchanges a
 // relay-signed, single-use invite for a place on the allow-list. This is

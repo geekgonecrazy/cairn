@@ -12,7 +12,7 @@ func RelayRequiresInvite() bool { return config.Config.RequireInvite }
 // that have published a self-attestation, with their self-asserted profile. It
 // backs add-by-name in the client and is the "relay-vouched" name tier: the
 // operator admitted these keys, so their names are as trustworthy as that
-// curation — not a cryptographic guarantee (docs/decisions.md §Trust model v2).
+// curation — not a cryptographic guarantee (docs/adrs/0015-relay-directory-edge-trust.md).
 // A name here is still a label; the pubkey is the identity.
 
 // DirectoryEntry is one member of the relay's directory.

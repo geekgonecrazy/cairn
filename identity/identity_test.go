@@ -152,7 +152,7 @@ func TestVerifySender_ForgedRevokeIsIgnored(t *testing.T) {
 //
 // Devices pair devices: the member root signs only the FIRST device, and every
 // device after that is admitted by an existing one. These pin the properties
-// that make that safe — see docs/decisions.md §Member root goes offline.
+// that make that safe — see docs/adrs/0007-device-delegation-tree-revocation.md.
 
 // pair admits a fresh device under `parent` and registers the delegation,
 // returning the new device's keys. Mirrors what a trusted device does when it

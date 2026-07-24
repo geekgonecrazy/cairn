@@ -2,7 +2,7 @@ package controllers
 
 // Relay access + directory endpoints (slices 2–3). Operational admission — who
 // may use this relay, and who it will name — not identity trust
-// (docs/decisions.md §Trust model v2).
+// (docs/adrs/0014-relay-operational-admission.md).
 
 import (
 	"context"
