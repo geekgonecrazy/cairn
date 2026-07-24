@@ -11,6 +11,106 @@ Companion to [`plan.md`](./plan.md) (the build plan) and the design mockup in
 
 ---
 
+## Trust model v2 — pubkey identity + relays, no household root — decided (direction) 2026-07-24
+
+> **Status: DECIDED DIRECTION, not yet implemented.** The code today still implements the
+> household-root model (offline BIP-39 apex, `cairnctl` attestation, the carrier chain gate)
+> documented in [`events-and-e2ee.md`](events-and-e2ee.md). This entry records where we are
+> taking it. It **supersedes**, for the v2 direction, the household-era decisions below:
+> *Household-root bootstrap & recovery*, *Founding and attestation move to the CLI*, *Member
+> root goes offline; devices form a delegation tree* (the device **tree** itself is kept), and
+> *Chain gate: default-deny + founding-window adoption*; and it reframes *Two-tier membership*
+> and *Space is the authority*. Until the rework lands, the old model stands.
+
+**Why.** The household root is an offline BIP-39 apex that must sign an attestation (via
+`cairnctl`) to admit every member. That is (a) clunky — a CLI ceremony per join — and (b)
+hostile to exactly the transports we want most: BLE and Meshtastic are ad-hoc,
+infrastructure-less, and cross-domain, where a strict "chain to a shared household root" gate
+rejects everyone you meet. A multi-pass design conversation (2026-07-24), taking inspiration
+from Nostr, concluded the household apex solves a problem we don't have and blocks the ones we
+do.
+
+**The model.**
+
+- **Identity is a public key.** A member is a keypair; multiple devices are handled by the
+  existing **device-delegation tree** (kept — a device pairs from an existing device, so no
+  secret is copied; strictly better than sharing one key across devices). No household root, no
+  offline apex, no per-member attestation ceremony.
+- **Trust is per-key, at the edge, and per-room.** You trust a key because you verified it (QR /
+  fingerprint pairing, or TOFU) or transitively because a member you trust added them to a room.
+  Each **room is its own trust domain, rooted in its creator**; membership + key handoff ride
+  the room DAG (`MEMBER_ADD` wraps the room key to a device, as today). There is no global
+  "these are my people" roster — that was the clunk.
+- **E2EE is absolute and unchanged.** Room keys stay AES-256-GCM per epoch, HPKE-wrapped to
+  member devices. Relays never see content, however many they cross. "Trusted relay" only ever
+  means trusted-for-routing/availability — never trusted-with-messages.
+- **Relays are store-and-forward sync nodes, not authorities.** A relay is a permanent node that
+  runs the same frontier sync with clients *and with other relays*. **Relay-to-relay bridging is
+  explicit and configurable** (which peers, which transport, which rooms) — and it is the right
+  answer for constrained links: bridge two relays over Meshtastic/LoRa or a radio link so local
+  clients talk to their local relay and the relays cross the precious link **once** (mesh
+  framing, per-type routing, store-and-forward). Clients may also multi-home to several relays
+  (cloud redundancy), but that is complementary, not the answer for constrained links. This is
+  **transport bridging, not Matrix-style membership/state federation** — no shared authority, no
+  global namespace. Loop-safe by `event_id` dedup + frontier sync.
+- **Relay access = an invite key + an allow-list.** A relay has a keypair (clients pin it and
+  AUTH by signing a challenge). It issues single-use, relay-signed **invite tokens**; redeeming
+  one adds a pubkey to the relay's allow-list. This is *operational* (who may use the relay) and
+  is separate from identity trust. Revoke = drop from the allow-list — a moderation lever that
+  touches storage, never a person's identity or their reach via other relays/mesh.
+- **Discovery = a relay directory + add-by-name, with verification tiers.** Members opt in by
+  publishing a profile (name + pubkey). Others add by name — but the **name is a label, the
+  pubkey is the identity**, and `MEMBER_ADD` binds to the pubkey. The client shows a tier:
+  *display name* (spoofable), *relay-vouched* (name→key asserted on the relay's turf; as
+  trustworthy as the operator's curation), or *verified petname* (checked out of band; portable
+  to mesh and any relay). On an invite-gated relay the allow-list is itself curation, so
+  add-by-name is safe for daily use; reserve fingerprint checks for higher-stakes / cross-relay.
+- **Interest-based (demand-driven) routing.** A relay carries the *union of what its subscribers
+  provably want* plus operator-**pinned** rooms (persistence + store-and-forward). Two proofs
+  for two jobs: **relay AUTH** (sign a challenge → hold pubkey P) and a **room-membership
+  proof** (present your signed `MEMBER_ADD` for R → you belong in R). The membership proof stays
+  **local** (client → its relay). Relay-to-relay bridging exchanges **carry-sets of opaque
+  room-ids** and syncs the **intersection** per room — a room spans two relays only if both have
+  an interested member (or are configured to carry it). Reuses the existing `peer_frontier`
+  machinery. The proof + a per-subscriber fan-out cap is the **anti-abuse gate** (without it a
+  client could make a relay fire-hose arbitrary rooms across an expensive bridge — amplification/
+  DoS, brutal over LoRa).
+
+**Operational vs. trust — the load-bearing separation.** The household root conflated two things
+this model keeps apart: *who may use / be carried by a relay* (operational: invite key,
+allow-list, carry config) versus *whose identity you believe* (trust: per-key, at the edge).
+Relays own the first; only you own the second. That separation is what lets relays bridge freely
+without becoming authorities, and lets trust survive on mesh where no relay is present.
+
+**Guardrail: inspired by Nostr, not implementing Nostr.** Keep Cairn's own stack —
+Ed25519/X25519, BLAKE3 content-addressing, deterministic-CBOR + protobuf envelope, the
+causal-parents DAG + frontier sync, AES-GCM/HPKE room E2EE. Do **not** adopt Nostr's wire (JSON
+events, `kind` numbers, `tags`, secp256k1/schnorr) or treat NIPs as normative — NIP references
+(05/42/65) are conceptual analogues only.
+
+**What drops from the code when this lands.** `identity/household.go` (the BIP-39 apex),
+`cairnctl init` / `attest`, the household derivation + founding window + root adoption, and the
+carrier chain-gate-as-admission (`core.SubmitEvent`'s trusted-root requirement). `trustedRoots`
+becomes a relay allow-list + pinned-relay-key + edge key-trust. Onboarding collapses to
+"generate a key + redeem an invite"; joining a room stays "a member adds you." **Kept
+unchanged:** the event envelope, the DAG and frontier sync, room E2EE and epoch rotation, and
+the device-delegation tree.
+
+**Open sub-questions (not blocking the direction).**
+
+- Depth of the membership proof: a bare `MEMBER_ADD` proves *someone* added P, not that they had
+  standing. Fine as a routing/anti-abuse gate (the room key is the real boundary); revisit only
+  if a concrete threat needs a full add-chain walk.
+- Room-id privacy to peer relays: demand routing reveals opaque room-ids and traffic patterns
+  across bridges. Private-set-intersection / bloom-filter interest exchange is a future option.
+- Identity recovery without an apex: a member is their key; keep per-member BIP-39 recovery words
+  for "restore my identity", or lean on device-tree pairing from a surviving device. Decide
+  before the rework.
+- Directory/profile propagation across bridged relays, and cross-relay discovery hints
+  (outbox-style).
+
+---
+
 ## Decided (by the user)
 
 - **Stack direction:** frontend **Svelte**; backend **Go**; **SQLite** when a DB is needed; **Wails3**

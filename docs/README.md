@@ -8,7 +8,7 @@ convenient always-on node. For running it, see the [top-level README](../README.
 
 | Doc | What's in it |
 |-----|--------------|
-| [**architecture.md**](architecture.md) | Nodes, transports, and topology. How one `core` runs on a server, a phone (Wails3), and in a browser; sync between nodes; the mobile / BLE / Meshtastic story; current state vs. target. |
+| [**architecture.md**](architecture.md) | Nodes, transports, and topology. How one `core` runs on a server, a phone (Wails3), and in a browser; sync between nodes; the mobile / BLE / Meshtastic story; the **v2 trust/relay direction** (pubkey identity, relays as bridges, invites, interest-based routing); current state vs. target. |
 | [**events-and-e2ee.md**](events-and-e2ee.md) | The crypto and event model in depth, with diagrams: the household & member roots, the delegation chain, adding users and devices, revocation, rooms & membership, and how room keys rotate. |
 | [**protocol.md**](protocol.md) | The terse wire contract: identity objects, the event envelope, payload schemas, the DAG, sync, room keys, the API, and the SQLite schema. |
 | [**approvals-and-inlays.md**](approvals-and-inlays.md) | Portable signed capability grants (the human's signature, verifiable outside Cairn) and the agent-definable inlay UI. |
@@ -40,6 +40,9 @@ Jump straight to the answer:
   [What happens when a new device is added](events-and-e2ee.md#13-what-happens-when-a-new-device-is-added)
 - **How mobile, BLE, and Meshtastic fit** →
   [architecture.md](architecture.md)
+- **The trust/relay direction** — pubkey identity, relays as bridges, invites, interest-based
+  routing (the decided v2 model, not yet built) →
+  [decisions.md §Trust model v2](decisions.md) + [architecture.md §2/§6](architecture.md)
 
 ## Diagrams
 

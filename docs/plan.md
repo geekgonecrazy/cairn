@@ -281,7 +281,7 @@ From `protocol.md` (carry these forward):
   transport), retiring the TS port and the parity tax; the WebAuthn/passkey ceremony,
   `fetch`/SSE glue, and an IndexedDB bridge stay in JS. The alternative is to freeze the TS port
   and accept the ongoing tax. Decides where transport framing lives (shared Go vs. duplicated)
-  and who signs on device. See [`architecture.md` §4](architecture.md#4-where-the-same-node-runs).
+  and who signs on device. See [`architecture.md` §5](architecture.md#5-where-the-same-node-runs).
 - **Wails3 topology** — does the native app embed the full Go `core` as an on-device node, or
   act as a thin client to `cairnd`? Recommendation: **embed** (a thin client gives none of the
   offline/BLE/mesh value). Lock before **Phase 5**.

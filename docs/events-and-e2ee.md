@@ -10,6 +10,16 @@ code, the code wins — file references are given so you can check.
 
 ---
 
+> **⚠️ Trust model in transition.** This document describes the trust and admission model the
+> code implements **today** — a household root (offline BIP-39 apex), per-member attestation via
+> `cairnctl`, and the carrier chain gate. The project has since decided a **v2 direction** —
+> public-key identity with relays and per-room trust, **no household root** — see
+> [`decisions.md`](decisions.md) §Trust model v2 and [`architecture.md`](architecture.md) §2, §6.
+> Most of the crypto below survives that change unchanged: the event envelope, the DAG and
+> frontier sync, room-key E2EE, and the device-delegation tree. What changes is the
+> **trust-anchoring / admission** layer (the household root, its attestation, the chain gate, and
+> CLI onboarding).
+
 ## 1. The mental model
 
 Everything that happens in Cairn is an **event**: a chat message, a reaction, a
