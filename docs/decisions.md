@@ -13,10 +13,14 @@ Companion to [`plan.md`](./plan.md) (the build plan) and the design mockup in
 
 ## Trust model v2 — pubkey identity + relays, no household root — decided (direction) 2026-07-24
 
-> **Status: DECIDED DIRECTION, not yet implemented.** The code today still implements the
-> household-root model (offline BIP-39 apex, `cairnctl` attestation, the carrier chain gate)
-> documented in [`events-and-e2ee.md`](events-and-e2ee.md). This entry records where we are
-> taking it. It **supersedes**, for the v2 direction, the household-era decisions below:
+> **Status: IN IMPLEMENTATION — slices 1–2 have landed.** Identity is now a self-sovereign
+> member key + device tree (no household root, no `cairnctl` founding, no chain gate — slice 1),
+> and the relay has an operational allow-list + single-use invite key (slice 2). Remaining:
+> directory / add-by-name (slice 3), the `transport/` + `Node` seam (slice 4), interest-based
+> routing (slice 5), relay-to-relay bridging (slice 6). NOTE: `events-and-e2ee.md` §4–8 still
+> narrate the *superseded* household model — retained for the crypto primitives (envelope, DAG,
+> room E2EE, device tree), which are unchanged; the current trust model is `architecture.md` §2.
+> This entry **supersedes**, for the v2 direction, the household-era decisions below:
 > *Household-root bootstrap & recovery*, *Founding and attestation move to the CLI*, *Member
 > root goes offline; devices form a delegation tree* (the device **tree** itself is kept), and
 > *Chain gate: default-deny + founding-window adoption*; and it reframes *Two-tier membership*

@@ -342,12 +342,16 @@ browser port. `core` is node-logic, not server-logic. **The trust model in force
 today is the household-root model** ([`events-and-e2ee.md`](events-and-e2ee.md)),
 not the §2/§6 v2 design.
 
+**v2 trust — slices 1–2 landed.** Identity is now a self-sovereign member key +
+device tree (no household root; §2), and the relay has an operational allow-list +
+single-use invite key (§6 Access). The directory / add-by-name (§6 Discovery),
+verification tiers, and per-transport gating are still ahead.
+
 **Not built.** No `transport/` interface, no `native/` on-device node. Everything
 moves over one transport (HTTP) reached one way (`cairnd`'s services); fan-out is
 connection-bound (the SSE `Hub`), not pubkey-addressed. The routing table, the
-symmetric sync driver, relay bridging, interest-based routing, and the whole v2
-trust/relay/invite/directory model are designed (here + [`decisions.md`](decisions.md))
-but unimplemented.
+symmetric sync driver, relay bridging, and interest-based routing are designed
+(here + [`decisions.md`](decisions.md)) but unimplemented.
 
 **The seam to cut first.** A `Transport` interface (`Send(pubkey, frame)`,
 `Available()`, an inbound channel) with the HTTP/SSE path refactored to be its

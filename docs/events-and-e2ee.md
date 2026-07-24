@@ -10,15 +10,15 @@ code, the code wins — file references are given so you can check.
 
 ---
 
-> **⚠️ Trust model in transition.** This document describes the trust and admission model the
-> code implements **today** — a household root (offline BIP-39 apex), per-member attestation via
-> `cairnctl`, and the carrier chain gate. The project has since decided a **v2 direction** —
-> public-key identity with relays and per-room trust, **no household root** — see
-> [`decisions.md`](decisions.md) §Trust model v2 and [`architecture.md`](architecture.md) §2, §6.
-> Most of the crypto below survives that change unchanged: the event envelope, the DAG and
-> frontier sync, room-key E2EE, and the device-delegation tree. What changes is the
-> **trust-anchoring / admission** layer (the household root, its attestation, the chain gate, and
-> CLI onboarding).
+> **⚠️ The trust/admission model below has been REPLACED (v2 is implemented).** Sections §4–8
+> narrate the old **household-root** model — offline BIP-39 apex, per-member `cairnctl`
+> attestation, and the carrier chain gate. That model **no longer exists in the code**: identity
+> is now a self-sovereign member key that self-attests, and relay admission is an allow-list +
+> invite key (see [`architecture.md`](architecture.md) §2, §6 and [`decisions.md`](decisions.md)
+> §Trust model v2). These sections are kept because the **crypto primitives are unchanged** — the
+> event envelope, the DAG and frontier sync, room-key E2EE, and the device-delegation tree all
+> still work exactly as described. Read §4–8 for those; ignore the household/attestation/chain-gate
+> framing around them.
 
 ## 1. The mental model
 
