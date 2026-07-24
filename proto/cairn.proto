@@ -193,7 +193,10 @@ message PutIdentityObjectResponse { bytes hash = 1; } // BLAKE3-256 content addr
 // relay-signed, single-use invite for a place on the allow-list. This is
 // OPERATIONAL admission (who may use the relay), not identity trust.
 message RelayInfoRequest {}
-message RelayInfoResponse { bytes relay_pub = 1; }
+message RelayInfoResponse {
+  bytes relay_pub      = 1;
+  bool  require_invite = 2; // if true, a sender must be on the allow-list (invite/allow)
+}
 message RedeemInviteRequest {
   string invite     = 1; // cairn:invite:1:… (relay-signed, single-use)
   bytes  member_pub = 2; // the member root to admit

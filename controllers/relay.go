@@ -19,7 +19,10 @@ func (CairnController) RelayInfo(
 	_ context.Context,
 	_ *connect.Request[cairnv1.RelayInfoRequest],
 ) (*connect.Response[cairnv1.RelayInfoResponse], error) {
-	return connect.NewResponse(&cairnv1.RelayInfoResponse{RelayPub: core.RelayPub()}), nil
+	return connect.NewResponse(&cairnv1.RelayInfoResponse{
+		RelayPub:      core.RelayPub(),
+		RequireInvite: core.RelayRequiresInvite(),
+	}), nil
 }
 
 // RedeemInvite exchanges a relay-signed, single-use invite for a place on the

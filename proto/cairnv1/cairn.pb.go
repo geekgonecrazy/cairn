@@ -913,6 +913,7 @@ func (*RelayInfoRequest) Descriptor() ([]byte, []int) {
 type RelayInfoResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RelayPub      []byte                 `protobuf:"bytes,1,opt,name=relay_pub,json=relayPub,proto3" json:"relay_pub,omitempty"`
+	RequireInvite bool                   `protobuf:"varint,2,opt,name=require_invite,json=requireInvite,proto3" json:"require_invite,omitempty"` // if true, a sender must be on the allow-list (invite/allow)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -952,6 +953,13 @@ func (x *RelayInfoResponse) GetRelayPub() []byte {
 		return x.RelayPub
 	}
 	return nil
+}
+
+func (x *RelayInfoResponse) GetRequireInvite() bool {
+	if x != nil {
+		return x.RequireInvite
+	}
+	return false
 }
 
 type RedeemInviteRequest struct {
@@ -1869,9 +1877,10 @@ const file_cairn_proto_rawDesc = "" +
 	"\x04cbor\x18\x01 \x01(\fR\x04cbor\"/\n" +
 	"\x19PutIdentityObjectResponse\x12\x12\n" +
 	"\x04hash\x18\x01 \x01(\fR\x04hash\"\x12\n" +
-	"\x10RelayInfoRequest\"0\n" +
+	"\x10RelayInfoRequest\"W\n" +
 	"\x11RelayInfoResponse\x12\x1b\n" +
-	"\trelay_pub\x18\x01 \x01(\fR\brelayPub\"L\n" +
+	"\trelay_pub\x18\x01 \x01(\fR\brelayPub\x12%\n" +
+	"\x0erequire_invite\x18\x02 \x01(\bR\rrequireInvite\"L\n" +
 	"\x13RedeemInviteRequest\x12\x16\n" +
 	"\x06invite\x18\x01 \x01(\tR\x06invite\x12\x1d\n" +
 	"\n" +

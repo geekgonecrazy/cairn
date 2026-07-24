@@ -27,6 +27,20 @@
   let deviceLabel = $state(defaultDeviceLabel())
   let inviteCode = $state('')
   let createError = $state('')
+
+  // Does this relay require an invite? Fetched once so onboarding can demand one
+  // up front, instead of letting the user finish and then hit "not admitted" on
+  // their first send. Creating the key is always local; joining THIS relay isn't.
+  let requireInvite = $state(false)
+  let relayChecked = $state(false)
+  $effect(() => {
+    if (relayChecked) return
+    relayChecked = true
+    cairn
+      .relayInfo({})
+      .then((r) => (requireInvite = r.requireInvite))
+      .catch(() => {}) // can't reach the relay; treat as open, the send path will report
+  })
   let mnemonic = $state('')
   // Held in MEMORY until the phrase is confirmed. Nothing is written to storage
   // before `commit` — persisting at mint time meant a reload on the phrase screen
@@ -132,6 +146,10 @@
     createError = ''
     if (!displayName.trim()) {
       createError = 'Enter the name people will know you by.'
+      return
+    }
+    if (requireInvite && !inviteCode.trim()) {
+      createError = 'This relay is invite-only — enter the invite its operator gave you to continue.'
       return
     }
     // Mint a member key from fresh words, self-attest a profile, and sign this
@@ -256,7 +274,7 @@
         <input bind:value={deviceLabel} placeholder="Sam's laptop" maxlength="64" />
       </label>
       <label class="field">
-        <span>Invite code — only if the relay requires one</span>
+        <span>{requireInvite ? 'Invite code (required by this relay)' : 'Invite code — only if the relay requires one'}</span>
         <input
           bind:value={inviteCode}
           placeholder="cairn:invite:1:…"
@@ -264,10 +282,17 @@
           autocapitalize="none"
         />
       </label>
+      {#if requireInvite}
+        <p class="lede" style="margin-top:-8px">
+          This relay is invite-only — you need an invite from its operator to join.
+        </p>
+      {/if}
       {#if createError}<p class="error" role="alert">{createError}</p>{/if}
       <div class="actions">
         <button class="ghost" onclick={() => (step = 'welcome')}>Back</button>
-        <button class="primary" onclick={startCreate}>Create</button>
+        <button class="primary" disabled={requireInvite && !inviteCode.trim()} onclick={startCreate}>
+          Create
+        </button>
       </div>
 
     {:else if step === 'pair-wait'}

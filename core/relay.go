@@ -1,5 +1,13 @@
 package core
 
+import "github.com/geekgonecrazy/cairn/config"
+
+// RelayRequiresInvite reports whether this relay gates the write path on its
+// allow-list (invite-only). The client fetches this via RelayInfo so it can
+// require an invite during onboarding, instead of letting the user finish and
+// then hit a wall of send failures.
+func RelayRequiresInvite() bool { return config.Config.RequireInvite }
+
 // Relay directory (slice 3). The directory is the relay's allow-listed members
 // that have published a self-attestation, with their self-asserted profile. It
 // backs add-by-name in the client and is the "relay-vouched" name tier: the
