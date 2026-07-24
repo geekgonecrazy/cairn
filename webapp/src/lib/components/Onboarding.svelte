@@ -8,6 +8,7 @@
   import QRCode from 'qrcode'
   import Icon from '../Icon.svelte'
   import { identity } from '../identity.svelte'
+  import { cairn } from '../api'
   import {
     createIdentity,
     beginDevicePairing,
@@ -24,6 +25,7 @@
 
   let displayName = $state('')
   let deviceLabel = $state(defaultDeviceLabel())
+  let inviteCode = $state('')
   let createError = $state('')
   let mnemonic = $state('')
   // Held in MEMORY until the phrase is confirmed. Nothing is written to storage
@@ -142,7 +144,7 @@
     step = 'phrase'
   }
 
-  function checkQuiz() {
+  async function checkQuiz() {
     const ok = quizIndexes.every(
       (wordIdx, i) => quizAnswers[i].trim().toLowerCase() === words[wordIdx],
     )
@@ -150,10 +152,22 @@
       quizError = "That doesn't match. Check your written copy — order matters."
       return
     }
+    if (!pendingCommit || !pendingIdentity) return
     // Confirmed: only NOW does anything reach storage.
-    if (!pendingCommit) return
     pendingCommit()
-    if (pendingIdentity) onready(pendingIdentity)
+    // If an invite was supplied, redeem it so an invite-only relay admits us
+    // before we start sending. Harmless on an open relay; a bad invite blocks
+    // completion so the user can fix it rather than hit a wall of send errors.
+    const invite = inviteCode.trim()
+    if (invite) {
+      try {
+        await cairn.redeemInvite({ invite, memberPub: pendingIdentity.memberPub })
+      } catch (e) {
+        quizError = `That invite was refused: ${e instanceof Error ? e.message : String(e)}`
+        return
+      }
+    }
+    onready(pendingIdentity)
   }
 
   async function doRecover() {
@@ -240,6 +254,15 @@
       <label class="field">
         <span>Name for this device</span>
         <input bind:value={deviceLabel} placeholder="Sam's laptop" maxlength="64" />
+      </label>
+      <label class="field">
+        <span>Invite code — only if the relay requires one</span>
+        <input
+          bind:value={inviteCode}
+          placeholder="cairn:invite:1:…"
+          spellcheck="false"
+          autocapitalize="none"
+        />
       </label>
       {#if createError}<p class="error" role="alert">{createError}</p>{/if}
       <div class="actions">

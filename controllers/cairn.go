@@ -44,7 +44,8 @@ func submitErrorCode(err error) connect.Code {
 		return connect.CodeFailedPrecondition
 	case errors.Is(err, identity.ErrRevoked),
 		errors.Is(err, identity.ErrExpired),
-		errors.Is(err, identity.ErrBadSignature):
+		errors.Is(err, identity.ErrBadSignature),
+		errors.Is(err, core.ErrNotAllowed):
 		return connect.CodePermissionDenied
 	default:
 		return connect.CodeInvalidArgument

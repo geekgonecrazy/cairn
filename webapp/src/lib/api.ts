@@ -50,6 +50,13 @@ export function describeSendFailure(e: unknown): string {
   if (e.code === Code.PermissionDenied) {
     // Terminal: the carrier will never accept this sender as-is. Retrying is
     // pointless, so say what it actually means.
+    if (/not admitted|needs an invite/i.test(raw)) {
+      return (
+        `This relay is invite-only and hasn't admitted you yet. Ask the operator for an ` +
+        `invite (they run \`cairnctl invite\`) and enter it during setup, or have them run ` +
+        `\`cairnctl allow <your member key>\`. (server: ${raw})`
+      )
+    }
     if (/revoked/i.test(raw)) {
       return `This device has been revoked, so the server rejected it. (server: ${raw})`
     }
