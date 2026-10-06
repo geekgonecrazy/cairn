@@ -130,15 +130,25 @@ func TestForgedObjectsRejected(t *testing.T) {
 	})
 }
 
-func TestConflictingAttestationRefused(t *testing.T) {
+func TestConflictingKindKeptEarliest(t *testing.T) {
 	member, log := selfAttested(t)
-	// Same member, but a different immutable kind.
+	// A second attestation with a different kind is ACCEPTED at insert — the
+	// log is an order-independent set, so insert-time rejection would diverge
+	// across replicas that learn the same objects in a different order. The
+	// rule lives in selection: kind is earliest-issued-wins (CurrentAttestation).
 	att, err := NewSelfAttestation(member, KindService, "Sam", nil, testNow+1)
 	if err != nil {
 		t.Fatalf("self-attest: %v", err)
 	}
-	if err := log.AddAttestation(att); err == nil {
-		t.Fatal("conflicting kind was accepted for an existing member")
+	if err := log.AddAttestation(att); err != nil {
+		t.Fatalf("later kind change refused at insert: %v", err)
+	}
+	got, ok := log.Attestation(member.Pub)
+	if !ok {
+		t.Fatal("no attestation selected")
+	}
+	if got.Kind != KindHuman {
+		t.Fatalf("kind = %q, want human (earliest-wins)", got.Kind)
 	}
 }
 

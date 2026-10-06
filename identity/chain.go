@@ -24,8 +24,22 @@ type Resolver interface {
 	// and a store that files revokes by subject alone would let anyone revoke
 	// anyone. VerifySender does the checking; see the revocation step there.
 	DeviceRevokeFor(devicePub []byte) (*DeviceRevoke, bool)
-	// Attestation returns the household attestation for a member-root pubkey.
+	// Attestation returns the member's CURRENT self-attestation: implementations
+	// MUST apply CurrentAttestation over every attestation the member published
+	// (latest issued_at wins, kind earliest-wins), never last-write-wins. The
+	// identity log is an order-independent set, so two replicas that learned
+	// the same objects in different orders must select the same profile.
 	Attestation(memberPub []byte) (*IdentityAttestation, bool)
+	// AgentDelegations returns every agent_delegation naming agentPub as its
+	// subject. There can be many — one per vouching device — so this is a list,
+	// not a lookup: VerifySender filters it (signature, operator match,
+	// expiry, withdrawal, delegator liveness) and requires at least one
+	// survivor for an agent to count as proven.
+	AgentDelegations(agentPub []byte) []*AgentDelegation
+	// VouchWithdraws returns every vouch withdrawal filed for agentPub.
+	// VerifySender matches them against the vouches above by (agent,
+	// delegator) and timestamp; see vouchWithdrawn.
+	VouchWithdraws(agentPub []byte) []*VouchWithdraw
 }
 
 // Resolved is the identity a sender's key ultimately belongs to: the member root
@@ -37,7 +51,25 @@ type Resolved struct {
 	Kind        Kind
 	OperatedBy  []byte // for agents: the operating human member root
 	DisplayName string
+	// AgentProof is the proof state of an agent's operated_by claim (see
+	// AgentProof). "na" for non-agents — the question does not arise.
+	AgentProof AgentProof
+	// Vouches counts the surviving vouches behind a proven agent (0 otherwise),
+	// so a human re-vouching from a new device is visible, not just boolean.
+	Vouches int
 }
+
+// AgentProof is the proof state of an agent's operated_by claim: stated by the
+// agent's own attestation, proven only by surviving vouches from that
+// operator's tree. An unproven agent still resolves — it is an honest state,
+// not an error — and callers decide what to show or admit.
+type AgentProof string
+
+const (
+	AgentProofNA       AgentProof = "na"       // not an agent; the question does not arise
+	AgentProofProven   AgentProof = "proven"   // ≥1 surviving vouch from the attested operator
+	AgentProofUnproven AgentProof = "unproven" // names an operator, but no vouch survives
+)
 
 // Sentinel errors from VerifySender. Callers distinguish ErrUnknownObject
 // (fetch the missing link and retry) from the terminal rejections.
@@ -105,7 +137,9 @@ func VerifySender(senderPub []byte, r Resolver, now int64) (*Resolved, error) {
 	}
 
 	// Step 4: the member root's self-attestation carries its profile (kind, name,
-	// operated_by), signed by the member key itself.
+	// operated_by), signed by the member key itself. The resolver selects the
+	// CURRENT one out of every attestation the member published
+	// (CurrentAttestation), so a rename or a transfer supersedes.
 	att, ok := r.Attestation(memberPub)
 	if !ok {
 		return nil, fmt.Errorf("%w: member %x", ErrUnknownObject, memberPub)
@@ -117,12 +151,24 @@ func VerifySender(senderPub []byte, r Resolver, now int64) (*Resolved, error) {
 		return nil, fmt.Errorf("identity_attestation: %w", ErrBadSignature)
 	}
 
-	return &Resolved{
+	res := &Resolved{
 		MemberPub:   append([]byte(nil), att.Pubkey...),
 		Kind:        att.Kind,
 		OperatedBy:  append([]byte(nil), att.OperatedBy...),
 		DisplayName: att.DisplayName,
-	}, nil
+		AgentProof:  AgentProofNA,
+	}
+
+	// Step 5 (agents only): the operated_by claim is stated by the agent's own
+	// attestation and proven only by surviving vouches from that operator's
+	// tree. An unproven agent still RESOLVES — proof is a state callers handle
+	// (honest UI, admission policy), never a chain error.
+	if att.Kind == KindAgent {
+		proof, vouches := agentVouchProof(att, r, now)
+		res.AgentProof, res.Vouches = proof, vouches
+	}
+
+	return res, nil
 }
 
 // walkDevices climbs the delegation tree from devicePub to the member root at

@@ -13,7 +13,8 @@
     "identity-conformance": "tsx scripts/identity-conformance.ts",
     "inlay-check": "tsx scripts/inlay-check.ts",
     "e2e": "tsx scripts/e2e-membership.ts",
-    "e2e-pairing": "tsx scripts/e2e-pairing.ts"
+    "e2e-pairing": "tsx scripts/e2e-pairing.ts",
+    "e2e-agent": "tsx scripts/e2e-agent.ts"
   },
   "devDependencies": {
     "@bufbuild/protoc-gen-es": "^2.12.1",

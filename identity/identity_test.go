@@ -12,6 +12,8 @@ type memResolver struct {
 	devices  map[string]*DeviceDelegation  // by device_pub
 	revoked  map[string]*DeviceRevoke      // by device_pub
 	atts     map[string]*IdentityAttestation
+	vouches  map[string][]*AgentDelegation // by agent_pub
+	withdraw map[string][]*VouchWithdraw   // by agent_pub
 }
 
 func newMemResolver() *memResolver {
@@ -20,6 +22,8 @@ func newMemResolver() *memResolver {
 		devices:  map[string]*DeviceDelegation{},
 		revoked:  map[string]*DeviceRevoke{},
 		atts:     map[string]*IdentityAttestation{},
+		vouches:  map[string][]*AgentDelegation{},
+		withdraw: map[string][]*VouchWithdraw{},
 	}
 }
 
@@ -38,6 +42,12 @@ func (m *memResolver) DeviceRevokeFor(p []byte) (*DeviceRevoke, bool) {
 func (m *memResolver) Attestation(p []byte) (*IdentityAttestation, bool) {
 	a, ok := m.atts[string(p)]
 	return a, ok
+}
+func (m *memResolver) AgentDelegations(p []byte) []*AgentDelegation {
+	return m.vouches[string(p)]
+}
+func (m *memResolver) VouchWithdraws(p []byte) []*VouchWithdraw {
+	return m.withdraw[string(p)]
 }
 
 // chain builds a full member → device → session chain (v2: no household root)

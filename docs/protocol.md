@@ -19,41 +19,70 @@ device key). Two identity systems never mix: Capsule identity ≠ Cairn/househol
 
 ## 1. Identity & keys
 
-Three tiers, one chain, no key ever copied — each identity generates its own keypair and holds only
-its own private key; trust propagates as signed attestations.
+v2 trust model ([adrs/0013](adrs/0013-pubkey-identity-no-household.md)): identity is a
+self-sovereign member key at the top of its own device-delegation tree. No key is
+ever copied — each identity generates its own keypair and holds only its own
+private key; trust propagates as signed attestations.
 
 ```
-household root        Ed25519, offline (steel). Signs identity attestations ONLY. `origin` = its pubkey.
-   │ identity_attestation (signed by household root)
-member root / service Ed25519. kind=human|agent (room members) | service (plumbing, not a member).
-   │ device_delegation (signed by the member root)
+member root           Ed25519, self-sovereign. kind=human|agent (room members) | service
+                      (plumbing, not a member). Self-attests its profile; signs its FIRST
+                      device delegation, then goes offline (browser: derived from the
+                      24-word recovery phrase, never persisted).
+   │ identity_attestation (self-signed by the member root)
+   │ device_delegation (signed by the member root for the first device)
 device / instance key Ed25519 (browser: a WebAuthn passkey). One per device/instance.
+                      Later devices are paired from an existing device, whose key signs
+                      as parent — devices form a TREE, and revocation cascades.
+   │ device_delegation (signed by the parent device)
    │ session_delegation (browser only; signed by the passkey)   [web two-tier signing]
 session key           WebCrypto Ed25519, short-lived (~hours). Signs chat-rate events.
 ```
 
+Agents are delegated principals ([adrs/0017](adrs/0017-agent-delegation.md)): an agent
+is its own member (own root, name, rooms), NOT a device in anyone's tree. Ownership
+is stated by the agent (`operated_by`) and proven by vouches from its operator's devices.
+
 ### Identity-log objects (CBOR, content-addressed, fetched by hash)
 
 ```
-identity_attestation { pubkey, kind, origin, operated_by, display_name, issued_at, sig }
-    # sig = Ed25519 by household root over deterministic-CBOR of the rest. kind & origin are IMMUTABLE.
-device_delegation    { device_pub, member_pub, issued_at, expires_at?, sig }
-    # sig = Ed25519 by member_pub.
+identity_attestation { pubkey, kind, operated_by, display_name, issued_at, sig }
+    # SELF-signed by pubkey. operated_by names the operating human for kind=agent,
+    # nil otherwise. Latest issued_at wins the profile (ties: greatest content
+    # hash); kind is earliest-issued-wins.
+device_delegation    { device_pub, parent_pub, issued_at, expires_at?, sig }
+    # sig = Ed25519 by parent_pub (member root for a first device, a device after that).
 session_delegation   { session_pub, device_pub, scope, expires_at, sig }   # browser only
     # sig = the passkey (WebAuthn). Verifiers accept the WebAuthn envelope (§2.3).
-device_revoke        { device_pub, member_pub, revoked_at, sig }           # sig by member_pub
+device_revoke        { device_pub, revoker_pub, revoked_at, sig }
+    # Binds only when revoker_pub is an ANCESTOR of device_pub; cascades to the
+    # whole subtree below it. Revocation wins over order/timestamp, forever.
+agent_delegation     { agent_pub, delegator_pub, operator_pub, issued_at, expires_at?, sig }
+    # A vouch: "device delegator_pub (mine) says agent_pub belongs to operator_pub".
+    # sig = Ed25519 by delegator_pub. Validates only while operator_pub equals the
+    # agent's attested operated_by (transfer voids old vouches); the delegator
+    # must resolve to the operator (or BE it — a durable, words-issued vouch).
+vouch_withdraw       { agent_pub, delegator_pub, withdrawn_at, sig }
+    # The delegator withdraws its OWN vouch; self-withdrawal is the only valid
+    # shape. Kills that delegator's vouches issued at or before withdrawn_at; a
+    # later re-vouch is live again.
 ```
 
-These live in the **household identity log** (their own append-only content-addressed set), *not* in
+These live in the **identity log** (their own append-only content-addressed set), *not* in
 a room. A client fetches one by hash (`GetIdentityObject`) the first time it meets an unknown sender.
 
-### Verifying a sender (one chain walk)
+### Verifying a sender (one chain walk, plus the agent proof)
 
 `sender_pub` (device or session) → its `device_delegation`/`session_delegation` → `member_root` →
-`identity_attestation` signed by a **household root the verifier recognizes** (`origin`). Reject if the
-chain doesn't terminate at a known root, if any sig fails, or if any link is expired/revoked. The
-`kind`/`origin`/`operated_by` for UI (agent badge, cross-household marking) come from the attestation
-— attested, not self-asserted.
+the member's CURRENT `identity_attestation` (see selection rule above). Reject if the
+chain doesn't terminate, if any sig fails, or if any link is expired/revoked. The
+`kind`/`operated_by` for UI (agent badge, unproven marking) come from the attestation.
+
+For `kind=agent`, one more step: the `operated_by` claim is PROVEN only while ≥1
+`agent_delegation` survives (valid sig, operator match, unexpired, not withdrawn,
+delegator live in the operator's tree). A proven agent resolves with its vouches;
+an unproven one still resolves — proof is a state, not an error — and clients
+show the honest state.
 
 ---
 

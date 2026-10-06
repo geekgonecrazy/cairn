@@ -1680,8 +1680,14 @@ type ResolveSenderResponse struct {
 	// makes the sender invalid, so sending only the sender's own revoke would let
 	// a client accept a device whose parent was revoked underneath it.
 	DeviceRevokes [][]byte `protobuf:"bytes,6,rep,name=device_revokes,json=deviceRevokes,proto3" json:"device_revokes,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// Vouches for the agent, present only when the attestation names kind=agent.
+	// The client verifies each one itself (delegator signature, operator match,
+	// expiry, withdrawal, delegator liveness) — an agent is proven while at
+	// least one survives. Same lookup-not-assertion contract as the rest.
+	AgentDelegations [][]byte `protobuf:"bytes,7,rep,name=agent_delegations,json=agentDelegations,proto3" json:"agent_delegations,omitempty"`
+	VouchWithdraws   [][]byte `protobuf:"bytes,8,rep,name=vouch_withdraws,json=vouchWithdraws,proto3" json:"vouch_withdraws,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *ResolveSenderResponse) Reset() {
@@ -1738,6 +1744,20 @@ func (x *ResolveSenderResponse) GetDeviceDelegations() [][]byte {
 func (x *ResolveSenderResponse) GetDeviceRevokes() [][]byte {
 	if x != nil {
 		return x.DeviceRevokes
+	}
+	return nil
+}
+
+func (x *ResolveSenderResponse) GetAgentDelegations() [][]byte {
+	if x != nil {
+		return x.AgentDelegations
+	}
+	return nil
+}
+
+func (x *ResolveSenderResponse) GetVouchWithdraws() [][]byte {
+	if x != nil {
+		return x.VouchWithdraws
 	}
 	return nil
 }
@@ -1928,12 +1948,14 @@ const file_cairn_proto_rawDesc = "" +
 	"\amembers\x18\x01 \x03(\v2\x19.cairn.v1.SpaceMemberInfoR\amembers\"5\n" +
 	"\x14ResolveSenderRequest\x12\x1d\n" +
 	"\n" +
-	"sender_pub\x18\x01 \x01(\fR\tsenderPub\"\xec\x01\n" +
+	"sender_pub\x18\x01 \x01(\fR\tsenderPub\"\xc2\x02\n" +
 	"\x15ResolveSenderResponse\x12-\n" +
 	"\x12session_delegation\x18\x01 \x01(\fR\x11sessionDelegation\x12 \n" +
 	"\vattestation\x18\x03 \x01(\fR\vattestation\x12-\n" +
 	"\x12device_delegations\x18\x05 \x03(\fR\x11deviceDelegations\x12%\n" +
-	"\x0edevice_revokes\x18\x06 \x03(\fR\rdeviceRevokesJ\x04\b\x02\x10\x03J\x04\b\x04\x10\x05R\x11device_delegationR\rdevice_revoke\"9\n" +
+	"\x0edevice_revokes\x18\x06 \x03(\fR\rdeviceRevokes\x12+\n" +
+	"\x11agent_delegations\x18\a \x03(\fR\x10agentDelegations\x12'\n" +
+	"\x0fvouch_withdraws\x18\b \x03(\fR\x0evouchWithdrawsJ\x04\b\x02\x10\x03J\x04\b\x04\x10\x05R\x11device_delegationR\rdevice_revoke\"9\n" +
 	"\x18ListMemberDevicesRequest\x12\x1d\n" +
 	"\n" +
 	"member_pub\x18\x01 \x01(\fR\tmemberPub\"<\n" +

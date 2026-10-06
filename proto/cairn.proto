@@ -285,6 +285,13 @@ message ResolveSenderResponse {
   // a client accept a device whose parent was revoked underneath it.
   repeated bytes device_revokes = 6;
 
+  // Vouches for the agent, present only when the attestation names kind=agent.
+  // The client verifies each one itself (delegator signature, operator match,
+  // expiry, withdrawal, delegator liveness) — an agent is proven while at
+  // least one survives. Same lookup-not-assertion contract as the rest.
+  repeated bytes agent_delegations = 7;
+  repeated bytes vouch_withdraws = 8;
+
   reserved 2, 4; // singular device_delegation / device_revoke, pre-tree
   reserved "device_delegation", "device_revoke";
 }

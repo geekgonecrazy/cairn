@@ -6,7 +6,8 @@ style (Context → Decision → Consequences). Each is a decision reflected in t
 *built* system.
 
 They are numbered **chronologically**: 0001–0012 are the foundational decisions
-(≈2026-07-18), 0013–0016 are the v2 trust-model decisions (2026-07-24). Designs that
+(≈2026-07-18), 0013–0016 are the v2 trust-model decisions (2026-07-24), and 0017
+is the agent-delegation decision (2026-10-06). Designs that
 were tried and superseded along the way (household roots, the CLI founding flow) are
 noted in the ADR that replaced them; each record captures the decision and its context
 on its own. These ADRs are the current, authoritative view.
@@ -29,6 +30,7 @@ on its own. These ADRs are the current, authoritative view.
 | [0014](0014-relay-operational-admission.md) | The relay is convenience, not authority: allow-list + single-use invites | 2026-07-24 |
 | [0015](0015-relay-directory-edge-trust.md) | The relay directory enables add-by-name; trust is decided at the edge | 2026-07-24 |
 | [0016](0016-transport-seam.md) | Transports plug into one interface; the node treats them uniformly | 2026-07-24 |
+| [0017](0017-agent-delegation.md) | Agents are delegated principals: human-signed vouches, transfer by re-attestation | 2026-10-06 |
 
 Status values: **Accepted** (in force). A decision later replaced gets a new ADR
 and the old one is marked **Superseded by ADR-NNNN**.

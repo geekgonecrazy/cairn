@@ -22,7 +22,7 @@ import {
   mnemonicToSeedSync,
 } from '@scure/bip39'
 import { wordlist } from '@scure/bip39/wordlists/english.js'
-import { encode as cborEncode, type CborValue } from './cbor'
+import { encode as cborEncode, decode as cborDecode, type CborValue } from './cbor'
 
 /** 24 words = 256 bits of entropy. Shorter phrases are rejected, not stretched. */
 export const MNEMONIC_WORDS = 24
@@ -40,6 +40,8 @@ export const TYPE_ATTESTATION = 'identity_attestation'
 export const TYPE_DEVICE_DELEGATION = 'device_delegation'
 export const TYPE_SESSION_DELEGATION = 'session_delegation'
 export const TYPE_DEVICE_REVOKE = 'device_revoke'
+export const TYPE_AGENT_DELEGATION = 'agent_delegation'
+export const TYPE_VOUCH_WITHDRAW = 'vouch_withdraw'
 
 export interface KeyPair {
   pub: Uint8Array
@@ -108,6 +110,30 @@ export function newMemberRoot(): { mnemonic: string; keys: KeyPair } {
   return { mnemonic, keys: memberRootFromMnemonic(mnemonic) }
 }
 
+/** Domain separation label. MUST match identity/standalone.go. */
+const HKDF_INFO_STANDALONE_DEVICE = 'cairn/standalone-device/v1'
+
+/**
+ * Derive the device key a standalone participant (agent harness, CLI) signs
+ * with, from the 32-byte root seed it holds. Derived rather than random so it
+ * is STABLE: the harness keeps one secret, and the device key room keys wrap
+ * to is the same every time it starts. MUST match Go's StandaloneDeviceKey —
+ * pinned by conformance.
+ *
+ * Go feeds the full 64-byte private key (seed || pubkey) to HKDF, so this
+ * expands the seed the same way before deriving.
+ */
+export function standaloneDeviceKey(rootSeed: Uint8Array): KeyPair {
+  if (rootSeed.length !== 32) throw new Error('root seed must be 32 bytes')
+  const pub = ed25519.getPublicKey(rootSeed)
+  const ikm = new Uint8Array(64)
+  ikm.set(rootSeed, 0)
+  ikm.set(pub, 32)
+  const info = new TextEncoder().encode(HKDF_INFO_STANDALONE_DEVICE)
+  const sk = hkdf(sha512, ikm, undefined, info, 32)
+  return { priv: sk, pub: ed25519.getPublicKey(sk) }
+}
+
 // --- identity-log objects -------------------------------------------------
 
 export interface IdentityAttestation {
@@ -147,6 +173,30 @@ export interface DeviceRevoke {
    *  stranger can sign one, and every verifier will ignore it. */
   revoker_pub: Uint8Array
   revoked_at: bigint
+  sig: Uint8Array | null
+}
+
+export interface AgentDelegation {
+  type: string // always TYPE_AGENT_DELEGATION; signed
+  agent_pub: Uint8Array
+  /** The vouching device key — a device in the operator's tree, or the
+   *  operator root itself for a durable, words-issued vouch. */
+  delegator_pub: Uint8Array
+  /** Must equal the agent's attested operated_by at verify time. That is the
+   *  whole transfer story: re-attest, get vouched, old vouches void. */
+  operator_pub: Uint8Array
+  issued_at: bigint
+  expires_at?: bigint // omitted when 0, matching Go's `omitempty`
+  sig: Uint8Array | null
+}
+
+export interface VouchWithdraw {
+  type: string // always TYPE_VOUCH_WITHDRAW; signed
+  agent_pub: Uint8Array
+  /** The vouch being withdrawn — and the ONLY valid signer. Self-withdrawal is
+   *  the only shape verifiers accept. */
+  delegator_pub: Uint8Array
+  withdrawn_at: bigint
   sig: Uint8Array | null
 }
 
@@ -416,5 +466,235 @@ export function verifyDeviceDelegation(dd: DeviceDelegation): boolean {
     )
   } catch {
     return false
+  }
+}
+
+/**
+ * Vouch an agent to its operator: "this device (mine) says this agent belongs
+ * to this operator." Signed by the delegator's key — no member-root words, so
+ * this runs from any logged-in device.
+ *
+ * The operator MUST be the agent's attested operated_by at verify time; a
+ * vouch naming anyone else is void. Minting still accepts any 32-byte operator
+ * (the check happens against the attestation, where transfer voids old
+ * vouches) — but minting without one is meaningless, so it is refused here.
+ */
+export function issueAgentVouch(
+  agentPub: Uint8Array,
+  delegatorPub: Uint8Array,
+  delegatorPriv: Uint8Array,
+  operatorPub: Uint8Array,
+  issuedAt: bigint,
+  expiresAt: bigint = 0n,
+): AgentDelegation {
+  if (agentPub.length !== 32) throw new Error('agent pubkey must be 32 bytes')
+  if (delegatorPub.length !== 32) throw new Error('delegator pubkey must be 32 bytes')
+  if (operatorPub.length !== 32) throw new Error('operator pubkey must be 32 bytes')
+  if (samePub(agentPub, delegatorPub)) throw new Error('a key cannot vouch itself as an agent')
+  if (expiresAt !== 0n && expiresAt <= issuedAt) {
+    throw new Error('expires_at must be after issued_at')
+  }
+  const obj: Record<string, unknown> = {
+    type: TYPE_AGENT_DELEGATION,
+    agent_pub: agentPub,
+    delegator_pub: delegatorPub,
+    operator_pub: operatorPub,
+    issued_at: issuedAt,
+    sig: null,
+  }
+  // Go uses `omitempty` on expires_at: 0 must be ABSENT, not encoded as 0.
+  if (expiresAt !== 0n) obj.expires_at = expiresAt
+  return signObject(obj, delegatorPriv, TYPE_AGENT_DELEGATION) as unknown as AgentDelegation
+}
+
+/**
+ * Withdraw the delegator's OWN vouch for an agent. Self-withdrawal is the only
+ * valid shape — signing with anyone else's key produces an object every
+ * verifier ignores. Withdrawing every vouch un-proves the agent with no path
+ * back by itself.
+ */
+export function withdrawVouch(
+  agentPub: Uint8Array,
+  delegatorPub: Uint8Array,
+  delegatorPriv: Uint8Array,
+  withdrawnAt: bigint,
+): VouchWithdraw {
+  if (agentPub.length !== 32) throw new Error('agent pubkey must be 32 bytes')
+  if (delegatorPub.length !== 32) throw new Error('delegator pubkey must be 32 bytes')
+  return signObject(
+    {
+      type: TYPE_VOUCH_WITHDRAW,
+      agent_pub: agentPub,
+      delegator_pub: delegatorPub,
+      withdrawn_at: withdrawnAt,
+      sig: null,
+    },
+    delegatorPriv,
+    TYPE_VOUCH_WITHDRAW,
+  ) as unknown as VouchWithdraw
+}
+
+/** Verify a vouch against the delegator device that signed it. Proves only
+ *  that the delegator vouched — NOT that it belongs to the named operator
+ *  (the chain walk's job) or that the agent still names that operator (the
+ *  attestation's job). */
+export function verifyAgentDelegation(d: AgentDelegation): boolean {
+  const sig = d.sig
+  if (!sig || sig.length !== 64 || d.delegator_pub?.length !== 32) return false
+  try {
+    return ed25519.verify(
+      sig,
+      signingBytes(d as unknown as Record<string, unknown>, TYPE_AGENT_DELEGATION),
+      d.delegator_pub,
+    )
+  } catch {
+    return false
+  }
+}
+
+/** Verify a withdrawal against the delegator withdrawing its own vouch. */
+export function verifyVouchWithdraw(w: VouchWithdraw): boolean {
+  const sig = w.sig
+  if (!sig || sig.length !== 64 || w.delegator_pub?.length !== 32) return false
+  try {
+    return ed25519.verify(
+      sig,
+      signingBytes(w as unknown as Record<string, unknown>, TYPE_VOUCH_WITHDRAW),
+      w.delegator_pub,
+    )
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Does any withdrawal cover this vouch — signed by the vouch's own delegator,
+ * naming this agent, timestamped at or after the vouch's issuance? A withdraw
+ * kills vouches issued at or before it; a later re-vouch is live, so
+ * withdrawing can never permanently lock an operator out of re-proving.
+ */
+export function vouchWithdrawn(vouch: AgentDelegation, withdraws: VouchWithdraw[]): boolean {
+  for (const w of withdraws) {
+    if (!verifyVouchWithdraw(w)) continue
+    if (!samePub(w.agent_pub, vouch.agent_pub) || !samePub(w.delegator_pub, vouch.delegator_pub)) {
+      continue
+    }
+    if (w.withdrawn_at >= vouch.issued_at) return true
+  }
+  return false
+}
+
+// --- handoff bundle ----------------------------------------------------------
+//
+// The show-once artifact a human hands an agent harness: everything the
+// harness needs to bootstrap as the agent, and nothing else. `cairn:agent:1:`
+// + base64url(det-CBOR). The agent's root SEED is the only secret in it —
+// treat it like a password. It is also the recovery: the same seed re-derives
+// the root and (via standaloneDeviceKey) the device, so keep it somewhere safe.
+
+export const BUNDLE_PREFIX = 'cairn:agent:1:'
+
+export interface HandoffBundle {
+  /** 32-byte agent root seed. THE secret — shown once, never persisted by us. */
+  agent_seed: Uint8Array
+  /** Relay base URL the harness dials (e.g. https://relay:8099). */
+  relay_url: string
+  /** Relay pubkey the harness pins. */
+  relay_pub: Uint8Array
+  /** Invite for the agent on an invite-only relay; '' on an open one. */
+  invite: string
+  /** The agent's objects, so the harness can verify AND publish them itself. */
+  attestation: Uint8Array
+  device_delegation: Uint8Array
+  vouch: Uint8Array
+  /** Display convenience only — the attestation names the agent. */
+  agent_name: string
+}
+
+/** Mint the handoff bundle. The seed MUST be the agent root's 32-byte seed. */
+export function encodeHandoffBundle(b: HandoffBundle): string {
+  if (b.agent_seed.length !== 32) throw new Error('agent seed must be 32 bytes')
+  if (b.relay_pub.length !== 32) throw new Error('relay pubkey must be 32 bytes')
+  const body = cborEncode({
+    agent_seed: b.agent_seed,
+    relay_url: b.relay_url,
+    relay_pub: b.relay_pub,
+    invite: b.invite,
+    attestation: b.attestation,
+    device_delegation: b.device_delegation,
+    vouch: b.vouch,
+    agent_name: b.agent_name,
+  } as CborValue)
+  return BUNDLE_PREFIX + b64url(body)
+}
+
+/**
+ * Decode AND validate a bundle: structure, cross-checks (seed → root →
+ * device → delegation; vouch operator == attested operated_by), and every
+ * signature. A harness MUST adopt through this, never by trusting the bytes —
+ * the bundle crossed a clipboard/QR gap and may be corrupt or hostile.
+ */
+export function parseHandoffBundle(s: string): HandoffBundle {
+  const t = s.trim()
+  if (!t.startsWith(BUNDLE_PREFIX)) throw new Error('Not a Cairn agent bundle.')
+  let raw: unknown
+  try {
+    raw = cborDecode(unb64url(t.slice(BUNDLE_PREFIX.length)))
+  } catch {
+    throw new Error('Malformed agent bundle.')
+  }
+  const o = raw as Record<string, unknown>
+  const bytes = (k: string, n: number): Uint8Array => {
+    const v = o[k]
+    if (!(v instanceof Uint8Array) || v.length !== n) throw new Error(`Agent bundle: ${k} must be ${n} bytes.`)
+    return v
+  }
+  const seed = bytes('agent_seed', 32)
+  const relayPub = bytes('relay_pub', 32)
+  if (typeof o['relay_url'] !== 'string' || !o['relay_url']) throw new Error('Agent bundle: missing relay_url.')
+  if (typeof o['invite'] !== 'string') throw new Error('Agent bundle: missing invite.')
+  if (typeof o['agent_name'] !== 'string') throw new Error('Agent bundle: missing agent_name.')
+  const attRaw = o['attestation']
+  const ddRaw = o['device_delegation']
+  const vouchRaw = o['vouch']
+  if (!(attRaw instanceof Uint8Array) || !(ddRaw instanceof Uint8Array) || !(vouchRaw instanceof Uint8Array)) {
+    throw new Error('Agent bundle: missing identity objects.')
+  }
+
+  // Cross-checks: the objects must describe THIS seed, not just any agent.
+  const rootPub = ed25519.getPublicKey(seed)
+  const device = standaloneDeviceKey(seed)
+  let att: IdentityAttestation
+  let dd: DeviceDelegation
+  let vouch: AgentDelegation
+  try {
+    att = cborDecode(attRaw) as unknown as IdentityAttestation
+    dd = cborDecode(ddRaw) as unknown as DeviceDelegation
+    vouch = cborDecode(vouchRaw) as unknown as AgentDelegation
+  } catch {
+    throw new Error('Agent bundle: undecodable identity objects.')
+  }
+  if (!verifyAttestation(att) || !samePub(att.pubkey, rootPub)) {
+    throw new Error('Agent bundle: attestation does not verify for this seed.')
+  }
+  if (att.kind !== 'agent') throw new Error('Agent bundle: attestation is not kind=agent.')
+  if (!verifyDeviceDelegation(dd) || !samePub(dd.device_pub, device.pub) || !samePub(dd.parent_pub, rootPub)) {
+    throw new Error('Agent bundle: device delegation does not match this seed.')
+  }
+  if (!verifyAgentDelegation(vouch) || !samePub(vouch.agent_pub, rootPub)) {
+    throw new Error('Agent bundle: vouch does not verify for this agent.')
+  }
+  if (!samePub(vouch.operator_pub, att.operated_by!)) {
+    throw new Error('Agent bundle: vouch names a different operator than the attestation.')
+  }
+  return {
+    agent_seed: seed,
+    relay_url: o['relay_url'] as string,
+    relay_pub: relayPub,
+    invite: o['invite'] as string,
+    attestation: attRaw,
+    device_delegation: ddRaw,
+    vouch: vouchRaw,
+    agent_name: o['agent_name'] as string,
   }
 }

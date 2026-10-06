@@ -103,6 +103,32 @@ func storeIdentityObject(blob []byte) ([]byte, error) {
 		}
 		return identityHash(&dr)
 
+	case identity.TypeAgentDelegation:
+		var ad identity.AgentDelegation
+		if err := identity.Unmarshal(blob, &ad); err != nil {
+			return nil, fmt.Errorf("decode agent delegation: %w", err)
+		}
+		if !identity.VerifyAgentDelegation(&ad) {
+			return nil, errors.New("agent delegation signature does not verify")
+		}
+		if err := st.PutAgentDelegation(&ad); err != nil {
+			return nil, err
+		}
+		return identityHash(&ad)
+
+	case identity.TypeVouchWithdraw:
+		var vw identity.VouchWithdraw
+		if err := identity.Unmarshal(blob, &vw); err != nil {
+			return nil, fmt.Errorf("decode vouch withdrawal: %w", err)
+		}
+		if !identity.VerifyVouchWithdraw(&vw) {
+			return nil, errors.New("vouch withdrawal signature does not verify")
+		}
+		if err := st.PutVouchWithdraw(&vw); err != nil {
+			return nil, err
+		}
+		return identityHash(&vw)
+
 	default:
 		return nil, fmt.Errorf("unknown identity object type %q", tag)
 	}
@@ -294,6 +320,22 @@ func (CairnController) ResolveSender(
 	if att, ok := st.Attestation(memberPub); ok {
 		if b, err := identity.Marshal(att); err == nil {
 			out.Attestation = b
+		}
+		// An agent's operated_by claim is proven only by vouches from its
+		// operator's tree, which the client verifies itself — so hand over the
+		// whole vouch set for this agent, same lookup-not-assertion contract as
+		// everything else in this response.
+		if att.Kind == identity.KindAgent {
+			for _, d := range st.AgentDelegations(memberPub) {
+				if b, err := identity.Marshal(d); err == nil {
+					out.AgentDelegations = append(out.AgentDelegations, b)
+				}
+			}
+			for _, w := range st.VouchWithdraws(memberPub) {
+				if b, err := identity.Marshal(w); err == nil {
+					out.VouchWithdraws = append(out.VouchWithdraws, b)
+				}
+			}
 		}
 	}
 

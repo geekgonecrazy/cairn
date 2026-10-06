@@ -35,6 +35,14 @@ func TestVerifiersRejectOtherObjectTypes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("revoke: %v", err)
 	}
+	ad, err := IssueAgentVouch(device.Pub, member.Pub, member.Priv, member.Pub, testNow, 0)
+	if err != nil {
+		t.Fatalf("vouch: %v", err)
+	}
+	vw, err := WithdrawVouch(device.Pub, member.Pub, member.Priv, testNow+1)
+	if err != nil {
+		t.Fatalf("withdraw: %v", err)
+	}
 
 	// Each object verifies as itself.
 	if !VerifyAttestation(att) {
@@ -49,6 +57,12 @@ func TestVerifiersRejectOtherObjectTypes(t *testing.T) {
 	if !VerifyDeviceRevoke(dr) {
 		t.Error("device revoke does not self-verify")
 	}
+	if !VerifyAgentDelegation(ad) {
+		t.Error("agent delegation does not self-verify")
+	}
+	if !VerifyVouchWithdraw(vw) {
+		t.Error("vouch withdrawal does not self-verify")
+	}
 
 	// Cross-decoding: marshal each object, decode it as every OTHER type, and
 	// require the verification to fail.
@@ -57,6 +71,8 @@ func TestVerifiersRejectOtherObjectTypes(t *testing.T) {
 		"device_delegation":  dd,
 		"session_delegation": sd,
 		"device_revoke":      dr,
+		"agent_delegation":   ad,
+		"vouch_withdraw":     vw,
 	}
 	for name, obj := range objs {
 		blob, err := Marshal(obj)
@@ -86,6 +102,18 @@ func TestVerifiersRejectOtherObjectTypes(t *testing.T) {
 			var o DeviceRevoke
 			if Unmarshal(blob, &o) == nil && VerifyDeviceRevoke(&o) {
 				t.Errorf("%s verified as a device revoke", name)
+			}
+		}
+		if name != "agent_delegation" {
+			var o AgentDelegation
+			if Unmarshal(blob, &o) == nil && VerifyAgentDelegation(&o) {
+				t.Errorf("%s verified as an agent delegation", name)
+			}
+		}
+		if name != "vouch_withdraw" {
+			var o VouchWithdraw
+			if Unmarshal(blob, &o) == nil && VerifyVouchWithdraw(&o) {
+				t.Errorf("%s verified as a vouch withdrawal", name)
 			}
 		}
 	}

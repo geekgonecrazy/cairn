@@ -4,6 +4,7 @@
   import QRCode from 'qrcode'
   import Icon from '../Icon.svelte'
   import QrScanner from './QrScanner.svelte'
+  import AgentsTab from './AgentsTab.svelte'
   import { identity } from '../identity.svelte'
   import {
     admitDevice,
@@ -23,7 +24,7 @@
 
   let { onclose }: { onclose: () => void } = $props()
 
-  type Tab = 'identity' | 'members' | 'devices' | 'pair'
+  type Tab = 'identity' | 'members' | 'devices' | 'pair' | 'agents'
   let tab = $state<Tab>('identity')
 
   async function copy(s: string) {
@@ -245,6 +246,7 @@
       Devices{devices.length ? ` (${devices.length})` : ''}
     </button>
     <button class:on={tab === 'pair'} onclick={() => (tab = 'pair')}>Pair</button>
+    <button class:on={tab === 'agents'} onclick={() => (tab = 'agents')}>Agents</button>
   </nav>
 
   <div class="body">
@@ -454,6 +456,9 @@
           Fingerprint <span class="mono">{fingerprint(id.devicePub)}</span>
         </div>
       </section>
+
+    {:else if tab === 'agents'}
+      <AgentsTab />
     {/if}
   </div>
 </div>

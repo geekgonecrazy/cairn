@@ -430,7 +430,58 @@ member secret — the one thing that makes revoking it meaningless.
 - Re-keying on revoke covers rooms THIS device holds keys to. A room whose only key-holder is the
   revoked device stays readable to it until another member rotates.
 
+### Agent delegation: human-signed vouches, transfer by re-attestation — done 2026-10-06
+
+- [x] **Trust foundation** ([adrs/0017](adrs/0017-agent-delegation.md)): `operated_by` stops being
+      self-declared. Two new identity-log objects — `agent_delegation` (a device vouches an agent
+      to an operator it names) and `vouch_withdraw` (self-withdrawal only) — with Go + browser
+      byte parity pinned by new conformance vectors. `VerifySender` resolves agents with a proof
+      state (`proven` / `unproven` / `na`); an unproven agent still resolves, honestly.
+- [x] **Multi-device redundancy**: vouch from every live device; revoking one removes one vouch,
+      never the agent. Root-signed (words-issued) vouches are the durable option the cascade
+      cannot touch.
+- [x] **Transfer**: the agent re-attests to a new operator, the new operator vouches, old vouches
+      void automatically (operator mismatch). No new object, no old-owner cooperation, no hijack.
+- [x] **Attestation supersession**: latest `issued_at` wins the profile (ties: greatest hash),
+      kind earliest-wins — order-independent across replicas; insert-time kind rejection removed.
+- [x] **Carrier + client**: `PutIdentityObject` files both types; `ResolveSender` returns the
+      agent's vouch set; the browser re-verifies every vouch itself (with a cycle guard) and
+      renders unproven agents as `Name (unproven)`; rosters keep the attested kind.
+- [x] Session-delegation tag now checked first in the browser walk (it wasn't — a mislabeled
+      object could verify as the wrong shape).
+
+### Agent creation, handoff & e2e — done 2026-10-06
+
+- [x] **Creation UI** (DevicesModal → Agents tab): name → mint member root + derived device +
+      self-attestation (`kind=agent`, `operated_by` = you) + your device-signed vouch, all
+      published with loud failure. No words anywhere. `cairn-my-agents` keeps PUBLIC material
+      only (agent pub, device pub, vouch) — the agent's key is never persisted here.
+- [x] **Show-once handoff bundle** (`cairn:agent:1:…`, QR + copy + fingerprint): seed, relay URL +
+      pinned relay pubkey, invite slot, and the three objects. Parse validates everything
+      (seed → root → device → delegation, vouch operator == attested `operated_by`). The bundle
+      IS the recovery — dismissing forgets it on purpose.
+- [x] **Harness adoption** (`cmd/agent -adopt <bundle> -keys …`): validates, writes the key file
+      (refuses to clobber a different key), publishes the objects idempotently, pins the relay
+      against `RelayInfo`, redeems the invite when present, exits. Adopt once, run many times.
+- [x] **E2E proof** (`npm run e2e-agent`, live cairnd): human mints via the UI-identical calls →
+      bundle round-trips → real `-adopt` → human admits agent to a room → agent unwraps, posts →
+      peer resolves **PROVEN** (vouches=1, right operator, right name) → withdraw → **UNPROVEN**
+      (still resolves) → transfer to a second human → **PROVEN** (operator moved, old vouch void).
+      Deleted the dead `ui-agent-job.ts` (called the removed `cairnctl attest`).
+
+**Honest limits of this slice:**
+
+- On an **invite-only relay** the agent still needs its own admission (`cairnctl allow <agent key>`,
+  shown in the UI) — operator-based admission ("carried because its operator is") stays a
+  deliberate policy decision, not smuggled in.
+- Pre-existing breakage, untouched: `npm run e2e` / `e2e-pairing` import `provisionMember`,
+  which no longer exists — both fail before doing anything. They belong to the household era.
+
 **Not yet — the rest of Phase 4:**
+
+- [ ] **Operator-based admission (policy decision).** An agent is still admitted as its own member
+      root — `enforceAccess` and `admit_kind` know nothing of operators. Carrying an agent
+      *because its operator is carried* is a deliberate loosening, not yet decided.
 
 - [ ] **Channel membership has no fold-time authorization.** `core/rooms.go` folds `MEMBER_ADD` /
       `MEMBER_REMOVE` with only a length check — no check the sender belongs to the room. The

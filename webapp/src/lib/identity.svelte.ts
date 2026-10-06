@@ -54,6 +54,10 @@ class IdentityState {
     const t = directory.get(senderPubHex)
     switch (t.state) {
       case 'verified':
+        // An agent whose operator no one vouched for still resolves — and still
+        // shows its name — but flagged, the same honest-state doctrine as a
+        // revoked device: hiding it would be dishonest in both directions.
+        if (t.kind === 'agent' && t.agentProven === false) return `${t.name} (unproven)`
         return t.name
       case 'revoked':
         // Named, but flagged: the message is real history from a key its member

@@ -72,6 +72,11 @@ type Store interface {
 	PutDeviceDelegation(*identity.DeviceDelegation) error
 	PutSessionDelegation(*identity.SessionDelegation) error
 	PutDeviceRevoke(*identity.DeviceRevoke) error
+	// PutAgentDelegation files one vouch for an agent; many devices may vouch
+	// for the same agent, and each row is kept (VerifySender filters).
+	PutAgentDelegation(*identity.AgentDelegation) error
+	// PutVouchWithdraw files one self-withdrawal of a vouch.
+	PutVouchWithdraw(*identity.VouchWithdraw) error
 	// GetIdentityObject returns the raw CBOR of an identity-log object by its
 	// BLAKE3 hash (serves GetIdentityObject over the wire).
 	GetIdentityObject(hash []byte) ([]byte, error)

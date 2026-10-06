@@ -18,6 +18,8 @@ const (
 	objDeviceDelegation = "device_delegation"
 	objSessionDeleg     = "session_delegation"
 	objDeviceRevoke     = "device_revoke"
+	objAgentDelegation  = "agent_delegation"
+	objVouchWithdraw    = "vouch_withdraw"
 )
 
 // putIdentityObject stores one object. parentPub is the delegation's parent for
@@ -50,6 +52,12 @@ func (s *Store) PutSessionDelegation(d *identity.SessionDelegation) error {
 }
 func (s *Store) PutDeviceRevoke(d *identity.DeviceRevoke) error {
 	return s.putIdentityObject(objDeviceRevoke, d.DevicePub, nil, d)
+}
+func (s *Store) PutAgentDelegation(d *identity.AgentDelegation) error {
+	return s.putIdentityObject(objAgentDelegation, d.AgentPub, nil, d)
+}
+func (s *Store) PutVouchWithdraw(w *identity.VouchWithdraw) error {
+	return s.putIdentityObject(objVouchWithdraw, w.AgentPub, nil, w)
 }
 
 // DevicesUnder returns every non-revoked device key in memberPub's tree, at any
@@ -150,6 +158,35 @@ func (s *Store) lookup(objType string, subjectPub []byte, out any) bool {
 	return cbor.Unmarshal(blob, out) == nil
 }
 
+// lookupAll fetches EVERY object of a type authorizing subjectPub. Subjects
+// with genuine multiplicity — a member's attestations over time, an agent's
+// vouches from many devices — need the whole set for order-independent
+// selection (CurrentAttestation, vouch filtering), never LIMIT 1. Rows that
+// fail to decode are skipped: VerifySender re-verifies everything it uses, and
+// one corrupt row must not hide the rest.
+func (s *Store) lookupAll(objType string, subjectPub []byte, newObj func() any) []any {
+	rows, err := s.db.Query(
+		`SELECT cbor FROM identity_log WHERE obj_type=? AND subject_pub=?`, objType, subjectPub,
+	)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []any
+	for rows.Next() {
+		var blob []byte
+		if err := rows.Scan(&blob); err != nil {
+			continue
+		}
+		obj := newObj()
+		if cbor.Unmarshal(blob, obj) != nil {
+			continue
+		}
+		out = append(out, obj)
+	}
+	return out
+}
+
 // --- identity.Resolver ---
 
 func (s *Store) SessionDelegation(sessionPub []byte) (*identity.SessionDelegation, bool) {
@@ -186,9 +223,46 @@ func (s *Store) DeviceRevokeFor(devicePub []byte) (*identity.DeviceRevoke, bool)
 }
 
 func (s *Store) Attestation(memberPub []byte) (*identity.IdentityAttestation, bool) {
-	var a identity.IdentityAttestation
-	if !s.lookup(objAttestation, memberPub, &a) {
+	raw := s.lookupAll(objAttestation, memberPub, func() any { return &identity.IdentityAttestation{} })
+	cands := make([]*identity.IdentityAttestation, 0, len(raw))
+	for _, o := range raw {
+		if a, ok := o.(*identity.IdentityAttestation); ok {
+			cands = append(cands, a)
+		}
+	}
+	// A member may have published many attestations (rename, transfer): select
+	// the current one with the same order-independent rule every replica uses,
+	// never LIMIT 1.
+	att := identity.CurrentAttestation(cands)
+	if att == nil {
 		return nil, false
 	}
-	return &a, true
+	return att, true
+}
+
+// AgentDelegations implements identity.Resolver: every vouch filed for the
+// agent, decoded best-effort. VerifySender re-verifies each one and filters,
+// so undecodable rows are skipped here rather than failing the whole set.
+func (s *Store) AgentDelegations(agentPub []byte) []*identity.AgentDelegation {
+	raw := s.lookupAll(objAgentDelegation, agentPub, func() any { return &identity.AgentDelegation{} })
+	out := make([]*identity.AgentDelegation, 0, len(raw))
+	for _, o := range raw {
+		if d, ok := o.(*identity.AgentDelegation); ok {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// VouchWithdraws implements identity.Resolver, same best-effort contract as
+// AgentDelegations above.
+func (s *Store) VouchWithdraws(agentPub []byte) []*identity.VouchWithdraw {
+	raw := s.lookupAll(objVouchWithdraw, agentPub, func() any { return &identity.VouchWithdraw{} })
+	out := make([]*identity.VouchWithdraw, 0, len(raw))
+	for _, o := range raw {
+		if w, ok := o.(*identity.VouchWithdraw); ok {
+			out = append(out, w)
+		}
+	}
+	return out
 }

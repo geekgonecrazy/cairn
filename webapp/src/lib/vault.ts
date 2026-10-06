@@ -38,10 +38,15 @@ import {
   verifyDeviceDelegation,
   verifyAttestation as verifyAttestationSig,
   fingerprint,
+  issueAgentVouch,
+  withdrawVouch,
+  standaloneDeviceKey,
   type KeyPair,
   type DeviceDelegation,
   type DeviceRevoke,
   type IdentityAttestation,
+  type AgentDelegation,
+  type VouchWithdraw,
   type Kind,
 } from './identity'
 
@@ -51,6 +56,7 @@ const K_ATTESTATION = 'cairn-attestation'
 const K_DELEGATION = 'cairn-delegation'
 const K_DEVICE_LABEL = 'cairn-device-label'
 const K_PEER_DEVICES = 'cairn-peer-devices'
+const K_MY_AGENTS = 'cairn-my-agents'
 
 const b64 = (b: Uint8Array) => btoa(String.fromCharCode(...b))
 const unb64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0))
@@ -571,3 +577,117 @@ export function subtreeOf(devicePub: Uint8Array): Uint8Array[] {
 }
 
 export { fingerprint, hex }
+
+// --- my agents ---------------------------------------------------------------
+//
+// Agents THIS human created and vouched for. PUBLIC material only: the agent's
+// pubkey, its device pubkey, and our vouch. The agent's PRIVATE key is never
+// persisted here — it left in the show-once handoff bundle, and this device
+// does not need it: vouching, re-vouching and withdrawing all sign with OUR
+// device key, not the agent's.
+
+export interface MyAgent {
+  name: string
+  agentPub: Uint8Array
+  /** The agent's device pubkey (derived, stable) — for proof-status checks. */
+  devicePub: Uint8Array
+  /** Our vouch, as published. Withdrawing signs a new object from it. */
+  vouch: AgentDelegation
+  /** Set when we withdrew our vouch (local tombstone; the relay holds proof). */
+  withdrawnAt?: bigint
+}
+
+export function myAgents(): MyAgent[] {
+  const raw = localStorage.getItem(K_MY_AGENTS)
+  if (!raw) return []
+  try {
+    return decodeObj<MyAgent[]>(raw)
+  } catch {
+    return []
+  }
+}
+
+function saveMyAgents(list: MyAgent[]) {
+  localStorage.setItem(K_MY_AGENTS, encodeObj(list as unknown as Record<string, unknown>))
+}
+
+/** Remember an agent we just created and vouched for (public material only). */
+export function rememberAgent(a: MyAgent) {
+  const list = myAgents().filter((x) => hex(x.agentPub) !== hex(a.agentPub))
+  list.push(a)
+  saveMyAgents(list)
+}
+
+export function forgetAgent(agentPub: Uint8Array) {
+  saveMyAgents(myAgents().filter((x) => hex(x.agentPub) !== hex(agentPub)))
+}
+
+/**
+ * Mint an agent owned by this identity: a fresh member root, its derived
+ * device, its self-attestation (kind=agent, operated_by = us), and OUR vouch
+ * for it — signed by this device's key, so no words are needed.
+ *
+ * Returns everything the handoff bundle needs plus the vouch to publish. The
+ * agent root's seed is returned for the show-once bundle and MUST NOT be
+ * persisted: it goes out of scope with the creation form.
+ */
+export function mintAgent(
+  id: Identity,
+  name: string,
+  issuedAt: bigint,
+): {
+  seed: Uint8Array
+  attestation: IdentityAttestation
+  delegation: DeviceDelegation
+  vouch: AgentDelegation
+  devicePub: Uint8Array
+  agentPub: Uint8Array
+} {
+  const clean = name.trim()
+  if (!clean) throw new Error('Give the agent a name.')
+  const agent = newMemberRoot()
+  const seed = agent.keys.priv
+  const device = standaloneDeviceKey(seed)
+  const attestation = newSelfAttestation(agent.keys, 'agent', clean, id.memberPub, issuedAt)
+  const delegation = approvePairing(
+    newPairingRequest(device.pub, clean),
+    agent.keys.pub,
+    agent.keys.priv,
+    issuedAt,
+  )
+  const vouch = issueAgentVouch(
+    agent.keys.pub,
+    id.devicePub,
+    id.devicePriv,
+    id.memberPub,
+    issuedAt,
+  )
+  return {
+    seed,
+    attestation,
+    delegation,
+    vouch,
+    devicePub: device.pub,
+    agentPub: agent.keys.pub,
+  }
+}
+
+/**
+ * Withdraw OUR vouch for one of our agents. Signed by this device (the vouch's
+ * delegator) — self-withdrawal needs no authority beyond that. Withdrawing the
+ * last surviving vouch un-proves the agent with no path back by itself.
+ */
+export function withdrawAgentVouch(id: Identity, agent: MyAgent, withdrawnAt: bigint): VouchWithdraw {
+  if (hex(agent.vouch.delegator_pub) !== hex(id.devicePub)) {
+    throw new Error(
+      'This vouch was made by a different device. Withdraw it from the device that created the agent.',
+    )
+  }
+  const w = withdrawVouch(agent.agentPub, id.devicePub, id.devicePriv, withdrawnAt)
+  saveMyAgents(
+    myAgents().map((x) =>
+      hex(x.agentPub) === hex(agent.agentPub) ? { ...x, withdrawnAt } : x,
+    ),
+  )
+  return w
+}

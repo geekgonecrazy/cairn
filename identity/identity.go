@@ -101,6 +101,8 @@ const (
 	TypeDeviceDelegation  = "device_delegation"
 	TypeSessionDelegation = "session_delegation"
 	TypeDeviceRevoke      = "device_revoke"
+	TypeAgentDelegation   = "agent_delegation"
+	TypeVouchWithdraw     = "vouch_withdraw"
 )
 
 // typeHeader decodes just the discriminator, so a carrier can dispatch without
@@ -170,7 +172,7 @@ type SessionDelegation struct {
 
 // DeviceRevoke revokes a device delegation, signed by RevokerPub.
 //
-// A revoke binds only if the revoker is an ANCESTOR of the revoked device — its
+// A revoke binds only if the revoker is an ANCESTOR of its target — its
 // parent, its grandparent, or the member root at the top. Peers cannot revoke
 // each other: otherwise a stolen phone could revoke the laptop above it, which
 // would destroy the owner's access permanently (revoked keys can never be
@@ -184,10 +186,52 @@ type DeviceRevoke struct {
 	Sig        []byte `cbor:"sig"`
 }
 
+// AgentDelegation is a human's vouch for an agent: "this agent is mine".
+// Signed by the DELEGATOR, a device key in the operator's tree — never by the
+// member root a browser doesn't hold, and never by the agent itself (a
+// self-declared operated_by proves nothing; see docs/adrs/0017-agent-delegation.md).
+//
+// The vouch NAMES the operator it delegates to (OperatorPub), and validates
+// only while that equals the agent's attested operated_by. That is what makes
+// transfer safe: the agent re-attests to a new operator, the new operator
+// vouches, and old vouches void automatically — nobody can vouch an agent to
+// someone it did not name, so ownership is never ambiguous and never stealable.
+//
+// The delegator must resolve to the operator (walk + revocation checks) or BE
+// the operator root (a durable, words-signed vouch the cascade cannot touch).
+// Revoking the delegator's device removes only this vouch, never the agent —
+// an agent survives while ANY vouch survives, which is what lets a human vouch
+// from every live device instead of betting the agent on one.
+type AgentDelegation struct {
+	Type         string `cbor:"type"` // always TypeAgentDelegation; signed
+	AgentPub     []byte `cbor:"agent_pub"`
+	DelegatorPub []byte `cbor:"delegator_pub"` // the vouching device key
+	OperatorPub  []byte `cbor:"operator_pub"`  // must equal the attested operated_by
+	IssuedAt     int64  `cbor:"issued_at"`     // unix ms
+	ExpiresAt    int64  `cbor:"expires_at,omitempty"` // unix ms; 0 = no expiry
+	Sig          []byte `cbor:"sig"`
+}
+
+// VouchWithdraw retires the delegator's OWN vouch for an agent, signed by the
+// delegator itself. Self-withdrawal needs no authority proof — a device
+// withdrawing its own vouch is uncontroversial — which is why killing an agent
+// needs no member-root words: withdraw every vouch and the agent is unproven
+// with no path back by itself. A withdraw kills vouches issued at or before
+// WithdrawnAt; a later re-vouch from the same delegator is live again, so an
+// operator can always re-prove (no lockout).
+type VouchWithdraw struct {
+	Type         string `cbor:"type"` // always TypeVouchWithdraw; signed
+	AgentPub     []byte `cbor:"agent_pub"`
+	DelegatorPub []byte `cbor:"delegator_pub"` // the vouch being withdrawn; also the signer
+	WithdrawnAt  int64  `cbor:"withdrawn_at"`  // unix ms
+	Sig          []byte `cbor:"sig"`
+}
+
 // signable is any identity-log object that carries a detached Ed25519 signature
 // over its own deterministic-CBOR content (with the signature field cleared).
 type signable interface {
-	*IdentityAttestation | *DeviceDelegation | *SessionDelegation | *DeviceRevoke
+	*IdentityAttestation | *DeviceDelegation | *SessionDelegation | *DeviceRevoke |
+		*AgentDelegation | *VouchWithdraw
 }
 
 // typeTagOf returns the canonical tag for a signable's Go type.
@@ -201,6 +245,10 @@ func typeTagOf[T signable](obj T) (string, error) {
 		return TypeSessionDelegation, nil
 	case *DeviceRevoke:
 		return TypeDeviceRevoke, nil
+	case *AgentDelegation:
+		return TypeAgentDelegation, nil
+	case *VouchWithdraw:
+		return TypeVouchWithdraw, nil
 	default:
 		return "", fmt.Errorf("identity: unsignable type %T", obj)
 	}
@@ -234,6 +282,14 @@ func signingBytes[T signable](obj T) ([]byte, error) {
 		c := *o
 		c.Sig, c.Type = nil, tag
 		return detCBOR.Marshal(&c)
+	case *AgentDelegation:
+		c := *o
+		c.Sig, c.Type = nil, tag
+		return detCBOR.Marshal(&c)
+	case *VouchWithdraw:
+		c := *o
+		c.Sig, c.Type = nil, tag
+		return detCBOR.Marshal(&c)
 	default:
 		return nil, fmt.Errorf("identity: unsignable type %T", obj)
 	}
@@ -255,6 +311,10 @@ func checkTag[T signable](obj T) bool {
 	case *SessionDelegation:
 		return o.Type == want
 	case *DeviceRevoke:
+		return o.Type == want
+	case *AgentDelegation:
+		return o.Type == want
+	case *VouchWithdraw:
 		return o.Type == want
 	default:
 		return false
@@ -285,6 +345,10 @@ func Sign[T signable](obj T, priv ed25519.PrivateKey) error {
 	case *SessionDelegation:
 		o.Sig, o.Type = sig, tag
 	case *DeviceRevoke:
+		o.Sig, o.Type = sig, tag
+	case *AgentDelegation:
+		o.Sig, o.Type = sig, tag
+	case *VouchWithdraw:
 		o.Sig, o.Type = sig, tag
 	}
 	return nil
@@ -329,6 +393,24 @@ func VerifySessionDelegation(s *SessionDelegation) bool {
 // VerifySender re-checks and why a carrier must not treat storage as endorsement.
 func VerifyDeviceRevoke(d *DeviceRevoke) bool {
 	return d != nil && verifySig(d, d.RevokerPub, d.Sig)
+}
+
+// VerifyAgentDelegation checks a vouch against the delegator device that signed
+// it. This proves only that the named delegator vouched for this agent — NOT
+// that the delegator belongs to the named operator, and NOT that the agent
+// still names that operator. Both are decided against the trees at verify time
+// (see AgentVouchProof): a vouch is a claim the verifier re-places, never a
+// fact it inherits from storage.
+func VerifyAgentDelegation(d *AgentDelegation) bool {
+	return d != nil && verifySig(d, d.DelegatorPub, d.Sig)
+}
+
+// VerifyVouchWithdraw checks a withdrawal against the delegator withdrawing its
+// own vouch. Self-withdrawal is the only valid shape — a withdraw signed by
+// anyone else names a signer that is not its subject and every verifier
+// ignores it.
+func VerifyVouchWithdraw(w *VouchWithdraw) bool {
+	return w != nil && verifySig(w, w.DelegatorPub, w.Sig)
 }
 
 // verifySig checks obj.Sig against signerPub over the object's signing bytes.

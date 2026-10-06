@@ -12,6 +12,17 @@
 //
 //	go run ./cmd/agent -member <64-hex member root> [-room kitchen] [-server http://localhost:8099]
 //
+// Adopting a human-created agent (the supported path — a person mints the agent
+// in the UI and hands over a `cairn:agent:1:…` bundle):
+//
+//	go run ./cmd/agent -adopt '<bundle>' -keys /path/to/agent.key
+//
+// Adopt validates the bundle (seed → root → device → delegation, vouch
+// operator == attested operated_by, every signature), writes the agent root
+// key, publishes the attestation + delegation + vouch, pins the relay pubkey,
+// redeems the bundle's invite if the relay is invite-only, and exits. Run
+// again without -adopt to operate as that agent.
+//
 // Keys (the agent's identity and the room keys it mints) go to
 // $TMPDIR/cairn-agent by default — this is a test client and its key material
 // is stored in the clear. Use -keys to put them somewhere deliberate.
@@ -261,8 +272,22 @@ func main() {
 		name      = flag.String("name", "cmd/agent", "display name to request when joining")
 		live      = flag.Bool("live", false,
 			"after posting, wait for the approval to be granted, then post a job card and update it")
+		adopt = flag.String("adopt", "",
+			"adopt a human-created agent from a `cairn:agent:1:…` handoff bundle (writes -keys, publishes identity, exits)")
 	)
 	flag.Parse()
+
+	// Adoption is identity-only: validate the bundle, write the key file,
+	// publish the agent's objects, redeem its invite if any — then exit.
+	// Operating as the agent is a separate run without -adopt, the same way a
+	// real harness adopts once and runs many times.
+	if *adopt != "" {
+		if *keyPath == "" {
+			log.Fatal("agent: -adopt needs -keys (where to write the adopted root key)")
+		}
+		runAdopt(*adopt, *keyPath, *serverURL)
+		return
+	}
 
 	// Default to a temp directory, never $HOME. This is a demo/test client: it
 	// writes an Ed25519 private key and PLAINTEXT room keys, and neither belongs
@@ -653,8 +678,77 @@ func mustSignAt(me *keypair, roomID string, typ cairnv1.EventType, payload []byt
 	return ev
 }
 
-func loadOrCreateKey(path string) (*keypair, error) {
-	if b, err := os.ReadFile(path); err == nil && len(b) == ed25519.PrivateKeySize {
+// runAdopt bootstraps this harness as a human-created agent from a handoff
+// bundle, then exits. It validates the bundle (seed → root → device →
+// delegation, vouch operator == attested operated_by, every signature —
+// ParseHandoffBundle), writes the agent root key, publishes the agent's three
+// objects (idempotent: the carrier files by hash), pins the relay pubkey
+// against RelayInfo, and redeems the bundle's invite when the relay is
+// invite-only. Afterwards this harness runs as the agent with -keys.
+//
+// It refuses to overwrite an existing key file holding a DIFFERENT key:
+// adopting twice is fine, adopting over someone else silently is not.
+func runAdopt(bundleStr, keyPath, serverFlag string) {
+	b, err := identity.ParseHandoffBundle(bundleStr)
+	if err != nil {
+		log.Fatalf("agent: adopt: %v", err)
+	}
+	rootPriv := ed25519.NewKeyFromSeed(b.AgentSeed)
+	root := &keypair{Pub: rootPriv.Public().(ed25519.PublicKey), Priv: rootPriv}
+	if prev, err := os.ReadFile(keyPath); err == nil {
+		if len(prev) != ed25519.PrivateKeySize || !bytes.Equal(prev, rootPriv) {
+			log.Fatalf("agent: adopt: %s holds a different key — refusing to overwrite", keyPath)
+		}
+		log.Printf("agent: adopt: %s already holds this agent, re-publishing", keyPath)
+	} else if err := os.WriteFile(keyPath, rootPriv, 0o600); err != nil {
+		log.Fatalf("agent: adopt: write %s: %v", keyPath, err)
+	}
+
+	serverURL := b.RelayURL
+	if serverFlag != "" && serverFlag != "http://localhost:8099" && serverFlag != serverURL {
+		log.Printf("agent: adopt: -server %s differs from the bundle's relay %s — dialling the bundle's",
+			serverFlag, serverURL)
+	}
+	client := cairnv1connect.NewCairnServiceClient(http.DefaultClient, serverURL)
+	ctx := context.Background()
+
+	// Pin the relay: the bundle names the relay the human vouched for, and a
+	// harness must not bootstrap against a stranger.
+	info, err := client.RelayInfo(ctx, connect.NewRequest(&cairnv1.RelayInfoRequest{}))
+	if err != nil {
+		log.Fatalf("agent: adopt: relay info: %v", err)
+	}
+	if !bytes.Equal(info.Msg.GetRelayPub(), b.RelayPub) {
+		log.Fatalf("agent: adopt: relay at %s presents a different key than the bundle pins", serverURL)
+	}
+
+	for name, obj := range map[string][]byte{
+		"attestation": b.Attestation, "device delegation": b.DeviceDelegation, "vouch": b.Vouch,
+	} {
+		if _, err := client.PutIdentityObject(ctx,
+			connect.NewRequest(&cairnv1.PutIdentityObjectRequest{Cbor: obj})); err != nil {
+			log.Fatalf("agent: adopt: publish %s: %v", name, err)
+		}
+	}
+
+	if b.Invite != "" {
+		if _, err := client.RedeemInvite(ctx, connect.NewRequest(&cairnv1.RedeemInviteRequest{
+			Invite: b.Invite, MemberPub: root.Pub,
+		})); err != nil {
+			log.Fatalf("agent: adopt: redeem invite: %v", err)
+		}
+		log.Printf("agent: adopt: invite redeemed for %x", root.Pub[:6])
+	}
+
+	device, err := identity.StandaloneDeviceKey(identity.KeyPair{Pub: root.Pub, Priv: rootPriv})
+	if err != nil {
+		log.Fatalf("agent: adopt: device derivation: %v", err)
+	}
+	log.Printf("agent: adopted %q as %x (device %x, fingerprint %s) on %s",
+		b.AgentName, root.Pub[:6], device.Pub[:6], identity.Fingerprint(root.Pub), serverURL)
+}
+
+func loadOrCreateKey(path string) (*keypair, error) {	if b, err := os.ReadFile(path); err == nil && len(b) == ed25519.PrivateKeySize {
 		priv := ed25519.PrivateKey(b)
 		return &keypair{Pub: priv.Public().(ed25519.PublicKey), Priv: priv}, nil
 	}
